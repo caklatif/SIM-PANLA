@@ -8,10 +8,13 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: 'auto',
+      manifestFilename: 'manifest.json',
       includeAssets: ['icon.png', 'apple-touch-icon-180x180.png'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallback: '/index.html',
+        cleanupOutdatedCaches: true,
       },
       manifest: {
         name: 'SIM-PANLA UPT SMP Negeri 8 Pasuruan',
