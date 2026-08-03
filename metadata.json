@@ -1,0 +1,7 @@
+{
+  "name": "SIMPANLA V2026",
+  "description": "SIM-PANLA with Supabase",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

@@ -1,0 +1,200 @@
+
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+  <style>
+    @font-face {
+        font-family: 'Stormfaze';
+        font-style: normal;
+        font-weight: 400;
+        src: local('Stormfaze'), url('https://fonts.cdnfonts.com/s/28437/stormfaze.woff') format('woff');
+    }
+    @font-face {
+        font-family: 'Digital-7 Mono';
+        font-style: normal;
+        font-weight: 400;
+        src: local('Digital-7 Mono'), url('https://fonts.cdnfonts.com/s/17796/digital-7 (mono).woff') format('woff');
+    }
+    @font-face {
+        font-family: 'Alphacorsa';
+        font-style: normal;
+        font-weight: 400;
+        src: local('Alphacorsa'), url('https://fonts.cdnfonts.com/s/109366/AlphacorsaPersonalUse-8MEMD.woff') format('woff');
+    }
+    @font-face {
+        font-family: 'Good Timing';
+        font-style: normal;
+        font-weight: 700;
+        src: local('Good Timing'), url('https://fonts.cdnfonts.com/s/23859/good timing bd.woff') format('woff');
+    }
+    @font-face {
+        font-family: 'Sprintura Demo';
+        font-style: normal;
+        font-weight: 400;
+        src: local('Sprintura Demo'), local('Sprintura-Demo');
+    }
+  </style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=0" />
+    <title>SIM-PANLA | Guru</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              slate: {
+                850: '#1e293b',
+                900: '#0f172a',
+                950: '#020617',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        background-color: #F9F7FF; 
+        background-image: linear-gradient(180deg, #F9F7FF 0%, #F4F0FF 100%);
+        min-height: 100vh;
+        color: #1e293b;
+        transition: background-color 0.3s ease, color 0.3s ease;
+      }
+
+      /* Dark Mode Body Override */
+      html.dark body {
+        background-color: #0f172a; /* slate-900 */
+        background-image: linear-gradient(180deg, #0f172a 0%, #020617 100%);
+        color: #f1f5f9; /* slate-100 */
+      }
+      
+      /* Card Utility - Reverted to White */
+      .app-card {
+        background-color: #FFFFFF; 
+        border-radius: 1.25rem; 
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        border: 1px solid rgba(226, 232, 240, 0.8); /* slate-200 */
+        transition: background-color 0.3s ease, border-color 0.3s ease;
+      }
+
+      /* Dark Mode Card Override */
+      html.dark .app-card {
+        background-color: #1e293b; /* slate-800 */
+        border-color: #334155; /* slate-700 */
+        color: #f8fafc;
+      }
+
+      /* Custom Scrollbar */
+      .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 10px;
+      }
+      html.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #475569;
+      }
+      
+      .animate-fade-in {
+        animation: fadeIn 0.4s ease-out forwards;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      /* MODERN PAGE TRANSITION */
+      .page-enter {
+        animation: pageSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      
+      @keyframes pageSlideUp {
+        0% {
+          opacity: 0;
+          transform: translateY(15px) scale(0.98);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+    
+      /* Animated Glow Border */
+      .glow-border-container {
+        position: relative;
+        z-index: 0;
+        border-radius: 9999px;
+        overflow: hidden;
+        padding: 2px;
+      }
+      .glow-border-container::before {
+        content: '';
+        position: absolute;
+        z-index: -2;
+        left: -50%;
+        top: -50%;
+        width: 200%;
+        height: 200%;
+        background-color: transparent;
+        background-repeat: no-repeat;
+        background-size: 50% 50%, 50% 50%;
+        background-position: 0 0, 100% 0, 100% 100%, 0 100%;
+        background-image: conic-gradient(from 0deg, transparent 0 340deg, #9333ea 360deg);
+        animation: rotate 4s linear infinite;
+      }
+      .glow-border-container::after {
+        content: '';
+        position: absolute;
+        z-index: -1;
+        left: 2px;
+        top: 2px;
+        width: calc(100% - 4px);
+        height: calc(100% - 4px);
+        background: inherit;
+        border-radius: 9999px;
+      }
+      @keyframes rotate {
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+    
+      @keyframes shimmer {
+        100% {
+          transform: translateX(100%);
+        }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.90.1",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.12.0",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "html2canvas": "https://esm.sh/html2canvas@1.4.1"
+  }
+}
+</script>
+</head>
+  <body class="text-slate-800 antialiased selection:bg-purple-500 selection:text-white">
+    <div id="root"></div>
+    <!-- Entry point untuk Vite -->
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
