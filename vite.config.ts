@@ -9,7 +9,6 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
-      manifestFilename: 'manifest.json',
       includeAssets: ['favicon.ico', 'icon.png', 'apple-touch-icon-180x180.png'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
@@ -24,20 +23,20 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         scope: '/',
-        start_url: '.',
+        start_url: '/',
         icons: [
           {
-            src: '/pwa-192x192.png?v=2',
+            src: '/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: '/pwa-512x512.png?v=2',
+            src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png'
           },
           {
-            src: '/pwa-512x512.png?v=2',
+            src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
