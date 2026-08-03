@@ -1,4 +1,7 @@
-import { defineConfig } from 'vite';
+const fs = require('fs');
+const path = 'vite.config.ts';
+
+const config = `import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -8,7 +11,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.png'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.svg', 'pwa-192x192.svg', 'pwa-512x512.svg'],
       manifest: {
         name: 'SIM-PANLA UPT SMP Negeri 8 Pasuruan',
         short_name: 'SIM-PANLA',
@@ -18,19 +21,19 @@ export default defineConfig({
         display: 'standalone',
         icons: [
           {
-            src: 'icon.png',
+            src: 'pwa-192x192.svg',
             sizes: '192x192',
-            type: 'image/png'
+            type: 'image/svg+xml'
           },
           {
-            src: 'icon.png',
+            src: 'pwa-512x512.svg',
             sizes: '512x512',
-            type: 'image/png'
+            type: 'image/svg+xml'
           },
           {
-            src: 'icon.png',
+            src: 'pwa-512x512.svg',
             sizes: '512x512',
-            type: 'image/png',
+            type: 'image/svg+xml',
             purpose: 'any maskable'
           }
         ]
@@ -38,3 +41,7 @@ export default defineConfig({
     })
   ],
 });
+`;
+
+fs.writeFileSync(path, config, 'utf8');
+console.log('Patched vite.config.ts');

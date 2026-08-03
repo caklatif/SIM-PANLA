@@ -1,4 +1,7 @@
-import { defineConfig } from 'vite';
+const fs = require('fs');
+const path = 'vite.config.ts';
+
+const config = `import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -38,3 +41,7 @@ export default defineConfig({
     })
   ],
 });
+`;
+
+fs.writeFileSync(path, config, 'utf8');
+console.log('Patched vite.config.ts');

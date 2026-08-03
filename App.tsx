@@ -1,3 +1,4 @@
+import InstallPWA from './components/InstallPWA';
 
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
@@ -189,6 +190,7 @@ const App: React.FC = () => {
             <Route path="/qr" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
 
           </Routes>
+          <InstallPWA />
         </HashRouter>
         </CustomAlertProvider>
       </AuthProvider>
