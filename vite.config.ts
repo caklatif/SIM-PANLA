@@ -10,7 +10,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       manifestFilename: 'manifest.json',
-      includeAssets: ['icon.png', 'apple-touch-icon-180x180.png'],
+      includeAssets: ['favicon.ico', 'icon.png', 'apple-touch-icon-180x180.png'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallback: '/index.html',
@@ -24,20 +24,20 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         scope: '/',
-        start_url: '/',
+        start_url: '.',
         icons: [
           {
-            src: '/pwa-192x192.png',
+            src: '/pwa-192x192.png?v=2',
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: '/pwa-512x512.png',
+            src: '/pwa-512x512.png?v=2',
             sizes: '512x512',
             type: 'image/png'
           },
           {
-            src: '/pwa-512x512.png',
+            src: '/pwa-512x512.png?v=2',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
