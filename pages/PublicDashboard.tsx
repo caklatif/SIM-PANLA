@@ -396,7 +396,10 @@ const PublicDashboard: React.FC = () => {
                   {/* 4. SUMMARY ROW */}
                   <div className="grid grid-cols-2 gap-3">
                       {/* KBM Terlaksana */}
-                      <div className="bg-white rounded-[1.75rem] p-5 shadow-[0_4px_20px_rgb(0,0,0,0.03)] border border-slate-100 relative overflow-hidden flex flex-col justify-between min-h-[140px] text-left hover:shadow-md transition-all group">
+                      <button 
+                          onClick={() => navigate('/operator-dashboard')}
+                          className="bg-white rounded-[1.75rem] p-5 shadow-[0_4px_20px_rgb(0,0,0,0.03)] border border-slate-100 relative overflow-hidden flex flex-col justify-between min-h-[140px] text-left hover:shadow-md transition-all group active:scale-[0.98] cursor-pointer"
+                      >
                           <div className="absolute bottom-0 right-0 w-32 h-32 bg-purple-50/50 rounded-tl-full transition-colors z-0"></div>
                           
                           <div className="w-[34px] h-[34px] rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100 relative z-10">
@@ -421,7 +424,7 @@ const PublicDashboard: React.FC = () => {
                               <div className="absolute -top-1.5 left-3 w-1.5 h-3.5 bg-slate-200 rounded-full shadow-sm border border-slate-300"></div>
                               <div className="absolute -top-1.5 right-3 w-1.5 h-3.5 bg-slate-200 rounded-full shadow-sm border border-slate-300"></div>
                           </div>
-                      </div>
+                      </button>
 
                       {/* Ketidakhadiran */}
                       <button onClick={handleAbsenceClick} className="bg-white rounded-[1.75rem] p-5 shadow-[0_4px_20px_rgb(0,0,0,0.03)] border border-slate-100 relative overflow-hidden flex flex-col justify-between min-h-[140px] text-left hover:shadow-md transition-all group">

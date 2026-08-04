@@ -217,21 +217,51 @@ const OperatorDashboard: React.FC = () => {
 
   const TableSection = ({ title, items, colorClass }: { title: string, items: MonitorItem[], colorClass: string }) => {
       let filteredItems = items.filter(item => item.teacherName.toLowerCase().includes(searchTerm.toLowerCase()) || item.mapel.toLowerCase().includes(searchTerm.toLowerCase()) || item.kelas.toLowerCase().includes(searchTerm.toLowerCase()));
-      const displayItems = searchTerm ? filteredItems : getRotatedList(filteredItems);
+      // Display stationary list, sorted cleanly by class and hour
+      const displayItems = filteredItems;
       return (
-        <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className={`py-2 px-3 text-white text-center font-bold uppercase tracking-wider ${colorClass} text-[clamp(10px,1.2vw,14px)]`}>{title}</div>
-            <div className="bg-white flex-1 overflow-hidden">
-                <table className="w-full text-left table-fixed">
-                    <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 text-[clamp(9px,0.9vw,12px)]">
-                        <tr><th className="px-2 py-2 w-[15%] text-center">Kelas</th><th className="px-2 py-2 w-[15%] text-center">Jam</th><th className="px-2 py-2 w-[58%]">Guru / Mapel</th><th className="px-2 py-2 w-[12%] text-center">Sts</th></tr>
+        <div className="flex flex-col h-full bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <div className={`py-2 px-3 text-white text-center font-extrabold uppercase tracking-wider ${colorClass} text-xs sm:text-sm`}>{title}</div>
+            <div className="bg-white dark:bg-slate-900 flex-1 overflow-x-auto">
+                <table className="w-full text-left table-fixed border-collapse">
+                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-300 dark:border-slate-700 text-[11px]">
+                        <tr>
+                            <th className="px-1.5 py-1.5 w-[16%] text-center border-r border-slate-200 dark:border-slate-700">Kelas</th>
+                            <th className="px-1.5 py-1.5 w-[18%] text-center border-r border-slate-200 dark:border-slate-700">Jam</th>
+                            <th className="px-2 py-1.5 w-[52%] border-r border-slate-200 dark:border-slate-700">Guru / Mapel</th>
+                            <th className="px-1 py-1.5 w-[14%] text-center">Sts</th>
+                        </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {displayItems.length === 0 ? <tr><td colSpan={4} className="p-6 text-center text-slate-400 italic text-[clamp(10px,1vw,13px)]">Tidak ada jadwal.</td></tr> : (displayItems.map((item) => (<tr key={item.scheduleId} className={`transition-all duration-500 ease-in-out ${item.isFilled ? 'bg-white hover:bg-slate-50' : 'bg-red-50/40 hover:bg-red-50'}`}><td className="px-1 py-1.5 text-center font-bold text-slate-700 text-[clamp(10px,1.1vw,14px)]">{item.kelas}</td><td className="px-1 py-1.5 text-center font-mono text-slate-500 text-[clamp(9px,1vw,12px)]">{formatJam(item.jam)}</td><td className="px-1 py-1.5 overflow-hidden"><div className="font-bold text-slate-800 truncate text-[clamp(10px,1.1vw,14px)] leading-tight">{item.teacherName}</div><div className="text-slate-500 truncate text-[clamp(9px,0.9vw,12px)] leading-tight">{item.mapel}</div></td><td className="px-1 py-1.5 text-center">{item.isFilled ? <CheckCircle2 className="text-green-500 inline-block w-[clamp(14px,1.5vw,20px)] h-[clamp(14px,1.5vw,20px)]" /> : <XCircle className="text-red-500 inline-block w-[clamp(14px,1.5vw,20px)] h-[clamp(14px,1.5vw,20px)]" />}</td></tr>)))}
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {displayItems.length === 0 ? (
+                            <tr>
+                                <td colSpan={4} className="p-6 text-center text-slate-400 dark:text-slate-500 italic text-xs">Tidak ada jadwal.</td>
+                            </tr>
+                        ) : (
+                            displayItems.map((item) => (
+                                <tr key={item.scheduleId} className={`transition-colors border-b border-slate-200 dark:border-slate-700 ${item.isFilled ? 'bg-white dark:bg-slate-900 hover:bg-purple-50/50 dark:hover:bg-slate-800/60' : 'bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100/50'}`}>
+                                    <td className="px-1 py-1 text-center font-bold text-slate-800 dark:text-slate-200 text-xs border-r border-slate-200 dark:border-slate-700">{item.kelas}</td>
+                                    <td className="px-1 py-1 text-center font-mono font-medium text-slate-600 dark:text-slate-400 text-[11px] border-r border-slate-200 dark:border-slate-700">{formatJam(item.jam)}</td>
+                                    <td className="px-2 py-1 overflow-hidden border-r border-slate-200 dark:border-slate-700">
+                                        <div className="font-bold text-slate-800 dark:text-slate-100 truncate text-xs leading-snug">{item.teacherName}</div>
+                                        <div className="text-purple-700 dark:text-purple-400 font-semibold truncate text-[10px] leading-snug">{item.mapel}</div>
+                                    </td>
+                                    <td className="px-1 py-1 text-center">
+                                        {item.isFilled ? (
+                                            <CheckCircle2 className="text-emerald-500 inline-block w-4 h-4 sm:w-5 sm:h-5" />
+                                        ) : (
+                                            <XCircle className="text-rose-500 inline-block w-4 h-4 sm:w-5 sm:h-5" />
+                                        )}
+                                    </td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
             </div>
-            <div className="p-1.5 bg-slate-50 text-center text-[clamp(9px,0.8vw,11px)] text-slate-500 font-bold border-t border-slate-200">{items.filter(i => i.isFilled).length} / {items.length} Terisi</div>
+            <div className="p-2 bg-slate-50 dark:bg-slate-800 text-center text-xs text-slate-600 dark:text-slate-300 font-bold border-t border-slate-200 dark:border-slate-700">
+                {items.filter(i => i.isFilled).length} / {items.length} Terisi
+            </div>
         </div>
       );
   };
@@ -271,7 +301,7 @@ const OperatorDashboard: React.FC = () => {
          </div>
 
          {loading && profiles.length === 0 ? <div className="flex justify-center py-20"><Loader2 className="animate-spin text-purple-500" size={40} /></div> : (
-             <div className="grid grid-cols-3 gap-2 md:gap-4 items-start w-full">
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start w-full">
                  <TableSection title="Kelas 7" items={data7} colorClass="bg-emerald-600" />
                  <TableSection title="Kelas 8" items={data8} colorClass="bg-orange-500" />
                  <TableSection title="Kelas 9" items={data9} colorClass="bg-rose-600" />

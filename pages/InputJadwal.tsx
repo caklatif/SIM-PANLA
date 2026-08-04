@@ -94,7 +94,15 @@ const InputJadwal: React.FC = () => {
     try {
       const { data, error } = await supabase.from('profiles').select('*').neq('nip', null).order('full_name');
       if (error) throw error;
-      if (data) setTeachers(data); 
+      if (data) {
+        const filtered = data.filter(t => 
+          (t.role as string) !== 'admin' && 
+          (t.role as string) !== 'administrator' && 
+          t.role?.toLowerCase() !== 'admin' &&
+          !t.full_name?.toLowerCase().includes('admin')
+        );
+        setTeachers(filtered);
+      } 
     } catch (err) { console.error("Gagal load guru", err); } finally { setLoading(false); }
   };
 

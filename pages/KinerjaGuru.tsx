@@ -66,7 +66,13 @@ const KinerjaGuru: React.FC = () => {
           ]);
 
           const excludedNames = ['Guru Baru', 'Agung Budiartati, M.Pd.', 'Dra.Laily Asriyah, M.Pd.I.'];
-          const allTeachers = (profilesRes.data || []).filter(t => !excludedNames.includes(t.full_name));
+          const allTeachers = (profilesRes.data || []).filter(t => 
+            !excludedNames.includes(t.full_name) &&
+            (t.role as string) !== 'admin' &&
+            (t.role as string) !== 'administrator' &&
+            t.role?.toLowerCase() !== 'admin' &&
+            !t.full_name?.toLowerCase().includes('admin')
+          );
           const allSchedules = schedulesRes.data || [];
           const allJournals = journalsRes.data || [];
           const dayCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
