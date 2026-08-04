@@ -359,8 +359,8 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                        alt="Logo"
                      />
                      <div>
-                         <h1 className="text-[10px] font-extrabold text-slate-900 dark:text-white leading-tight">SISTEM INFORMASI<br/>KEGIATAN BELAJAR MENGAJAR</h1>
-                         <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase mt-0.5 tracking-wide">
+                         <h1 className="text-[10px] font-extrabold text-slate-900 dark:text-white leading-tight" style={{ fontSize: '14px' }}>SISTEM INFORMASI<br/>KEGIATAN BELAJAR MENGAJAR</h1>
+                         <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase mt-0.5 tracking-wide" style={{ fontSize: '18px', marginRight: '0px', marginBottom: '-16px' }}>
                             SEMESTER {semester} | T.A {academicYear}
                          </p>
                      </div>

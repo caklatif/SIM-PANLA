@@ -1,14 +1,15 @@
 {
   "name": "SIM-PANLA | Jurnal & Monitoring KBM",
   "short_name": "SIM-PANLA",
-  "description": "Sistem Informasi Manajemen dan Monitoring Kegiatan Belajar Mengajar",
+  "description": "Sistem Informasi Manajemen Presensi dan Jurnal UPT SMP Negeri 8 Pasuruan",
   "start_url": "/",
   "id": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#F9F7FF",
   "theme_color": "#9333ea",
-  "orientation": "portrait-primary",
-  "scope": "/",
+  "orientation": "portrait",
+  "categories": ["education", "productivity"],
   "icons": [
     {
       "src": "/pwa-192x192.png",

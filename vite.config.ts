@@ -20,21 +20,28 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
       },
       manifest: {
-        name: 'SIM-PANLA UPT SMP Negeri 8 Pasuruan',
+        name: 'SIM-PANLA | Jurnal & Monitoring KBM',
         short_name: 'SIM-PANLA',
         description: 'Sistem Informasi Manajemen Presensi dan Jurnal UPT SMP Negeri 8 Pasuruan',
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
+        theme_color: '#9333ea',
+        background_color: '#F9F7FF',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
         start_url: '/',
+        categories: ['education', 'productivity'],
         icons: [
           {
             src: '/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
+          },
+          {
+            src: '/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable'
           },
           {
             src: '/pwa-512x512.png',
@@ -47,6 +54,11 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'
+          },
+          {
+            src: '/apple-touch-icon-180x180.png',
+            sizes: '180x180',
+            type: 'image/png'
           }
         ]
       }

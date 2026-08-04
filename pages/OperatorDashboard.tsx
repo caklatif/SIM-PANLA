@@ -7,7 +7,7 @@ import { Profile } from '../types';
 import { getWIBISOString, formatDateIndo } from '../utils/dateUtils';
 import { 
   MonitorPlay, CheckCircle2, Clock, Loader2, RefreshCw, CalendarDays, 
-  UserX, Percent, Sparkles, AlertTriangle, Search, XCircle, X, Bookmark, ChevronRight, ChevronDown 
+  UserX, Percent, Sparkles, AlertTriangle, Search, XCircle, X, Bookmark, ChevronRight, ChevronDown, UserCheck 
 } from 'lucide-react';
 
 interface MonitorItem {
@@ -18,6 +18,9 @@ interface MonitorItem {
     teacherName: string;
     teacherId?: string;
     isFilled: boolean;
+    isInval?: boolean;
+    substituteTeacherName?: string;
+    replacedTeacherName?: string;
 }
 
 interface DashboardStats {
@@ -50,6 +53,7 @@ const OperatorDashboard: React.FC = () => {
   const [studentClassCounts, setStudentClassCounts] = useState<Record<string, number>>({});
   const [absenceStats, setAbsenceStats] = useState({ S: 0, I: 0, A: 0 });
   const [modalOpen, setModalOpen] = useState(false);
+  const [selectedInvalModal, setSelectedInvalModal] = useState<MonitorItem | null>(null);
   const [expandedClass, setExpandedClass] = useState<string | null>(null);
 
   const [missingTeachers, setMissingTeachers] = useState<{name: string, kelas: string}[]>([]);
@@ -115,7 +119,12 @@ const OperatorDashboard: React.FC = () => {
                   }
                   return res;
               }),
-              supabase.from('journals').select('teacher_id, kelas, subject, hours, cleanliness').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', startOfDay).lte('created_at', endOfDay),
+              supabase.from('journals').select('teacher_id, kelas, subject, hours, cleanliness, validation, inval_teacher_name').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', startOfDay).lte('created_at', endOfDay).then(async (res) => {
+                  if (res.error && (res.error.code === '42703' || res.error.message?.includes('validation') || res.error.message?.includes('inval_teacher_name'))) {
+                      return supabase.from('journals').select('teacher_id, kelas, subject, hours, cleanliness').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', startOfDay).lte('created_at', endOfDay);
+                  }
+                  return res;
+              }),
               supabase.from('attendance_logs').select('student_id, student_name, status, created_at').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', startOfDay).lte('created_at', endOfDay).neq('status', 'D'),
               supabase.from('students').select('id, kelas, name').eq('academic_year', academicYear || '2025/2026').then(async (res) => {
                   if (res.error && (res.error.code === '42703' || res.error.message?.includes('academic_year'))) {
@@ -134,19 +143,47 @@ const OperatorDashboard: React.FC = () => {
 
           const processed: MonitorItem[] = schedules.map(sch => {
               const schHours = sch.hour.split(',').map((h: string) => h.trim());
-              const isFilled = journals.some(j => {
+              const matchingJournal = journals.find(j => {
                   if (j.kelas !== sch.kelas || j.subject !== sch.subject) return false;
                   if (j.teacher_id && j.teacher_id === sch.teacher_id) return true;
-                  const jHours = j.hours.split(',').map((h: string) => h.trim());
+                  const jHours = j.hours ? j.hours.split(',').map((h: string) => h.trim()) : [];
                   return schHours.some((h: string) => jHours.includes(h));
               });
+              const isFilled = !!matchingJournal;
               let tName = '-';
               if (activeProfiles && activeProfiles.length > 0) {
                   let p = activeProfiles.find(p => p.id === sch.teacher_id);
                   if (!p && sch.teacher_nip) p = activeProfiles.find(p => p.nip === sch.teacher_nip);
                   if (p) tName = p.full_name; else tName = 'Guru Tidak Ditemukan';
               } else if (sch.teacher_id) { tName = 'Memuat...'; }
-              return { scheduleId: sch.id, kelas: sch.kelas, jam: sch.hour, mapel: sch.subject, teacherName: tName, teacherId: sch.teacher_id, isFilled };
+
+              let isInval = false;
+              let substituteTeacherName = '';
+              let replacedTeacherName = '';
+
+              if (matchingJournal) {
+                  const jVal = (matchingJournal as any).validation;
+                  const jInvalName = (matchingJournal as any).inval_teacher_name;
+                  if (jVal === 'inval' || jInvalName || (matchingJournal.teacher_id && matchingJournal.teacher_id !== sch.teacher_id)) {
+                      isInval = true;
+                      const subProfile = activeProfiles.find(p => p.id === matchingJournal.teacher_id);
+                      substituteTeacherName = subProfile ? subProfile.full_name : 'Guru Piket';
+                      replacedTeacherName = jInvalName || tName;
+                  }
+              }
+
+              return { 
+                  scheduleId: sch.id, 
+                  kelas: sch.kelas, 
+                  jam: sch.hour, 
+                  mapel: sch.subject, 
+                  teacherName: tName, 
+                  teacherId: sch.teacher_id, 
+                  isFilled, 
+                  isInval, 
+                  substituteTeacherName, 
+                  replacedTeacherName 
+              };
           });
 
           const sortBase = (items: MonitorItem[]) => {
@@ -216,7 +253,12 @@ const OperatorDashboard: React.FC = () => {
   };
 
   const TableSection = ({ title, items, colorClass }: { title: string, items: MonitorItem[], colorClass: string }) => {
-      let filteredItems = items.filter(item => item.teacherName.toLowerCase().includes(searchTerm.toLowerCase()) || item.mapel.toLowerCase().includes(searchTerm.toLowerCase()) || item.kelas.toLowerCase().includes(searchTerm.toLowerCase()));
+      let filteredItems = items.filter(item => 
+        item.teacherName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        item.mapel.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        item.kelas.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item.substituteTeacherName && item.substituteTeacherName.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
       // Display stationary list, sorted cleanly by class and hour
       const displayItems = filteredItems;
       return (
@@ -226,10 +268,10 @@ const OperatorDashboard: React.FC = () => {
                 <table className="w-full text-left table-fixed border-collapse">
                     <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-300 dark:border-slate-700 text-[11px]">
                         <tr>
-                            <th className="px-1.5 py-1.5 w-[16%] text-center border-r border-slate-200 dark:border-slate-700">Kelas</th>
-                            <th className="px-1.5 py-1.5 w-[18%] text-center border-r border-slate-200 dark:border-slate-700">Jam</th>
-                            <th className="px-2 py-1.5 w-[52%] border-r border-slate-200 dark:border-slate-700">Guru / Mapel</th>
-                            <th className="px-1 py-1.5 w-[14%] text-center">Sts</th>
+                            <th className="px-0.5 py-1.5 w-[10%] text-center border-r border-slate-200 dark:border-slate-700">Kelas</th>
+                            <th className="px-0.5 py-1.5 w-[9%] text-center border-r border-slate-200 dark:border-slate-700">Jam</th>
+                            <th className="px-1.5 py-1.5 w-[66%] border-r border-slate-200 dark:border-slate-700">Guru / Mapel</th>
+                            <th className="px-1 py-1.5 w-[15%] text-center">Sts</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -239,16 +281,29 @@ const OperatorDashboard: React.FC = () => {
                             </tr>
                         ) : (
                             displayItems.map((item) => (
-                                <tr key={item.scheduleId} className={`transition-colors border-b border-slate-200 dark:border-slate-700 ${item.isFilled ? 'bg-white dark:bg-slate-900 hover:bg-purple-50/50 dark:hover:bg-slate-800/60' : 'bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100/50'}`}>
-                                    <td className="px-1 py-1 text-center font-bold text-slate-800 dark:text-slate-200 text-xs border-r border-slate-200 dark:border-slate-700">{item.kelas}</td>
-                                    <td className="px-1 py-1 text-center font-mono font-medium text-slate-600 dark:text-slate-400 text-[11px] border-r border-slate-200 dark:border-slate-700">{formatJam(item.jam)}</td>
-                                    <td className="px-2 py-1 overflow-hidden border-r border-slate-200 dark:border-slate-700">
+                                <tr key={item.scheduleId} className={`transition-colors border-b border-slate-200 dark:border-slate-700 ${item.isFilled ? (item.isInval ? 'bg-purple-50/40 dark:bg-purple-950/20 hover:bg-purple-100/50' : 'bg-white dark:bg-slate-900 hover:bg-purple-50/50 dark:hover:bg-slate-800/60') : 'bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100/50'}`}>
+                                    <td className="px-0.5 py-1 text-center font-bold text-slate-800 dark:text-slate-200 text-xs border-r border-slate-200 dark:border-slate-700">{item.kelas}</td>
+                                    <td className="px-0.5 py-1 text-center font-mono font-medium text-slate-600 dark:text-slate-400 text-[11px] border-r border-slate-200 dark:border-slate-700">{formatJam(item.jam)}</td>
+                                    <td className="px-1.5 py-1 overflow-hidden border-r border-slate-200 dark:border-slate-700">
                                         <div className="font-bold text-slate-800 dark:text-slate-100 truncate text-xs leading-snug">{item.teacherName}</div>
                                         <div className="text-purple-700 dark:text-purple-400 font-semibold truncate text-[10px] leading-snug">{item.mapel}</div>
                                     </td>
                                     <td className="px-1 py-1 text-center">
                                         {item.isFilled ? (
-                                            <CheckCircle2 className="text-emerald-500 inline-block w-4 h-4 sm:w-5 sm:h-5" />
+                                            item.isInval ? (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedInvalModal(item);
+                                                    }}
+                                                    title={`INVAL: Digantikan oleh ${item.substituteTeacherName || 'Guru Piket'}`}
+                                                    className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-purple-600 hover:bg-purple-700 text-white dark:bg-purple-600 dark:hover:bg-purple-500 transition-all cursor-pointer shadow-sm active:scale-95"
+                                                >
+                                                    INVAL
+                                                </button>
+                                            ) : (
+                                                <CheckCircle2 className="text-emerald-500 inline-block w-4 h-4 sm:w-5 sm:h-5" />
+                                            )
                                         ) : (
                                             <XCircle className="text-rose-500 inline-block w-4 h-4 sm:w-5 sm:h-5" />
                                         )}
@@ -344,6 +399,52 @@ const OperatorDashboard: React.FC = () => {
                         </div>
                   </div>
               </div>
+            </div>
+         )}
+
+         {/* INVAL DETAIL MODAL - TOP ALIGNED */}
+         {selectedInvalModal && (
+            <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[calc(env(safe-area-inset-top)+1rem)] sm:p-4 bg-slate-900/50 backdrop-blur-sm transition-all duration-300" onClick={() => setSelectedInvalModal(null)}>
+                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-100 dark:border-slate-700 relative animate-fade-in" onClick={e => e.stopPropagation()}>
+                    <div className="bg-purple-600 p-5 flex justify-between items-center text-white">
+                        <div className="flex items-center gap-2">
+                            <UserCheck size={22} />
+                            <h3 className="font-extrabold text-base leading-tight">Detail Guru Pengganti (INVAL)</h3>
+                        </div>
+                        <button onClick={() => setSelectedInvalModal(null)} className="hover:bg-white/20 p-1.5 rounded-full transition-colors"><X size={18}/></button>
+                    </div>
+                    <div className="p-5 space-y-4 text-slate-700 dark:text-slate-200">
+                        <div className="bg-purple-50 dark:bg-purple-900/30 p-3.5 rounded-xl border border-purple-200 dark:border-purple-800 space-y-2.5 text-xs">
+                            <div className="flex justify-between items-center border-b border-purple-100 dark:border-purple-800/60 pb-2">
+                                <span className="font-semibold text-slate-500 dark:text-slate-400">Kelas & Jam:</span>
+                                <span className="font-extrabold text-purple-800 dark:text-purple-200">{selectedInvalModal.kelas} (Jam ke-{formatJam(selectedInvalModal.jam)})</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-purple-100 dark:border-purple-800/60 pb-2">
+                                <span className="font-semibold text-slate-500 dark:text-slate-400">Mata Pelajaran:</span>
+                                <span className="font-bold text-slate-800 dark:text-white">{selectedInvalModal.mapel}</span>
+                            </div>
+                            <div className="flex justify-between items-center border-b border-purple-100 dark:border-purple-800/60 pb-2">
+                                <span className="font-semibold text-slate-500 dark:text-slate-400">Guru Utama (Jadwal):</span>
+                                <span className="font-bold text-rose-600 dark:text-rose-400">{selectedInvalModal.teacherName}</span>
+                            </div>
+                            <div className="flex justify-between items-center pt-0.5">
+                                <span className="font-semibold text-slate-500 dark:text-slate-400">Guru Pengganti / Piket:</span>
+                                <span className="font-extrabold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/60 px-2 py-0.5 rounded border border-purple-300 dark:border-purple-700">
+                                    {selectedInvalModal.substituteTeacherName || 'Guru Piket'}
+                                </span>
+                            </div>
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center italic">
+                            Jurnal KBM kelas ini diisi oleh guru pengganti secara realtime.
+                        </p>
+                        <button
+                            onClick={() => setSelectedInvalModal(null)}
+                            className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-md transition-all text-xs"
+                        >
+                            Tutup
+                        </button>
+                    </div>
+                </div>
             </div>
          )}
       </div>

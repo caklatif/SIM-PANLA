@@ -746,7 +746,7 @@ const JurnalForm: React.FC = () => {
         )}
       </div>
 
-      <div className="flex justify-end mt-8 pt-6 border-t border-slate-100">
+      <div className="flex justify-end mt-8 pt-6 border-t border-slate-100 text-center" style={{ textAlign: 'center' }}>
         <button disabled={!formData.kelas} onClick={handleNext} className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-200 disabled:opacity-50 disabled:shadow-none transition-all">
           Lanjut <ArrowRight size={18} />
         </button>
