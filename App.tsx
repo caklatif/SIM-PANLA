@@ -26,6 +26,7 @@ import AbsensiRapor from './pages/AbsensiRapor';
 import OperatorDashboard from './pages/OperatorDashboard';
 import KinerjaGuru from './pages/KinerjaGuru';
 import RekapDhuha from './pages/RekapDhuha';
+import PresensiQR from './pages/PresensiQR';
 import { Loader2 } from 'lucide-react';
 import AppSplash from './components/AppSplash';
 
@@ -61,6 +62,16 @@ const AdminRoute: React.FC<{ children: React.ReactElement }> = ({ children }) =>
   
     return children;
   };
+
+const RestrictedKbmRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+  const { isKbmRestricted } = useAuth();
+
+  if (isKbmRestricted) {
+    return <Navigate to="/qr" replace />;
+  }
+
+  return children;
+};
 
 const App: React.FC = () => {
 
@@ -99,49 +110,65 @@ const App: React.FC = () => {
             
             <Route path="/jurnal" element={
                <ProtectedRoute>
-                  <JurnalForm />
+                  <RestrictedKbmRoute>
+                     <JurnalForm />
+                  </RestrictedKbmRoute>
                </ProtectedRoute>
             } />
             
             <Route path="/jadwal" element={
                <ProtectedRoute>
-                  <MySchedule />
+                  <RestrictedKbmRoute>
+                     <MySchedule />
+                  </RestrictedKbmRoute>
                </ProtectedRoute>
             } />
 
             <Route path="/rekap-absensi" element={
                <ProtectedRoute>
-                  <RekapAbsensi />
+                  <RestrictedKbmRoute>
+                     <RekapAbsensi />
+                  </RestrictedKbmRoute>
                </ProtectedRoute>
             } />
 
             <Route path="/absensi-rapor" element={
                <ProtectedRoute>
-                  <AbsensiRapor />
+                  <RestrictedKbmRoute>
+                     <AbsensiRapor />
+                  </RestrictedKbmRoute>
                </ProtectedRoute>
             } />
 
             <Route path="/laporan" element={
                <ProtectedRoute>
-                  <LaporanJurnal />
+                  <RestrictedKbmRoute>
+                     <LaporanJurnal />
+                  </RestrictedKbmRoute>
                </ProtectedRoute>
             } />
 
              <Route path="/kedisiplinan" element={
                <ProtectedRoute>
-                  <Kedisiplinan />
+                  <RestrictedKbmRoute>
+                     <Kedisiplinan />
+                  </RestrictedKbmRoute>
                </ProtectedRoute>
             } />
 
             <Route path="/kinerja" element={
                <ProtectedRoute>
-                  <KinerjaGuru />
+                  <RestrictedKbmRoute>
+                     <KinerjaGuru />
+                  </RestrictedKbmRoute>
                </ProtectedRoute>
             } />
 
             <Route path="/rekap-dhuha" element={
                <ProtectedRoute>
-                  <RekapDhuha />
+                  <RestrictedKbmRoute>
+                     <RekapDhuha />
+                  </RestrictedKbmRoute>
                </ProtectedRoute>
             } />
 
@@ -186,8 +213,8 @@ const App: React.FC = () => {
                </AdminRoute>
             } />
 
-            {/* Placeholders for other routes */}
-            <Route path="/qr" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            {/* Presensi QR Route */}
+            <Route path="/qr" element={<ProtectedRoute><PresensiQR /></ProtectedRoute>} />
 
           </Routes>
           <InstallPWA />

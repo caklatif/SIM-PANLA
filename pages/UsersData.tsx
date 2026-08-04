@@ -4,7 +4,7 @@ import { Layout } from '../components/Layout';
 import { supabase } from '../services/supabase';
 import { createClient } from '@supabase/supabase-js'; 
 import { Profile } from '../types';
-import { Search, UserCog, AlertCircle, GraduationCap, Shield, Edit, Save, X, Loader2, ChevronDown, Check, UserPlus, KeyRound, Eye, EyeOff, Lock, User, RefreshCw } from 'lucide-react';
+import { Search, UserCog, AlertCircle, GraduationCap, Shield, Edit, Save, X, Loader2, ChevronDown, Check, UserPlus, KeyRound, Eye, EyeOff, Lock, User, RefreshCw, Trash2, Trophy } from 'lucide-react';
 import { showAlert, showConfirm } from '../utils/alert';
 
 const PasswordCell = ({ password }: { password?: string }) => {
@@ -157,11 +157,31 @@ const UsersData: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [profilesRes, settingsRes] = await Promise.all([
+      const [profilesRes, settingsRes, pembinaRes] = await Promise.all([
           supabase.from('profiles').select('*').order('full_name', { ascending: true }),
-          supabase.from('app_settings').select('value').eq('key', 'subjects_list').single()
+          supabase.from('app_settings').select('value').eq('key', 'subjects_list').single(),
+          supabase.from('app_settings').select('value').eq('key', 'pembina_ekstra_list').single()
       ]);
-      if (profilesRes.data) setProfiles(profilesRes.data);
+
+      let pembinaList: any[] = [];
+      if (pembinaRes.data?.value) {
+          try { pembinaList = JSON.parse(pembinaRes.data.value); } catch(e) {}
+      }
+
+      if (profilesRes.data) {
+          const mapped = profilesRes.data.map(p => {
+              const isPembinaInSettings = pembinaList.some((item: any) => 
+                  (p.nip && item.nip && item.nip === p.nip) ||
+                  (p.full_name && item.nama && item.nama.toLowerCase().trim() === p.full_name.toLowerCase().trim())
+              );
+              if (isPembinaInSettings) {
+                  return { ...p, role: 'pembina_ekstra' as const };
+              }
+              return p;
+          });
+          setProfiles(mapped);
+      }
+
       if (settingsRes.data?.value) {
           try { 
             let parsed = JSON.parse(settingsRes.data.value);
@@ -219,8 +239,11 @@ const UsersData: React.FC = () => {
       if (!serviceKey) { showAlert("Service Role Key wajib diisi untuk membuat akun Login."); return; }
       setSaving(true);
       try {
-          let finalMapelNew = newUser.mapel;
-          if (newUser.waliKelas && newUser.waliKelas.trim() !== '') {
+          const isPembina = newUser.role === 'pembina_ekstra';
+          let finalMapelNew = isPembina ? '' : newUser.mapel;
+          let finalWaliKelas = isPembina ? '' : newUser.waliKelas;
+
+          if (!isPembina && finalWaliKelas && finalWaliKelas.trim() !== '') {
               const mapelsNew = finalMapelNew ? finalMapelNew.split(',').map(m => m.trim()) : [];
               if (!mapelsNew.includes('Sabtu bersama Wali Kelas')) {
                  mapelsNew.push('Sabtu bersama Wali Kelas');
@@ -243,19 +266,86 @@ const UsersData: React.FC = () => {
           if (!authData.user) throw new Error("Gagal mendapatkan data user baru.");
           const userId = authData.user.id;
 
+          const dbRole = isPembina ? 'user' : newUser.role;
+
           const { error: profileError } = await adminClient.from('profiles').upsert({
-              id: userId, nip: newUser.nip, full_name: newUser.fullName, role: newUser.role,
-              mengajar_mapel: typeof finalMapelNew !== 'undefined' ? finalMapelNew : newUser.mapel, wali_kelas: newUser.waliKelas, password_info: newUser.password
+              id: userId, nip: newUser.nip, full_name: newUser.fullName, role: dbRole,
+              mengajar_mapel: finalMapelNew, wali_kelas: finalWaliKelas, password_info: newUser.password
           });
           if (profileError) throw new Error("Gagal membuat Profile: " + profileError.message);
 
-          await supabase.from('tabel_guru').upsert({ nip: newUser.nip, nama_lengkap: newUser.fullName, mapel: typeof finalMapelNew !== 'undefined' ? finalMapelNew : newUser.mapel, wali_kelas: newUser.waliKelas });
+          await supabase.from('tabel_guru').upsert({ nip: newUser.nip, nama_lengkap: newUser.fullName, mapel: finalMapelNew, wali_kelas: finalWaliKelas });
+
+          if (isPembina) {
+              try {
+                  const { data: settingsData } = await supabase.from('app_settings').select('value').eq('key', 'pembina_ekstra_list').single();
+                  let currentPembinaList: any[] = [];
+                  if (settingsData?.value) {
+                      try { currentPembinaList = JSON.parse(settingsData.value); } catch(e){}
+                  }
+                  if (!currentPembinaList.some(p => (p.nip && p.nip === newUser.nip) || (p.nama && p.nama === newUser.fullName))) {
+                      currentPembinaList.push({ nip: newUser.nip, nama: newUser.fullName, ekstraList: [] });
+                      await supabase.from('app_settings').upsert({ key: 'pembina_ekstra_list', value: JSON.stringify(currentPembinaList) });
+                      localStorage.setItem('simpanla_pembina_ekstra_list', JSON.stringify(currentPembinaList));
+                  }
+              } catch (pembinaErr) {
+                  console.warn("Gagal update list pembina ekstra:", pembinaErr);
+              }
+          }
 
           showAlert("User berhasil ditambahkan!");
           setIsAddModalOpen(false);
           setNewUser({ nip: '', fullName: '', password: 'spanla', role: 'user', mapel: '', waliKelas: '' });
           fetchData(); 
       } catch (err: any) { showAlert(err.message); } finally { setSaving(false); }
+  };
+
+  const handleDeleteUser = async (user: Profile) => {
+      const confirmed = await showConfirm(`Apakah Anda yakin ingin menghapus user "${user.full_name}" (${user.nip || user.id})?`);
+      if (!confirmed) return;
+
+      setSaving(true);
+      try {
+          // 1. Hapus dari tabel profiles
+          const { error: profileError } = await supabase.from('profiles').delete().eq('id', user.id);
+          if (profileError) throw new Error("Gagal menghapus Profile: " + profileError.message);
+
+          // 2. Hapus dari tabel_guru jika ada NIP
+          if (user.nip) {
+              await supabase.from('tabel_guru').delete().eq('nip', user.nip);
+          }
+
+          // Juga hapus dari pembina_ekstra_list jika ada
+          try {
+              const { data: settingsData } = await supabase.from('app_settings').select('value').eq('key', 'pembina_ekstra_list').single();
+              if (settingsData?.value) {
+                  let currentPembinaList = JSON.parse(settingsData.value);
+                  const filtered = currentPembinaList.filter((item: any) => item.nip !== user.nip && item.nama !== user.full_name);
+                  if (filtered.length !== currentPembinaList.length) {
+                      await supabase.from('app_settings').upsert({ key: 'pembina_ekstra_list', value: JSON.stringify(filtered) });
+                      localStorage.setItem('simpanla_pembina_ekstra_list', JSON.stringify(filtered));
+                  }
+              }
+          } catch(e) {}
+
+          // 3. Hapus dari Supabase Auth jika Service Role Key tersedia
+          if (serviceKey) {
+              try {
+                  const SUPABASE_URL = 'https://oqdnfhkzneqhvktjqiqe.supabase.co'; 
+                  const adminClient = createClient(SUPABASE_URL, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+                  await adminClient.auth.admin.deleteUser(user.id);
+              } catch (authErr: any) {
+                  console.warn("Auth deletion notice:", authErr);
+              }
+          }
+
+          showAlert(`User "${user.full_name}" berhasil dihapus!`);
+          setProfiles(prev => prev.filter(p => p.id !== user.id));
+      } catch (err: any) {
+          showAlert("Gagal menghapus user: " + err.message);
+      } finally {
+          setSaving(false);
+      }
   };
 
   const handleResetPasswordAction = async () => {
@@ -327,11 +417,11 @@ const UsersData: React.FC = () => {
                      <tr key={p.id} className="hover:bg-purple-50/50 transition-colors group">
                        <td className="px-6 py-3"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">{p.avatar_url ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs font-bold">{p.full_name?.charAt(0)}</div>}</div><div><div className="font-bold text-gray-800">{p.full_name}</div><div className="text-xs text-gray-500 font-mono">{p.nip}</div></div></div></td>
                        <td className="px-6 py-3"><PasswordCell password={p.password_info} /></td>
-                       <td className="px-6 py-3">{p.role === 'admin' ? <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 px-2 py-1 rounded-lg text-xs font-bold"><Shield size={12} /> Admin</span> : <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded-lg text-xs font-bold">User</span>}</td>
+                       <td className="px-6 py-3">{p.role === 'admin' ? <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 px-2 py-1 rounded-lg text-xs font-bold"><Shield size={12} /> Admin</span> : p.role === 'operator' ? <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 px-2 py-1 rounded-lg text-xs font-bold"><UserCog size={12} /> Operator</span> : p.role === 'pembina_ekstra' ? <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-1 rounded-lg text-xs font-bold"><Trophy size={12} /> Pembina Ekstra</span> : <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded-lg text-xs font-bold">User (Guru)</span>}</td>
                        <td className="px-6 py-3 text-gray-600 max-w-xs truncate" title={p.mengajar_mapel}>{p.mengajar_mapel ? <div className="flex flex-wrap gap-1">{p.mengajar_mapel.split(',').map((m, i) => <span key={i} className="inline-flex items-center gap-1 bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-[10px] font-bold border border-purple-100">{m.trim()}</span>)}</div> : <span className="text-gray-300 italic">Belum diisi</span>}</td>
                        <td className="px-6 py-3">{p.wali_kelas ? <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 px-2 py-1 rounded-lg text-xs font-bold"><GraduationCap size={12} /> {p.wali_kelas}</span> : <span className="text-gray-300">-</span>}</td>
                        
-                       <td className="px-6 py-3 text-center"><div className="flex justify-center gap-2"><button onClick={() => handleOpenReset(p)} className="p-2 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-100 transition-colors border border-yellow-100" title="Reset Password"><KeyRound size={16} /></button><button onClick={() => handleEditClick(p)} className="p-2 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-colors border border-purple-100" title="Edit Data Akademik"><Edit size={16} /></button></div></td>
+                       <td className="px-6 py-3 text-center"><div className="flex justify-center gap-2"><button onClick={() => handleOpenReset(p)} className="p-2 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-100 transition-colors border border-yellow-100" title="Reset Password"><KeyRound size={16} /></button><button onClick={() => handleEditClick(p)} className="p-2 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-colors border border-purple-100" title="Edit Data Akademik"><Edit size={16} /></button><button onClick={() => handleDeleteUser(p)} className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-colors border border-rose-100" title="Hapus User"><Trash2 size={16} /></button></div></td>
                      </tr>
                    ))
                  )}
@@ -524,28 +614,53 @@ const UsersData: React.FC = () => {
                             </div>
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">Role</label>
-                                <select className="w-full border border-gray-300 rounded-xl p-3 bg-white focus:ring-2 focus:ring-green-500" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}><option value="user">User (Guru)</option><option value="operator">Operator</option><option value="admin">Administrator</option></select>
+                                <select className="w-full border border-gray-300 rounded-xl p-3 bg-white focus:ring-2 focus:ring-green-500" value={newUser.role} onChange={e => {
+                                    const val = e.target.value;
+                                    if (val === 'pembina_ekstra') {
+                                        setNewUser({...newUser, role: val, mapel: '', waliKelas: ''});
+                                    } else {
+                                        setNewUser({...newUser, role: val});
+                                    }
+                                }}>
+                                    <option value="user">User (Guru)</option>
+                                    <option value="pembina_ekstra">Pembina Ekstra</option>
+                                    <option value="operator">Operator</option>
+                                    <option value="admin">Administrator</option>
+                                </select>
                             </div>
-                            <div className="relative">
-                                <label className="block text-sm font-bold text-gray-700 mb-1">Mata Pelajaran (Multi-Select)</label>
-                                <button onClick={() => setIsMapelDropdownOpen(!isMapelDropdownOpen)} className="w-full text-left border border-gray-300 rounded-xl p-3 bg-white focus:ring-2 focus:ring-green-500 flex justify-between items-center"><span className={`truncate ${!newUser.mapel ? 'text-gray-400' : 'text-gray-800'}`}>{newUser.mapel || "-- Pilih Mata Pelajaran --"}</span><ChevronDown size={16} className="text-gray-400" /></button>
-                                {isMapelDropdownOpen && (<div className="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto p-1 custom-scrollbar">{subjectsList.length === 0 ? <div className="p-3 text-center text-gray-400 text-xs">Belum ada data Master Mapel.</div> : subjectsList.map((subj, idx) => { const isSelected = newUser.mapel.includes(subj); return (<div key={idx} onClick={() => toggleMapelSelection(subj, false)} className={`flex items-center justify-between p-3 rounded-lg cursor-pointer text-sm mb-1 transition-colors ${isSelected ? 'bg-green-50 text-green-700 font-bold' : 'hover:bg-gray-50 text-gray-700'}`}><span>{subj}</span>{isSelected && <Check size={16} className="text-green-600"/>}</div>); })}</div>)}
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-1">Wali Kelas</label>
-                                <select className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-green-500 bg-white" value={newUser.waliKelas} onChange={e => {
-    const val = e.target.value;
-    let newMapel = newUser.mapel;
-    if (val) {
-        const mapels = newMapel ? newMapel.split(',').map(m => m.trim()) : [];
-        if (!mapels.includes('Sabtu bersama Wali Kelas')) {
-            mapels.push('Sabtu bersama Wali Kelas');
-            newMapel = mapels.join(', ');
-        }
-    }
-    setNewUser({...newUser, waliKelas: val, mapel: newMapel});
-}}><option value="">-- Bukan Wali Kelas --</option>{availableClasses.map(k => <option key={k} value={k}>{k}</option>)}</select>
-                            </div>
+
+                            {newUser.role === 'pembina_ekstra' ? (
+                                <div className="p-3.5 bg-purple-50 rounded-xl border border-purple-200 text-xs text-purple-800 font-medium flex items-center gap-2.5">
+                                    <Trophy size={18} className="text-purple-600 shrink-0" />
+                                    <div>
+                                        <p className="font-bold text-purple-900">Role Pembina Ekstra</p>
+                                        <p className="text-[11px] text-purple-700 mt-0.5">Bukan Guru Mata Pelajaran dan bukan Wali Kelas.</p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="relative">
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">Mata Pelajaran (Multi-Select)</label>
+                                        <button onClick={() => setIsMapelDropdownOpen(!isMapelDropdownOpen)} className="w-full text-left border border-gray-300 rounded-xl p-3 bg-white focus:ring-2 focus:ring-green-500 flex justify-between items-center"><span className={`truncate ${!newUser.mapel ? 'text-gray-400' : 'text-gray-800'}`}>{newUser.mapel || "-- Pilih Mata Pelajaran --"}</span><ChevronDown size={16} className="text-gray-400" /></button>
+                                        {isMapelDropdownOpen && (<div className="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto p-1 custom-scrollbar">{subjectsList.length === 0 ? <div className="p-3 text-center text-gray-400 text-xs">Belum ada data Master Mapel.</div> : subjectsList.map((subj, idx) => { const isSelected = newUser.mapel.includes(subj); return (<div key={idx} onClick={() => toggleMapelSelection(subj, false)} className={`flex items-center justify-between p-3 rounded-lg cursor-pointer text-sm mb-1 transition-colors ${isSelected ? 'bg-green-50 text-green-700 font-bold' : 'hover:bg-gray-50 text-gray-700'}`}><span>{subj}</span>{isSelected && <Check size={16} className="text-green-600"/>}</div>); })}</div>)}
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">Wali Kelas</label>
+                                        <select className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-green-500 bg-white" value={newUser.waliKelas} onChange={e => {
+            const val = e.target.value;
+            let newMapel = newUser.mapel;
+            if (val) {
+                const mapels = newMapel ? newMapel.split(',').map(m => m.trim()) : [];
+                if (!mapels.includes('Sabtu bersama Wali Kelas')) {
+                    mapels.push('Sabtu bersama Wali Kelas');
+                    newMapel = mapels.join(', ');
+                }
+            }
+            setNewUser({...newUser, waliKelas: val, mapel: newMapel});
+        }}><option value="">-- Bukan Wali Kelas --</option>{availableClasses.map(k => <option key={k} value={k}>{k}</option>)}</select>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
                     <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end flex-shrink-0">

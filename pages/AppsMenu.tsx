@@ -3,31 +3,60 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
+import { showAlert } from '../utils/alert';
 import { 
-  ChevronRight, BookOpenText, TrendingUp, UserCheck, ShieldAlert, ScanLine, Compass, Database, UserCog, CalendarRange, GraduationCap, Settings, UserMinus, Keyboard, Sun
+  ChevronRight, BookOpenText, TrendingUp, UserCheck, ShieldAlert, ScanLine, Compass, Database, UserCog, CalendarRange, GraduationCap, Settings, UserMinus, Keyboard, Sun, Lock
 } from 'lucide-react';
 
 const AppsMenu: React.FC = () => {
   const navigate = useNavigate();
-  const { isAdmin, profile, academicYear, semester } = useAuth();
+  const { isAdmin, profile, isKbmRestricted } = useAuth();
 
   // Logic to identify Dhuha Teacher
   const isDhuhaTeacher = profile?.mengajar_mapel?.toLowerCase().includes('dhuha');
 
-  const AppCard = ({ label, subLabel, icon: Icon, path, gradientClass, shadowColor = '' }: any) => {
+  const AppCard = ({ label, subLabel, icon: Icon, path, gradientClass, shadowColor = '', isLocked = false }: any) => {
     return (
     <button
-      onClick={() => navigate(path)}
-      className="bg-white dark:bg-slate-800 rounded-[2rem] p-6 flex flex-col items-center justify-center gap-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-none border border-slate-100 dark:border-slate-700 hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 w-full relative overflow-hidden group text-center min-h-[160px]"
+      onClick={() => {
+        if (isLocked) {
+          showAlert(`Menu ${label} dikunci. Akun NIP ${profile?.nip || '801-810'} hanya dapat mengakses Presensi QR.`);
+          return;
+        }
+        navigate(path);
+      }}
+      className={`bg-white dark:bg-slate-800 rounded-[2rem] p-6 flex flex-col items-center justify-center gap-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-none border transition-all duration-300 w-full relative overflow-hidden group text-center min-h-[160px] ${
+        isLocked 
+          ? 'border-red-200 dark:border-red-900/40 bg-slate-50/90 dark:bg-slate-800/60 opacity-80 cursor-not-allowed' 
+          : 'border-slate-100 dark:border-slate-700 hover:shadow-xl hover:-translate-y-1.5'
+      }`}
     >
-      <div className={`w-[76px] h-[76px] shrink-0 flex items-center justify-center rounded-[1.5rem] ${gradientClass} transition-transform duration-500 group-hover:scale-110 shadow-lg ${shadowColor}`}>
+      {isLocked && (
+        <div className="absolute top-3 right-3 bg-red-500 text-white p-1.5 rounded-full shadow-md z-20 flex items-center justify-center animate-pulse">
+          <Lock size={14} />
+        </div>
+      )}
+
+      <div className={`w-[76px] h-[76px] shrink-0 flex items-center justify-center rounded-[1.5rem] ${
+        isLocked ? 'bg-slate-400 dark:bg-slate-600 opacity-60' : gradientClass
+      } transition-transform duration-500 group-hover:scale-110 shadow-lg ${isLocked ? '' : shadowColor}`}>
          <Icon className="w-10 h-10 text-white" strokeWidth={2} />
       </div>
       
       <div className="relative z-10 w-full">
-          <h3 className="text-[14px] md:text-[16px] font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-2">{label}</h3>
+          <h3 className={`text-[14px] md:text-[16px] font-black tracking-tight leading-tight mb-2 ${
+            isLocked ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-white'
+          }`}>{label}</h3>
           <p className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-relaxed opacity-80">{subLabel?.replace(/\\n/g, ' ')}</p>
       </div>
+
+      {isLocked && (
+        <div className="absolute inset-0 bg-red-500/5 pointer-events-none flex items-center justify-center">
+          <span className="text-[10px] font-black uppercase text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/60 px-2.5 py-0.5 rounded-full border border-red-200 dark:border-red-800 shadow-xs translate-y-12">
+            Terkunci
+          </span>
+        </div>
+      )}
     </button>
   );
   };
@@ -89,12 +118,14 @@ const AppsMenu: React.FC = () => {
                         icon={BookOpenText} 
                         path="/jurnal" 
                         gradientClass="bg-gradient-to-br from-purple-500 to-purple-700" 
+                        isLocked={isKbmRestricted}
                     />
                     <AppCard 
                         label="Jadwalku" subLabel="JADWAL\nMENGAJAR" shadowColor="shadow-[0_8px_16px_rgba(99,102,241,0.3)]"
                         icon={Compass} 
                         path="/jadwal" 
                         gradientClass="bg-gradient-to-br from-indigo-400 to-indigo-600" 
+                        isLocked={isKbmRestricted}
                     />
                     {isDhuhaTeacher && (
                       <AppCard 
@@ -102,6 +133,7 @@ const AppsMenu: React.FC = () => {
                           icon={Sun} 
                           path="/rekap-dhuha" 
                           gradientClass="bg-gradient-to-br from-purple-500 to-purple-700" 
+                          isLocked={isKbmRestricted}
                       />
                     )}
                     <AppCard 
@@ -109,30 +141,35 @@ const AppsMenu: React.FC = () => {
                         icon={UserCheck} 
                         path="/rekap-absensi" 
                         gradientClass="bg-gradient-to-br from-emerald-400 to-green-600" 
+                        isLocked={isKbmRestricted}
                     />
                      <AppCard 
                         label="Ketidakhadiran" subLabel="UNTUK\nRAPOR" shadowColor="shadow-[0_8px_16px_rgba(244,63,94,0.3)]"
                         icon={UserMinus} 
                         path="/absensi-rapor" 
                         gradientClass="bg-gradient-to-br from-red-400 to-rose-600" 
+                        isLocked={isKbmRestricted}
                     />
                     <AppCard 
                         label="Laporan" subLabel="CETAK\nJURNAL" shadowColor="shadow-[0_8px_16px_rgba(245,158,11,0.3)]"
                         icon={TrendingUp} 
                         path="/laporan" 
                         gradientClass="bg-gradient-to-br from-amber-400 to-orange-500" 
+                        isLocked={isKbmRestricted}
                     />
                     <AppCard 
                         label="Pelanggaran" subLabel="TEMUAN DI\nLUAR KBM" shadowColor="shadow-[0_8px_16px_rgba(239,68,68,0.3)]"
                         icon={ShieldAlert} 
                         path="/kedisiplinan" 
                         gradientClass="bg-gradient-to-br from-orange-500 to-red-600" 
+                        isLocked={isKbmRestricted}
                     />
                     <AppCard 
                         label="Presensi QR" subLabel="SCAN\nKARTU" shadowColor="shadow-[0_8px_16px_rgba(71,85,105,0.3)]"
                         icon={ScanLine} 
                         path="/qr" 
                         gradientClass="bg-gradient-to-br from-slate-600 to-slate-800" 
+                        isLocked={false}
                     />
                 </>
                 )}

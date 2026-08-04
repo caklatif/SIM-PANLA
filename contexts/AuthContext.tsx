@@ -4,12 +4,33 @@ import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { Session } from '@supabase/supabase-js';
 import { Profile } from '../types';
 
+export const isKbmRestrictedUser = (profile?: Profile | null, sessionEmail?: string | null): boolean => {
+  if (profile?.nip) {
+    const cleanNip = profile.nip.toString().replace(/[^0-9]/g, '');
+    const num = parseInt(cleanNip, 10);
+    if (!isNaN(num) && num >= 801 && num <= 810) {
+      return true;
+    }
+  }
+
+  if (sessionEmail) {
+    const userPart = sessionEmail.split('@')[0].replace(/[^0-9]/g, '');
+    const num = parseInt(userPart, 10);
+    if (!isNaN(num) && num >= 801 && num <= 810) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   isLoading: boolean;
   isAdmin: boolean;
   isOperator: boolean;
+  isKbmRestricted: boolean;
   signIn: (userId: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   academicYear: string;
@@ -195,6 +216,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSession(null);
   };
 
+  const isKbmRestricted = isKbmRestrictedUser(profile, session?.user?.email);
+
   return (
     <AuthContext.Provider value={{ 
       session, 
@@ -204,6 +227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signOut,
       isAdmin: profile?.role === 'admin' || session?.user?.email === '112233@sekolah.id',
       isOperator: profile?.role === 'operator',
+      isKbmRestricted,
       academicYear,
         semester,
         semesterStart,

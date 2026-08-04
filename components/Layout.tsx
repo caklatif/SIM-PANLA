@@ -2,16 +2,17 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getWIBISOString } from '../utils/dateUtils';
+import { showAlert } from '../utils/alert';
 import {  Bell, CheckCircle2, XCircle, X , LayoutGrid } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { LogOut, LayoutDashboard, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, Activity, Sunset, ArrowUp, AlertCircle, Settings, Database, Users, GraduationCap, Upload, Edit3, Calendar } from 'lucide-react';
+import { LogOut, LayoutDashboard, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, Activity, Sunset, ArrowUp, AlertCircle, Settings, Database, Users, GraduationCap, Upload, Edit3, Calendar, Scan } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TeacherLoginSplash } from './TeacherLoginSplash';
 import { AnimatePresence } from 'motion/react';
 
 // CHANGED: Default collapsed is now true for all pages
 export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; collapsed?: boolean }> = ({ children, showNav = true, collapsed = true }) => {
-  const { signOut, profile, isOperator, isAdmin, academicYear, semester, activeScheduleVersion } = useAuth();
+  const { signOut, profile, isOperator, isAdmin, isKbmRestricted, academicYear, semester, activeScheduleVersion } = useAuth();
     const navigate = useNavigate();
   const location = useLocation();
   
@@ -217,15 +218,15 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
             onClick={() => navigate(path)}
             className={`relative flex items-center justify-center h-12 rounded-full transition-all duration-500 ease-out overflow-hidden ${
                 isActive 
-                ? 'flex-1 bg-purple-500 text-white shadow-lg shadow-purple-200/50 dark:shadow-none' 
-                : 'w-12 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-500'
+                ? 'flex-1 bg-purple-600 text-white px-4 shadow-lg shadow-purple-200/50 dark:shadow-none' 
+                : 'w-12 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30'
             }`}
           >
-              <div className="flex items-center justify-center gap-3">
-                  <Icon size={22} strokeWidth={isActive ? 2.5 : 2} className="flex-shrink-0" />
+              <div className="flex items-center justify-center gap-2">
+                  <Icon size={22} strokeWidth={isActive ? 2.5 : 2} className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-purple-600 dark:text-purple-400'}`} />
                   
                   <span className={`text-sm font-semibold whitespace-nowrap transition-all duration-500 ${
-                      isActive ? 'opacity-100 max-w-[100px] translate-x-0' : 'opacity-0 max-w-0 -translate-x-4 absolute'
+                      isActive ? 'opacity-100 max-w-[120px] translate-x-0 text-white' : 'opacity-0 max-w-0 -translate-x-4 absolute'
                   }`}>
                       {label}
                   </span>
@@ -271,6 +272,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                     <>
                         <NavItem path="/dashboard" label="Beranda" icon={LayoutDashboard} />
                         <NavItem path="/operator-dashboard" label="Monitor KBM" icon={MonitorPlay} />
+                        <NavItem path="/qr" label="Presensi QR" icon={Scan} />
                         <NavItem path="/penyimpanan" label="Buat T.A" icon={Database} />
                         <NavItem path="/settings" label="Pengaturan" icon={Settings} />
                         <div className="pt-4 pb-1">
@@ -286,6 +288,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                 ) : isOperator ? (
                     <>
                         <NavItem path="/operator-dashboard" label="Dashboard KBM" icon={MonitorPlay} />
+                        <NavItem path="/qr" label="Presensi QR" icon={Scan} />
                         <NavItem path="/profile" label="Profil Saya" icon={User} />
                     </>
                 ) : (
@@ -293,6 +296,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                         <NavItem path="/dashboard" label="Beranda" icon={LayoutDashboard} />
                         {isHeadmaster && <NavItem path="/kinerja" label="Kinerja" icon={Activity} />}
                         {!isHeadmaster && <NavItem path="/apps" label="KBM" icon={Grid} />}
+                        <NavItem path="/qr" label="Presensi QR" icon={Scan} />
                         {isHeadmaster && <NavItem path="/kedisiplinan" label="Kedisiplinan" icon={Siren} />}
                         {isDhuhaTeacher && <NavItem path="/rekap-dhuha" label="Rekap Dhuha" icon={Sunset} />}
                         <NavItem path="/profile" label="Profil Saya" icon={User} />
@@ -559,7 +563,14 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                         {notifications.map((n, i) => (
                             <button 
                                 key={i} 
-                                onClick={() => { setShowNotifModal(false); navigate('/jurnal', { state: { scheduleId: n.id } }); }}
+                                onClick={() => { 
+                                    if (isKbmRestricted) {
+                                        showAlert(`Fitur Isi Jurnal dikunci. Akun NIP ${profile?.nip || '801-810'} hanya dapat mengakses Presensi QR.`);
+                                        return;
+                                    }
+                                    setShowNotifModal(false); 
+                                    navigate('/jurnal', { state: { scheduleId: n.id } }); 
+                                }}
                                 className="w-full flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl border border-slate-100 dark:border-slate-600 transition-colors text-left group"
                             >
                                 <div>

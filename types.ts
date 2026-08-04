@@ -2,7 +2,7 @@ export interface Profile {
   id: string;
   nip: string;
   full_name: string;
-  role: 'admin' | 'user' | 'operator';
+  role: 'admin' | 'user' | 'operator' | 'pembina_ekstra';
   mengajar_mapel?: string;
   wali_kelas?: string;
   avatar_url?: string;
