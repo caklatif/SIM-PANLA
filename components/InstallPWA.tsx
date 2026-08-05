@@ -139,6 +139,12 @@ export default function InstallPWA() {
           <img 
             src="/pwa-192x192.png" 
             alt="SIM-PANLA Logo" 
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              if (target.src !== 'https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0') {
+                target.src = 'https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0';
+              }
+            }}
             className="w-10 h-10 rounded-xl object-contain bg-purple-50 dark:bg-purple-950 p-0.5 border border-purple-200 dark:border-purple-800 shrink-0" 
           />
           <div className="flex-1 min-w-0">
@@ -181,7 +187,17 @@ export default function InstallPWA() {
             </button>
 
             <div className="flex items-center gap-3 mb-4">
-              <img src="/pwa-192x192.png" alt="Logo" className="w-12 h-12 rounded-2xl p-0.5 bg-purple-50 border border-purple-200" />
+              <img 
+                src="/pwa-192x192.png" 
+                alt="Logo" 
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  if (target.src !== 'https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0') {
+                    target.src = 'https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0';
+                  }
+                }}
+                className="w-12 h-12 rounded-2xl p-0.5 bg-purple-50 border border-purple-200 shrink-0" 
+              />
               <div>
                 <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
                   Install di iPhone / iPad
@@ -231,7 +247,17 @@ export default function InstallPWA() {
             </button>
 
             <div className="flex items-center gap-3 mb-4">
-              <img src="/pwa-192x192.png" alt="SIM-PANLA Logo" className="w-12 h-12 rounded-2xl p-0.5 bg-purple-50 border border-purple-200 shrink-0" />
+              <img 
+                src="/pwa-192x192.png" 
+                alt="SIM-PANLA Logo" 
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  if (target.src !== 'https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0') {
+                    target.src = 'https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0';
+                  }
+                }}
+                className="w-12 h-12 rounded-2xl p-0.5 bg-purple-50 border border-purple-200 shrink-0" 
+              />
               <div>
                 <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
                   Panduan Install SIM-PANLA
