@@ -7,7 +7,8 @@ import {
   Scan, Camera, Keyboard, CheckCircle2, AlertCircle, Clock, Users, 
   Search, Printer, Download, Trash2, RefreshCw, Volume2, VolumeX, 
   Sparkles, GraduationCap, Sun, Check, ArrowRight, ShieldCheck, X,
-  Trophy, Lock, UserCheck, ShieldAlert, UserCog, Save, CheckSquare, Square
+  Trophy, Lock, UserCheck, ShieldAlert, UserCog, Save, CheckSquare, Square,
+  FlipHorizontal, Calendar, FileText, Filter
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { showAlert, showConfirm } from '../utils/alert';
@@ -81,16 +82,36 @@ export default function PresensiQR() {
     : [];
 
   // Mode & Tabs
-  const [activeTab, setActiveTab] = useState<'scan' | 'history' | 'cards' | 'pembina'>('scan');
+  const [activeTab, setActiveTab] = useState<'scan' | 'history' | 'rekap' | 'cards' | 'pembina'>('scan');
   const [presensiMode, setPresensiMode] = useState<PresensiMode>('harian');
   const [selectedEkstra, setSelectedEkstra] = useState<string>(allowedEkstraForUser[0] || '');
 
-  // Sync selectedEkstra when allowedEkstraForUser changes
+  // Rekap Laporan Ekstra State
+  const [rekapSelectedEkstra, setRekapSelectedEkstra] = useState<string>(() => {
+    return allowedEkstraForUser[0] || 'Tahfidz';
+  });
+  const [rekapMonth, setRekapMonth] = useState<string>(() => {
+    const d = new Date();
+    const yr = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    return `${yr}-${mo}`;
+  });
+  const [rekapLogs, setRekapLogs] = useState<any[]>([]);
+  const [loadingRekap, setLoadingRekap] = useState<boolean>(false);
+  const [rekapSearch, setRekapSearch] = useState<string>('');
+  const [rekapClassFilter, setRekapClassFilter] = useState<string>('');
+  const [onlyParticipated, setOnlyParticipated] = useState<boolean>(true);
+
+  // Sync selectedEkstra & rekapSelectedEkstra when allowedEkstraForUser changes
   useEffect(() => {
     if (allowedEkstraForUser.length > 0 && !allowedEkstraForUser.includes(selectedEkstra)) {
       setSelectedEkstra(allowedEkstraForUser[0]);
     } else if (allowedEkstraForUser.length === 0) {
       setSelectedEkstra('');
+    }
+
+    if (allowedEkstraForUser.length > 0 && !allowedEkstraForUser.includes(rekapSelectedEkstra)) {
+      setRekapSelectedEkstra(allowedEkstraForUser[0]);
     }
   }, [allowedEkstraForUser]);
 
@@ -113,8 +134,22 @@ export default function PresensiQR() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualInput, setManualInput] = useState<string>('');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [isMirrored, setIsMirrored] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('simpanla_qr_mirror');
+      return saved !== null ? saved === 'true' : true;
+    } catch (e) {
+      return true;
+    }
+  });
   const lastScanTimeRef = useRef<number>(0);
   const [scanCooldown, setScanCooldown] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('simpanla_qr_mirror', String(isMirrored));
+    } catch (e) {}
+  }, [isMirrored]);
   
   // Last Scanned Result
   const [lastScannedStudent, setLastScannedStudent] = useState<{
@@ -182,42 +217,49 @@ export default function PresensiQR() {
   };
 
   // Audio Beep Generator using Web Audio API
-  const playBeep = (type: 'success' | 'warning' | 'error') => {
-    if (!soundEnabled) return;
+  const playBeep = (type: 'success' | 'warning' | 'error', forcePlay = false) => {
+    if (!soundEnabled && !forcePlay) return;
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
       
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
 
+      const now = ctx.currentTime;
+
       if (type === 'success') {
+        // High-pitched cheerful double chime (A5 to E6)
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
-        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.25);
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.setValueAtTime(1318.51, now + 0.08);
+        gain.gain.setValueAtTime(0.5, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+        osc.start(now);
+        osc.stop(now + 0.22);
       } else if (type === 'warning') {
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(440, ctx.currentTime);
-        osc.frequency.setValueAtTime(350, ctx.currentTime + 0.12);
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.3);
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.setValueAtTime(392.00, now + 0.1);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
+        osc.start(now);
+        osc.stop(now + 0.28);
       } else {
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(220, ctx.currentTime);
-        osc.frequency.setValueAtTime(180, ctx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.4, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.35);
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.setValueAtTime(180, now + 0.12);
+        gain.gain.setValueAtTime(0.5, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+        osc.start(now);
+        osc.stop(now + 0.35);
       }
     } catch (e) {
       console.warn('Audio feedback error:', e);
@@ -294,6 +336,221 @@ export default function PresensiQR() {
       fetchTeachers();
     }
   }, [isAdmin, activeTab]);
+
+  // Fetch Rekap Logs for Ekstrakurikuler
+  useEffect(() => {
+    if (activeTab === 'rekap' && rekapSelectedEkstra) {
+      fetchRekapLogs();
+    }
+  }, [activeTab, rekapSelectedEkstra, rekapMonth, academicYear]);
+
+  const fetchRekapLogs = async () => {
+    if (!rekapSelectedEkstra) return;
+    setLoadingRekap(true);
+    try {
+      let query = supabase
+        .from('qr_presensi_logs')
+        .select('*')
+        .eq('mode', 'ekstra')
+        .eq('subject', rekapSelectedEkstra);
+
+      if (rekapMonth !== 'all') {
+        const [yrStr, moStr] = rekapMonth.split('-');
+        const yr = parseInt(yrStr, 10);
+        const mo = parseInt(moStr, 10);
+        
+        const startDate = new Date(Date.UTC(yr, mo - 1, 1, 0, 0, 0)).toISOString();
+        const endDate = new Date(Date.UTC(yr, mo, 1, 0, 0, 0)).toISOString();
+        
+        query = query.gte('scanned_at', startDate).lt('scanned_at', endDate);
+      }
+
+      const { data, error } = await query.order('scanned_at', { ascending: true });
+
+      let fetchedLogs: any[] = data || [];
+
+      // Merge local scanHistory items from today if matching mode & subject
+      const todayLocalMatch = scanHistory.filter(
+        item => item.mode === 'ekstra' && item.subject === rekapSelectedEkstra
+      );
+
+      todayLocalMatch.forEach(localItem => {
+        const ts = localItem.timestamp;
+        if (rekapMonth === 'all' || ts.startsWith(rekapMonth)) {
+          const isAlreadyInFetched = fetchedLogs.some(
+            l => l.nisn === localItem.nisn && l.scanned_at.substring(0, 16) === ts.substring(0, 16)
+          );
+          if (!isAlreadyInFetched) {
+            fetchedLogs.push({
+              id: localItem.id,
+              student_id: localItem.id,
+              nisn: localItem.nisn,
+              student_name: localItem.studentName,
+              kelas: localItem.kelas,
+              mode: 'ekstra',
+              subject: localItem.subject,
+              status: localItem.status,
+              scanned_at: localItem.timestamp,
+            });
+          }
+        }
+      });
+
+      setRekapLogs(fetchedLogs);
+    } catch (err) {
+      console.error('Failed to fetch rekap logs:', err);
+    } finally {
+      setLoadingRekap(false);
+    }
+  };
+
+  // Process & Aggregate Rekap Summary per Student
+  const getRekapSummary = () => {
+    const summaryMap = new Map<string, {
+      nisn: string;
+      name: string;
+      kelas: string;
+      totalHadir: number;
+      totalTerlambat: number;
+      totalKehadiran: number;
+      datesSet: Set<string>;
+      datesFormattedList: string[];
+      lastScannedAt: string;
+    }>();
+
+    // Process logs
+    rekapLogs.forEach(log => {
+      const key = (log.nisn || log.student_name || '').trim();
+      if (!key) return;
+
+      if (!summaryMap.has(key)) {
+        const std = students.find(s => s.nisn === log.nisn || s.name === log.student_name);
+        summaryMap.set(key, {
+          nisn: log.nisn || std?.nisn || std?.nis || '-',
+          name: log.student_name || std?.name || 'Siswa',
+          kelas: log.kelas || std?.kelas || '-',
+          totalHadir: 0,
+          totalTerlambat: 0,
+          totalKehadiran: 0,
+          datesSet: new Set<string>(),
+          datesFormattedList: [],
+          lastScannedAt: log.scanned_at,
+        });
+      }
+
+      const item = summaryMap.get(key)!;
+      if (log.status === 'Terlambat') {
+        item.totalTerlambat += 1;
+      } else {
+        item.totalHadir += 1;
+      }
+      item.totalKehadiran += 1;
+
+      const d = new Date(log.scanned_at);
+      const dateOnly = d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const timeOnly = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      
+      const dayStr = d.toISOString().substring(0, 10);
+      item.datesSet.add(dayStr);
+      item.datesFormattedList.push(`${dateOnly} (${timeOnly})`);
+
+      if (new Date(log.scanned_at) > new Date(item.lastScannedAt)) {
+        item.lastScannedAt = log.scanned_at;
+      }
+    });
+
+    let resultList = Array.from(summaryMap.values());
+
+    // If user wants all students (including 0 attendance)
+    if (!onlyParticipated) {
+      students.forEach(std => {
+        const key = (std.nisn || std.name || '').trim();
+        if (key && !summaryMap.has(key)) {
+          resultList.push({
+            nisn: std.nisn || std.nis || '-',
+            name: std.name,
+            kelas: std.kelas,
+            totalHadir: 0,
+            totalTerlambat: 0,
+            totalKehadiran: 0,
+            datesSet: new Set<string>(),
+            datesFormattedList: [],
+            lastScannedAt: '-',
+          });
+        }
+      });
+    }
+
+    // Apply Search Filter
+    if (rekapSearch.trim()) {
+      const q = rekapSearch.toLowerCase().trim();
+      resultList = resultList.filter(
+        item =>
+          item.name.toLowerCase().includes(q) ||
+          item.nisn.toLowerCase().includes(q) ||
+          item.kelas.toLowerCase().includes(q)
+      );
+    }
+
+    // Apply Class Filter
+    if (rekapClassFilter) {
+      resultList = resultList.filter(item => item.kelas === rekapClassFilter);
+    }
+
+    // Sort by Kelas then Name
+    resultList.sort((a, b) => {
+      if (a.kelas !== b.kelas) return a.kelas.localeCompare(b.kelas);
+      return a.name.localeCompare(b.name);
+    });
+
+    return resultList;
+  };
+
+  // Helper for Month Label
+  const getRekapMonthLabel = (mVal: string) => {
+    if (mVal === 'all') return 'Semua Bulan (All-Time / Total Kehadiran)';
+    const [yr, mo] = mVal.split('-');
+    const monthNames = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const idx = parseInt(mo, 10) - 1;
+    return `${monthNames[idx] || mo} ${yr}`;
+  };
+
+  // Export Rekap CSV
+  const exportRekapCSV = () => {
+    const summary = getRekapSummary();
+    if (summary.length === 0) {
+      showAlert('Tidak ada data rekap untuk diexport.', 'Perhatian');
+      return;
+    }
+
+    const periodText = rekapMonth === 'all' ? 'Semua_Periode' : rekapMonth;
+    const fileName = `Rekap_Presensi_${rekapSelectedEkstra.replace(/\s+/g, '_')}_${periodText}.csv`;
+
+    const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Total Kehadiran', 'Tepat Waktu', 'Terlambat', 'Detail Tanggal Scan'];
+    const rows = summary.map((item, idx) => [
+      idx + 1,
+      `"${item.nisn}"`,
+      `"${item.name}"`,
+      `"${item.kelas}"`,
+      item.totalKehadiran,
+      item.totalHadir,
+      item.totalTerlambat,
+      `"${item.datesFormattedList.join(', ')}"`
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Save Pembina Ekstra Configuration
   const handleSavePembinaConfig = async (newList: PembinaEkstraItem[]) => {
@@ -730,6 +987,22 @@ export default function PresensiQR() {
               <span>Log Presensi Today ({scanHistory.length})</span>
             </button>
 
+            {/* Rekap Laporan Ekstrakurikuler */}
+            <button
+              onClick={() => {
+                setActiveTab('rekap');
+                stopCamera();
+              }}
+              className={`px-5 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 ${
+                activeTab === 'rekap'
+                  ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/40'
+                  : 'bg-white/5 hover:bg-white/10 text-slate-300'
+              }`}
+            >
+              <Trophy size={16} />
+              <span>Rekap Laporan Ekstra</span>
+            </button>
+
             {/* Kelola Pembina Ekstra - HANYA TAMPIL UNTUK ADMIN */}
             {isAdmin && (
               <button
@@ -906,34 +1179,79 @@ export default function PresensiQR() {
 
                   {/* Camera Scanner Viewfinder */}
                   <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm relative space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <div className={`w-3 h-3 rounded-full ${isScanning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
-                        <h3 className="font-extrabold text-slate-800 dark:text-white text-sm">
+                        <h3 className="font-extrabold text-slate-800 dark:text-white text-xs sm:text-sm">
                           {isScanning ? `Kamera Aktif — Presensi ${getModeLabel(presensiMode, selectedEkstra)}` : 'Kamera Non-Aktif'}
                         </h3>
                       </div>
 
-                      {isScanning ? (
+                      <div className="flex items-center gap-2">
+                        {/* Sound Beep Toggle & Test Button */}
                         <button
-                          onClick={stopCamera}
-                          className="px-3 py-1.5 bg-rose-100 dark:bg-rose-950/60 hover:bg-rose-200 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold transition-colors"
+                          type="button"
+                          onClick={() => {
+                            const nextState = !soundEnabled;
+                            setSoundEnabled(nextState);
+                            if (nextState) {
+                              playBeep('success', true);
+                            }
+                          }}
+                          title={soundEnabled ? "Suara Beep Scan Aktif (Klik untuk matikan)" : "Suara Beep Scan Non-Aktif (Klik untuk nyalakan)"}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                            soundEnabled 
+                              ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' 
+                              : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-600 hover:bg-slate-200'
+                          }`}
                         >
-                          Matikan Kamera
+                          {soundEnabled ? <Volume2 size={14} className="animate-pulse text-emerald-600 dark:text-emerald-400" /> : <VolumeX size={14} />}
+                          <span className="hidden sm:inline">{soundEnabled ? 'Beep ON' : 'Beep OFF'}</span>
                         </button>
-                      ) : (
+
+                        {/* Mirror Toggle Button */}
                         <button
-                          onClick={startCamera}
-                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-500/20 transition-all flex items-center gap-2"
+                          type="button"
+                          onClick={() => setIsMirrored(!isMirrored)}
+                          title={isMirrored ? "Kamera Cermin (Mirror) Aktif" : "Kamera Normal"}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                            isMirrored 
+                              ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800' 
+                              : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-200'
+                          }`}
                         >
-                          <Camera size={14} />
-                          <span>Nyalakan Kamera</span>
+                          <FlipHorizontal size={14} />
+                          <span className="hidden sm:inline">{isMirrored ? 'Cermin ON' : 'Cermin OFF'}</span>
                         </button>
-                      )}
+
+                        {isScanning ? (
+                          <button
+                            onClick={stopCamera}
+                            className="px-3 py-1.5 bg-rose-100 dark:bg-rose-950/60 hover:bg-rose-200 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold transition-colors"
+                          >
+                            Matikan Kamera
+                          </button>
+                        ) : (
+                          <button
+                            onClick={startCamera}
+                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-500/20 transition-all flex items-center gap-2"
+                          >
+                            <Camera size={14} />
+                            <span>Nyalakan Kamera</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Viewfinder Frame */}
                     <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-square max-w-sm mx-auto flex items-center justify-center border-2 border-purple-500/40">
+                      <style>{`
+                        #${scannerContainerId} video {
+                          transform: ${isMirrored ? 'scaleX(-1)' : 'none'} !important;
+                          -webkit-transform: ${isMirrored ? 'scaleX(-1)' : 'none'} !important;
+                          object-fit: cover !important;
+                        }
+                      `}</style>
                       <div id={scannerContainerId} className="w-full h-full object-cover"></div>
 
                       {scanCooldown && isScanning && (
@@ -1237,6 +1555,376 @@ export default function PresensiQR() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+          </div>
+        )}
+
+        {/* TAB REKAP & LAPORAN EKSTRAKURIKULER */}
+        {activeTab === 'rekap' && (
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm space-y-6">
+              
+              {/* Header & Actions */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-xs font-bold border border-amber-300 dark:border-amber-800 mb-2">
+                    <Trophy size={14} />
+                    <span>Laporan & Rekapitulasi Ekstrakurikuler</span>
+                  </div>
+                  <h3 className="text-xl font-black text-slate-800 dark:text-white">
+                    Rekap Presensi {rekapSelectedEkstra || 'Ekstrakurikuler'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {isPembina && !isAdmin 
+                      ? `Laporan khusus peserta & kehadiran ${rekapSelectedEkstra} untuk dikirimkan kepada Kepala Sekolah.`
+                      : `Pilih Ekstrakurikuler dan periode bulan untuk melihat & mendownload rekap kehadiran siswa.`}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={fetchRekapLogs}
+                    className="px-3 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
+                    title="Muat Ulang Data Scan"
+                  >
+                    <RefreshCw size={14} className={loadingRekap ? 'animate-spin' : ''} />
+                    <span>Refresh</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={exportRekapCSV}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Download size={14} />
+                    <span>Export Excel (CSV)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Printer size={14} />
+                    <span>Cetak Laporan Official (Print/PDF)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Filters Bar */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700">
+                {/* Ekstrakurikuler Selector */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Ekstrakurikuler:
+                  </label>
+                  {isPembina && !isAdmin && allowedEkstraForUser.length <= 1 ? (
+                    <div className="w-full px-3 py-2 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 rounded-xl text-xs font-extrabold text-amber-900 dark:text-amber-200 flex items-center justify-between">
+                      <span>{rekapSelectedEkstra}</span>
+                      <span className="text-[10px] bg-amber-200 dark:bg-amber-900 px-1.5 py-0.5 rounded text-amber-900 dark:text-amber-100">Dikunci Pembina</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={rekapSelectedEkstra}
+                      onChange={(e) => setRekapSelectedEkstra(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white"
+                    >
+                      {allowedEkstraForUser.length > 0 ? (
+                        allowedEkstraForUser.map(e => (
+                          <option key={e} value={e}>{e}</option>
+                        ))
+                      ) : (
+                        EKSTRA_LIST.map(e => (
+                          <option key={e} value={e}>{e}</option>
+                        ))
+                      )}
+                    </select>
+                  )}
+                </div>
+
+                {/* Month Periode Selector */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Periode / Bulan Rekap:
+                  </label>
+                  <select
+                    value={rekapMonth}
+                    onChange={(e) => setRekapMonth(e.target.value)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white"
+                  >
+                    <option value="all">Semua Bulan (All-Time Total)</option>
+                    {(() => {
+                      const now = new Date();
+                      const opts = [];
+                      const monthNames = [
+                        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+                        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+                      ];
+                      for (let i = 0; i < 12; i++) {
+                        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                        const yr = d.getFullYear();
+                        const mo = String(d.getMonth() + 1).padStart(2, '0');
+                        opts.push({ val: `${yr}-${mo}`, label: `${monthNames[d.getMonth()]} ${yr}` });
+                      }
+                      return opts.map(o => (
+                        <option key={o.val} value={o.val}>{o.label}</option>
+                      ));
+                    })()}
+                  </select>
+                </div>
+
+                {/* Search */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Pencarian Siswa:
+                  </label>
+                  <div className="relative">
+                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Cari nama / NISN..."
+                      value={rekapSearch}
+                      onChange={(e) => setRekapSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-800 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Class Filter */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    Filter Kelas:
+                  </label>
+                  <select
+                    value={rekapClassFilter}
+                    onChange={(e) => setRekapClassFilter(e.target.value)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white"
+                  >
+                    <option value="">Semua Kelas</option>
+                    {classes.map(c => (
+                      <option key={c} value={c}>Kelas {c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Toggle onlyParticipated */}
+              <div className="flex items-center justify-between pt-1">
+                <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={onlyParticipated}
+                    onChange={(e) => setOnlyParticipated(e.target.checked)}
+                    className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-300"
+                  />
+                  <span>Hanya tampilkan peserta yang pernah scan/hadir di {rekapSelectedEkstra}</span>
+                </label>
+
+                <div className="text-xs text-slate-500 font-medium">
+                  Periode: <strong className="text-amber-600 dark:text-amber-400">{getRekapMonthLabel(rekapMonth)}</strong>
+                </div>
+              </div>
+
+              {/* Statistics Cards */}
+              {(() => {
+                const summary = getRekapSummary();
+                const totalActiveStudents = summary.filter(s => s.totalKehadiran > 0).length;
+                const totalScans = rekapLogs.length;
+                const uniqueDatesCount = new Set(rekapLogs.map(l => l.scanned_at.substring(0, 10))).size;
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-amber-50 dark:bg-amber-950/40 p-4 rounded-2xl border border-amber-200 dark:border-amber-800">
+                      <div className="text-xs text-amber-800 dark:text-amber-300 font-bold flex items-center gap-1.5">
+                        <Users size={16} /> Total Peserta Aktif
+                      </div>
+                      <div className="text-2xl font-black text-amber-900 dark:text-amber-100 mt-1">
+                        {totalActiveStudents} <span className="text-xs font-normal text-amber-700 dark:text-amber-300">Siswa</span>
+                      </div>
+                      <div className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">Siswa yang pernah melakukan scan</div>
+                    </div>
+
+                    <div className="bg-purple-50 dark:bg-purple-950/40 p-4 rounded-2xl border border-purple-200 dark:border-purple-800">
+                      <div className="text-xs text-purple-800 dark:text-purple-300 font-bold flex items-center gap-1.5">
+                        <Calendar size={16} /> Total Pertemuan Ekstra
+                      </div>
+                      <div className="text-2xl font-black text-purple-900 dark:text-purple-100 mt-1">
+                        {uniqueDatesCount} <span className="text-xs font-normal text-purple-700 dark:text-purple-300">Hari Pelaksanaan</span>
+                      </div>
+                      <div className="text-[11px] text-purple-700 dark:text-purple-400 mt-1">Hari ditemukannya catatan presensi</div>
+                    </div>
+
+                    <div className="bg-emerald-50 dark:bg-emerald-950/40 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800">
+                      <div className="text-xs text-emerald-800 dark:text-emerald-300 font-bold flex items-center gap-1.5">
+                        <CheckCircle2 size={16} /> Total Scan Recorded
+                      </div>
+                      <div className="text-2xl font-black text-emerald-900 dark:text-emerald-100 mt-1">
+                        {totalScans} <span className="text-xs font-normal text-emerald-700 dark:text-emerald-300">Presensi</span>
+                      </div>
+                      <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1">Total seluruh akumulasi scan presensi</div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Rekap Table */}
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="px-4 py-3">No</th>
+                      <th className="px-4 py-3">NISN</th>
+                      <th className="px-4 py-3">Nama Siswa</th>
+                      <th className="px-4 py-3">Kelas</th>
+                      <th className="px-4 py-3 text-center">Total Kehadiran</th>
+                      <th className="px-4 py-3 text-center">Tepat Waktu</th>
+                      <th className="px-4 py-3 text-center">Terlambat</th>
+                      <th className="px-4 py-3">Rincian Tanggal Kehadiran</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {loadingRekap ? (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-8 text-center text-slate-400 italic">
+                          Mengambil data rekap presensi...
+                        </td>
+                      </tr>
+                    ) : getRekapSummary().length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-8 text-center text-slate-400 italic">
+                          Belum ada catatan scan presensi untuk {rekapSelectedEkstra} pada periode {getRekapMonthLabel(rekapMonth)}.
+                        </td>
+                      </tr>
+                    ) : (
+                      getRekapSummary().map((item, index) => (
+                        <tr key={item.nisn + index} className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                          <td className="px-4 py-3 font-bold text-slate-500">{index + 1}</td>
+                          <td className="px-4 py-3 font-mono font-bold text-purple-700 dark:text-purple-300">{item.nisn}</td>
+                          <td className="px-4 py-3 font-extrabold text-slate-900 dark:text-white">{item.name}</td>
+                          <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-300">Kelas {item.kelas}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="inline-block px-2.5 py-1 rounded-full font-black text-xs bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                              {item.totalKehadiran} Kali
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center font-bold text-emerald-600 dark:text-emerald-400">
+                            {item.totalHadir}
+                          </td>
+                          <td className="px-4 py-3 text-center font-bold text-rose-600 dark:text-rose-400">
+                            {item.totalTerlambat}
+                          </td>
+                          <td className="px-4 py-3 text-[11px] text-slate-600 dark:text-slate-400 max-w-xs leading-relaxed">
+                            {item.datesFormattedList.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {item.datesFormattedList.map((dt, dIdx) => (
+                                  <span key={dIdx} className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                                    {dt}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 italic">Belum Pernah Scan</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+
+            {/* Official Report Print Area (Visible only when Printing) */}
+            <div id="rekap-ekstra-print-area" className="hidden print:block p-8 bg-white text-black font-sans">
+              <style>{`
+                @media print {
+                  body * {
+                    visibility: hidden;
+                  }
+                  #rekap-ekstra-print-area, #rekap-ekstra-print-area * {
+                    visibility: visible;
+                  }
+                  #rekap-ekstra-print-area {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    background: #ffffff !important;
+                    color: #000000 !important;
+                  }
+                }
+              `}</style>
+
+              {/* Kop Laporan Header */}
+              <div className="text-center border-b-2 border-black pb-4 mb-6">
+                <h2 className="text-xl font-bold uppercase tracking-wider">UPT SMP NEGERI 8 PASURUAN</h2>
+                <h3 className="text-sm font-semibold uppercase text-slate-700">Laporan Rekapitulasi Presensi Ekstrakurikuler</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Sistem Informasi Management Presensi & Laporan (SIMPANLA)</p>
+              </div>
+
+              {/* Information Grid */}
+              <div className="grid grid-cols-2 gap-4 text-xs mb-6 border p-4 rounded">
+                <div>
+                  <div className="mb-1"><span className="font-bold">Kegiatan Ekstra:</span> {rekapSelectedEkstra}</div>
+                  <div className="mb-1"><span className="font-bold">Periode Laporan:</span> {getRekapMonthLabel(rekapMonth)}</div>
+                  <div className="mb-1"><span className="font-bold">Tahun Ajaran:</span> {academicYear || '2025/2026'}</div>
+                </div>
+                <div>
+                  <div className="mb-1"><span className="font-bold">Pembina Ekstra:</span> {assignedPembinaConfig?.nama || profile?.full_name || 'Pembina Ekstrakurikuler'}</div>
+                  <div className="mb-1"><span className="font-bold">NIP Pembina:</span> {assignedPembinaConfig?.nip || profile?.nip || '-'}</div>
+                  <div className="mb-1"><span className="font-bold">Tanggal Cetak:</span> {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                </div>
+              </div>
+
+              {/* Report Table */}
+              <table className="w-full text-xs border-collapse border border-slate-400 mb-8">
+                <thead>
+                  <tr className="bg-slate-100 text-black font-bold text-center">
+                    <th className="border border-slate-400 p-2 w-10">NO</th>
+                    <th className="border border-slate-400 p-2 w-28">NISN</th>
+                    <th className="border border-slate-400 p-2 text-left">NAMA SISWA</th>
+                    <th className="border border-slate-400 p-2 w-20">KELAS</th>
+                    <th className="border border-slate-400 p-2 w-24">TOTAL SCAN</th>
+                    <th className="border border-slate-400 p-2 text-left">RINCIAN TANGGAL KEHADIRAN</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {getRekapSummary().map((item, idx) => (
+                    <tr key={idx} className="border-b border-slate-300">
+                      <td className="border border-slate-400 p-2 text-center">{idx + 1}</td>
+                      <td className="border border-slate-400 p-2 text-center font-mono">{item.nisn}</td>
+                      <td className="border border-slate-400 p-2 font-bold">{item.name}</td>
+                      <td className="border border-slate-400 p-2 text-center">Kelas {item.kelas}</td>
+                      <td className="border border-slate-400 p-2 text-center font-bold">{item.totalKehadiran} Kali</td>
+                      <td className="border border-slate-400 p-2 text-xs">
+                        {item.datesFormattedList.join(', ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Tanda Tangan Section */}
+              <div className="flex justify-between items-end text-xs mt-12 pt-4">
+                <div className="text-center w-60">
+                  <p>Mengetahui,</p>
+                  <p className="font-bold">Kepala Sekolah</p>
+                  <div className="h-20"></div>
+                  <p className="font-bold underline">_________________________</p>
+                  <p>NIP. ....................................</p>
+                </div>
+
+                <div className="text-center w-60">
+                  <p>Pasuruan, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  <p className="font-bold">Pembina Ekstrakurikuler {rekapSelectedEkstra}</p>
+                  <div className="h-20"></div>
+                  <p className="font-bold underline">{assignedPembinaConfig?.nama || profile?.full_name || '....................................'}</p>
+                  <p>NIP. {assignedPembinaConfig?.nip || profile?.nip || '....................................'}</p>
+                </div>
+              </div>
             </div>
 
           </div>

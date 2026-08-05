@@ -38,6 +38,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=0" />
     <title>SIM-PANLA | Guru</title>
     <meta name="theme-color" content="#9333ea" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="SIM-PANLA" />
@@ -53,6 +54,18 @@
         window.deferredPWAInstallPrompt = e;
         window.dispatchEvent(new CustomEvent('pwa-prompt-available'));
       });
+
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(function(reg) {
+              console.log('✅ SIM-PANLA PWA ServiceWorker Registered:', reg.scope);
+            })
+            .catch(function(err) {
+              console.warn('⚠️ ServiceWorker Registration Failed:', err);
+            });
+        });
+      }
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

@@ -5,7 +5,7 @@ import { getWIBISOString } from '../utils/dateUtils';
 import { showAlert } from '../utils/alert';
 import {  Bell, CheckCircle2, XCircle, X , LayoutGrid } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { LogOut, LayoutDashboard, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, Activity, Sunset, ArrowUp, AlertCircle, Settings, Database, Users, GraduationCap, Upload, Edit3, Calendar, Scan } from 'lucide-react';
+import { LogOut, LayoutDashboard, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, Activity, Sunset, ArrowUp, AlertCircle, Settings, Database, Users, GraduationCap, Upload, Edit3, Calendar, Scan, Download } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TeacherLoginSplash } from './TeacherLoginSplash';
 import { AnimatePresence } from 'motion/react';
@@ -300,6 +300,14 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                         {isHeadmaster && <NavItem path="/kedisiplinan" label="Kedisiplinan" icon={Siren} />}
                         {isDhuhaTeacher && <NavItem path="/rekap-dhuha" label="Rekap Dhuha" icon={Sunset} />}
                         <NavItem path="/profile" label="Profil Saya" icon={User} />
+                        <button
+                          onClick={() => window.dispatchEvent(new CustomEvent('open-pwa-install-modal'))}
+                          className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group relative text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40 font-bold text-xs ${collapsed ? 'justify-center' : ''}`}
+                          title="Install Aplikasi SIM-PANLA (PWA)"
+                        >
+                          <Download size={20} className="shrink-0" />
+                          {!collapsed && <span>Install App PWA</span>}
+                        </button>
                     </>
                 )}
             </div>
@@ -439,7 +447,14 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                   )}
                   <span>{formattedDate}</span>
                   <span className="font-mono text-purple-600 dark:text-purple-400 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">{formattedTime} WIB</span>
-                  <button onClick={handleLogoutClick} className="w-9 h-9 ml-2 bg-slate-50 dark:bg-slate-700 rounded-full flex items-center justify-center text-gray-500 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors border border-slate-200 dark:border-slate-600 flex-shrink-0">
+                  <button 
+                    onClick={() => window.dispatchEvent(new CustomEvent('open-pwa-install-modal'))} 
+                    className="w-9 h-9 bg-purple-50 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 rounded-full flex items-center justify-center border border-purple-200 dark:border-purple-800 transition-transform hover:scale-105 active:scale-95 shadow-sm"
+                    title="Install Aplikasi SIM-PANLA (PWA)"
+                  >
+                    <Download size={17} />
+                  </button>
+                  <button onClick={handleLogoutClick} className="w-9 h-9 ml-1 bg-slate-50 dark:bg-slate-700 rounded-full flex items-center justify-center text-gray-500 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors border border-slate-200 dark:border-slate-600 flex-shrink-0">
                       <LogOut size={18}/>
                   </button>
               </div>
