@@ -113,6 +113,8 @@ export default function PresensiQR() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualInput, setManualInput] = useState<string>('');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const lastScanTimeRef = useRef<number>(0);
+  const [scanCooldown, setScanCooldown] = useState<boolean>(false);
   
   // Last Scanned Result
   const [lastScannedStudent, setLastScannedStudent] = useState<{
@@ -378,14 +380,32 @@ export default function PresensiQR() {
         aspectRatio: 1.0,
       };
 
-      await html5QrCode.start(
-        { facingMode: 'environment' },
-        config,
-        (decodedText) => {
-          handleScanSuccess(decodedText);
-        },
-        () => {}
-      );
+      try {
+        await html5QrCode.start(
+          { facingMode: 'environment' },
+          config,
+          (decodedText) => {
+            handleScanSuccess(decodedText);
+          },
+          () => {}
+        );
+      } catch (firstErr) {
+        console.warn('Facing mode environment failed, trying available camera devices:', firstErr);
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length > 0) {
+          const backCam = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear')) || devices[devices.length - 1];
+          await html5QrCode.start(
+            backCam.id,
+            config,
+            (decodedText) => {
+              handleScanSuccess(decodedText);
+            },
+            () => {}
+          );
+        } else {
+          throw firstErr;
+        }
+      }
 
       setIsScanning(true);
     } catch (err: any) {
@@ -417,6 +437,18 @@ export default function PresensiQR() {
   // Process Scanned NISN / Raw Code
   const handleScanSuccess = (rawValue: string) => {
     if (!rawValue) return;
+
+    // Check 1-second cooldown delay between consecutive scans
+    const nowTime = Date.now();
+    if (nowTime - lastScanTimeRef.current < 1000) {
+      return; // Jeda 1 detik belum berlalu, abaikan scan ini
+    }
+    lastScanTimeRef.current = nowTime;
+
+    setScanCooldown(true);
+    setTimeout(() => {
+      setScanCooldown(false);
+    }, 1000);
 
     if (presensiMode === 'ekstra' && allowedEkstraForUser.length === 0) {
       playBeep('error');
@@ -903,6 +935,13 @@ export default function PresensiQR() {
                     {/* Viewfinder Frame */}
                     <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-square max-w-sm mx-auto flex items-center justify-center border-2 border-purple-500/40">
                       <div id={scannerContainerId} className="w-full h-full object-cover"></div>
+
+                      {scanCooldown && isScanning && (
+                        <div className="absolute top-3 inset-x-3 bg-amber-500/90 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-lg backdrop-blur-xs text-center flex items-center justify-center gap-1.5 animate-pulse z-20">
+                          <Clock size={14} />
+                          <span>Jeda 1 detik untuk scan berikutnya...</span>
+                        </div>
+                      )}
 
                       {!isScanning && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-900/90 text-slate-300">
