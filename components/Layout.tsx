@@ -257,7 +257,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                   />
                  {!collapsed && (
                      <div className="animate-fade-in">
-                        <h2 className="text-sm font-extrabold text-slate-800 dark:text-white leading-none">UPT SMPN 1</h2>
+                        <h2 className="text-sm font-extrabold text-slate-800 dark:text-white leading-none">UPT SMPN 8 PASURUAN</h2>
                         <p className="text-xs text-gray-500 dark:text-slate-400 mt-1 font-medium">SIM-PANLA Online</p>
                      </div>
                  )}
@@ -371,8 +371,9 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                        alt="Logo"
                      />
                      <div>
-                         <h1 className="text-[10px] font-extrabold text-slate-900 dark:text-white leading-tight" style={{ fontSize: '14px' }}>SISTEM INFORMASI<br/>KEGIATAN BELAJAR MENGAJAR</h1>
-                         <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase mt-0.5 tracking-wide" style={{ fontSize: '18px', marginRight: '0px', marginBottom: '-16px' }}>
+                         <h1 className="text-xs font-black text-slate-900 dark:text-white leading-tight uppercase">SISTEM INFORMASI MANAJEMEN</h1>
+                         <p className="text-[10px] font-bold text-purple-700 dark:text-purple-300 uppercase leading-none mt-0.5">PEMBELAJARAN SMP NEGERI 8 PASURUAN</p>
+                         <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase mt-1 tracking-wide">
                             SEMESTER {semester} | T.A {academicYear}
                          </p>
                      </div>
