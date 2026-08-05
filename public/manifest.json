@@ -1,9 +1,9 @@
 {
-  "name": "SIM-PANLA | Jurnal & Monitoring KBM",
+  "name": "SIM-PANLA | UPT SMP Negeri 8 Pasuruan",
   "short_name": "SIM-PANLA",
   "description": "Sistem Informasi Manajemen Presensi dan Jurnal UPT SMP Negeri 8 Pasuruan",
   "start_url": "/",
-  "id": "/",
+  "id": "sim-panla-pwa",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
@@ -40,7 +40,14 @@
     {
       "src": "/apple-touch-icon-180x180.png",
       "sizes": "180x180",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
