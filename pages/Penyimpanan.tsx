@@ -323,7 +323,6 @@ const Penyimpanan: React.FC = () => {
                             </div>
                         </div>
 
-
                     </div>
                     <div className="mt-8 text-xs text-gray-500 bg-gray-50 p-4 rounded-xl">
                         <strong>Catatan:</strong> "Tambah Tahun Ajaran Baru" digunakan untuk mendaftarkan tahun ajaran ke sistem. Sedangkan "Tahun Ajaran Aktif" digunakan untuk mengatur tahun ajaran default yang digunakan saat ini.

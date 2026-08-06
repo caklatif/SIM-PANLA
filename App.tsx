@@ -148,6 +148,14 @@ const App: React.FC = () => {
                </ProtectedRoute>
             } />
 
+            <Route path="/data-jurnal" element={
+               <ProtectedRoute>
+                  <RestrictedKbmRoute>
+                     <LaporanJurnal />
+                  </RestrictedKbmRoute>
+               </ProtectedRoute>
+            } />
+
              <Route path="/kedisiplinan" element={
                <ProtectedRoute>
                   <RestrictedKbmRoute>

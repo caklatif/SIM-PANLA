@@ -5,7 +5,7 @@ import { getWIBISOString } from '../utils/dateUtils';
 import { showAlert } from '../utils/alert';
 import {  Bell, CheckCircle2, XCircle, X , LayoutGrid } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { LogOut, Home, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, Activity, Sunset, ArrowUp, AlertCircle, Settings, Database, Users, GraduationCap, Upload, Edit3, Calendar, Scan, Download } from 'lucide-react';
+import { LogOut, Home, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, Activity, Sunset, ArrowUp, AlertCircle, Settings, Database, Users, GraduationCap, Upload, Edit3, Calendar, Scan, Download, BookOpen } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TeacherLoginSplash } from './TeacherLoginSplash';
 import { AnimatePresence } from 'motion/react';
@@ -273,6 +273,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                         <NavItem path="/dashboard" label="Beranda" icon={Home} />
                         <NavItem path="/operator-dashboard" label="Monitor KBM" icon={MonitorPlay} />
                         <NavItem path="/qr" label="Presensi QR" icon={Scan} />
+                        <NavItem path="/data-jurnal" label="Data Jurnal" icon={BookOpen} />
                         <NavItem path="/penyimpanan" label="Buat T.A" icon={Database} />
                         <NavItem path="/settings" label="Pengaturan" icon={Settings} />
                         <div className="pt-4 pb-1">
@@ -289,6 +290,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                     <>
                         <NavItem path="/operator-dashboard" label="Dashboard KBM" icon={MonitorPlay} />
                         <NavItem path="/qr" label="Presensi QR" icon={Scan} />
+                        <NavItem path="/data-jurnal" label="Data Jurnal" icon={BookOpen} />
                         <NavItem path="/profile" label="Profil Saya" icon={User} />
                     </>
                 ) : (
@@ -297,6 +299,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                         {isHeadmaster && <NavItem path="/kinerja" label="Kinerja" icon={Activity} />}
                         {!isHeadmaster && <NavItem path="/apps" label="KBM" icon={Grid} />}
                         <NavItem path="/qr" label="Presensi QR" icon={Scan} />
+                        <NavItem path="/data-jurnal" label="Data Jurnal" icon={BookOpen} />
                         {isHeadmaster && <NavItem path="/kedisiplinan" label="Kedisiplinan" icon={Siren} />}
                         {isDhuhaTeacher && <NavItem path="/rekap-dhuha" label="Rekap Dhuha" icon={Sunset} />}
                         <NavItem path="/profile" label="Profil Saya" icon={User} />
