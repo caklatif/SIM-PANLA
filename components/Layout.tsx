@@ -5,7 +5,7 @@ import { getWIBISOString } from '../utils/dateUtils';
 import { showAlert } from '../utils/alert';
 import {  Bell, CheckCircle2, XCircle, X , LayoutGrid } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { LogOut, LayoutDashboard, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, Activity, Sunset, ArrowUp, AlertCircle, Settings, Database, Users, GraduationCap, Upload, Edit3, Calendar, Scan, Download } from 'lucide-react';
+import { LogOut, Home, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, Activity, Sunset, ArrowUp, AlertCircle, Settings, Database, Users, GraduationCap, Upload, Edit3, Calendar, Scan, Download } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TeacherLoginSplash } from './TeacherLoginSplash';
 import { AnimatePresence } from 'motion/react';
@@ -270,7 +270,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                 
                 {isAdmin ? (
                     <>
-                        <NavItem path="/dashboard" label="Beranda" icon={LayoutDashboard} />
+                        <NavItem path="/dashboard" label="Beranda" icon={Home} />
                         <NavItem path="/operator-dashboard" label="Monitor KBM" icon={MonitorPlay} />
                         <NavItem path="/qr" label="Presensi QR" icon={Scan} />
                         <NavItem path="/penyimpanan" label="Buat T.A" icon={Database} />
@@ -293,7 +293,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                     </>
                 ) : (
                     <>
-                        <NavItem path="/dashboard" label="Beranda" icon={LayoutDashboard} />
+                        <NavItem path="/dashboard" label="Beranda" icon={Home} />
                         {isHeadmaster && <NavItem path="/kinerja" label="Kinerja" icon={Activity} />}
                         {!isHeadmaster && <NavItem path="/apps" label="KBM" icon={Grid} />}
                         <NavItem path="/qr" label="Presensi QR" icon={Scan} />
@@ -485,7 +485,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                 {/* Animated Glow Border */}
                 <div className="absolute inset-[-100%] z-0 animate-[spin_4s_linear_infinite]" style={{ background: 'conic-gradient(from 0deg, transparent 0 340deg, #9333ea 360deg)' }}></div>
                 <nav className="relative z-10 bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl rounded-full flex items-center p-2 gap-2 w-full h-full border border-slate-200/50 dark:border-slate-700/50 shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
-                <BottomNavItem path="/dashboard" label="Beranda" icon={LayoutDashboard} />
+                <BottomNavItem path="/dashboard" label="Beranda" icon={Home} />
 
                 {!isHeadmaster && (
                     <BottomNavItem path="/apps" label="KBM" icon={LayoutGrid} />
@@ -505,7 +505,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
       {showNav && isAdmin && (
            <div className="md:hidden fixed bottom-6 left-0 right-0 z-40 flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)]">
                 <nav className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center p-2 pointer-events-auto gap-2">
-                    <BottomNavItem path="/dashboard" label="Beranda" icon={LayoutDashboard} />
+                    <BottomNavItem path="/dashboard" label="Beranda" icon={Home} />
                     <BottomNavItem path="/penyimpanan" label="Buat T.A" icon={Database} />
                     <BottomNavItem path="/settings" label="Pengaturan" icon={Settings} />
                     <BottomNavItem path="/profile" label="Profil" icon={User} />
