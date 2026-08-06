@@ -299,8 +299,6 @@ const JurnalForm: React.FC = () => {
   const addNoteRow = (type: 'discipline' | 'activity') => { setNotesData(prev => ({ ...prev, [type]: [...prev[type], { category: '', studentIds: [], followUp: '', note: '' }] })); };
   const removeNoteRow = (type: 'discipline' | 'activity', index: number) => { setNotesData(prev => ({ ...prev, [type]: prev[type].filter((_, i) => i !== index) })); };
   const updateNoteRow = (type: 'discipline' | 'activity', index: number, field: keyof NoteItem, value: any) => { setNotesData(prev => { const list = [...prev[type]]; list[index] = { ...list[index], [field]: value }; return { ...prev, [type]: list }; }); };
-  const handlePreSubmit = () => { setShowAssessmentModal(true); setMissingStudents([]); };
-  const handleAssessmentSelect = (type: 'harian' | 'tugas' | 'none') => { setAssessmentType(type); setShowAssessmentModal(false); if (type === 'none') { handleSubmitFinal([], 'none'); } else { setShowStudentChecklistModal(true); } };
   const handleMissingStudentToggle = (studentId: string) => { setMissingStudents(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]); };
   const handleFinishAssessment = () => { setShowStudentChecklistModal(false); handleSubmitFinal(missingStudents, assessmentType); };
   const handleDhuhaSubmit = () => {
@@ -311,12 +309,12 @@ const JurnalForm: React.FC = () => {
   };
 
 
-  const handleSubmitFinal = async (missingIds: string[], type: string, overrides?: { cleanliness: string, isConfirmed: boolean }) => {
+  const handleSubmitFinal = async (missingIds: string[] = [], type: string = 'none', overrides?: { cleanliness: string, isConfirmed?: boolean }) => {
     setLoading(true);
     try {
       if (!profile) throw new Error("Not authenticated");
       let finalJournalId = editJournalId;
-      const validationStatus = inputMode === 'inval' ? 'inval' : ((overrides ? overrides.isConfirmed : formData.isConfirmed) ? 'hadir_kbm' : 'inval'); 
+      const validationStatus = inputMode === 'inval' ? 'inval' : 'hadir_kbm'; 
       const invalTeacherName = inputMode === 'inval' ? (selectedInvalTeacher?.full_name || '') : null;
       const missingNames = students.filter(s => missingIds.includes(s.id)).map(s => s.name);
       const payload = { hours: formData.hours.join(','), material: formData.material, cleanliness: (overrides ? overrides.cleanliness : formData.cleanliness), validation: validationStatus, inval_teacher_name: invalTeacherName, notes: formData.notes, assessment_type: type, assessment_missing_students: JSON.stringify(missingNames) };
@@ -798,24 +796,13 @@ const JurnalForm: React.FC = () => {
             </div>
           </div>
           <div>
-            <label className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all ${formData.isConfirmed ? 'border-purple-500 bg-purple-50 shadow-md' : 'border-slate-200 hover:border-purple-300'}`}>
-              <div className={`w-6 h-6 rounded flex items-center justify-center border-2 transition-colors flex-shrink-0 ${formData.isConfirmed ? 'bg-purple-600 border-purple-600 text-white' : 'border-slate-300 bg-white'}`}>
-                {formData.isConfirmed && <Check size={16} strokeWidth={4} />}
-              </div>
-              <input type="checkbox" className="hidden" checked={formData.isConfirmed} onChange={e => setFormData({...formData, isConfirmed: e.target.checked})} />
-              <span className="font-bold text-slate-700 dark:text-slate-300 text-sm leading-tight">
-                Saya menyatakan bahwa saya benar-benar melaksanakan KBM di dalam kelas dengan baik{inputMode === 'inval' ? ` (Menggantikan ${selectedInvalTeacher?.full_name || 'Guru'})` : ''}.
-              </span>
-            </label>
-          </div>
-          <div>
             <label className="flex items-center gap-2 text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide"><MessageSquare size={14}/> Catatan Tambahan (Opsional)</label>
             <textarea className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500" rows={2} value={formData.notes} onChange={e => setFormData(prev => ({...prev, notes: e.target.value}))} placeholder="Catatan kejadian khusus..."></textarea>
           </div>
         </div>
         <div className="flex justify-between mt-8 pt-6 border-t border-slate-100">
           <button onClick={handleBack} className="text-slate-500 hover:bg-slate-50 px-5 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors"><ArrowLeft size={18} /> Kembali</button>
-          <button disabled={!formData.cleanliness || !formData.isConfirmed || loading} onClick={handlePreSubmit} className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-200 disabled:opacity-50 disabled:shadow-none transition-all">{loading ? 'Menyimpan...' : (editJournalId ? <><Edit3 size={18} /> Update Jurnal</> : <><Send size={18} /> Kirim Data</>)}</button>
+          <button disabled={!formData.cleanliness || loading} onClick={() => handleSubmitFinal([], 'none')} className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-200 disabled:opacity-50 disabled:shadow-none transition-all">{loading ? 'Menyimpan...' : (editJournalId ? <><Edit3 size={18} /> Update Jurnal</> : <><Send size={18} /> Kirim Data</>)}</button>
         </div>
       </div>
     );
@@ -831,33 +818,6 @@ const JurnalForm: React.FC = () => {
             <div className="flex gap-2">{[1,2,3,4].map(i => <div key={i} className={`h-2 rounded-full transition-all duration-500 ${step >= i ? 'bg-purple-600 w-8' : 'bg-slate-200 w-3'}`}></div>)}</div>
         </div>
         {initLoading ? <div className="text-center py-20 text-slate-400"><Loader2 className="animate-spin inline mr-2"/> Memuat data...</div> : <>{step === 1 && renderStep1()}{step === 2 && renderStep2()}{step === 3 && renderStep3()}{step === 4 && renderStep4()}</>}
-
-        {/* MODAL 1: PILIH JENIS PENILAIAN - TOP ALIGNED */}
-        {showAssessmentModal && (
-            <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[calc(env(safe-area-inset-top)+1rem)] sm:p-4 bg-slate-900/50 backdrop-blur-sm transition-all duration-300">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform scale-100 transition-all border border-slate-100 relative animate-fade-in">
-                    <div className="bg-purple-600 p-6 flex justify-between items-center text-white">
-                        <h3 className="font-bold text-lg flex items-center gap-2"><ClipboardCheck size={24}/> Konfirmasi Penilaian</h3>
-                        <button onClick={() => setShowAssessmentModal(false)} className="hover:bg-white/20 p-1.5 rounded-full transition-colors"><X size={20}/></button>
-                    </div>
-                    <div className="p-6 space-y-4 bg-slate-50">
-                        <p className="text-slate-600 font-medium mb-2">Apakah ada penilaian pada jam ini?</p>
-                        <button onClick={() => handleAssessmentSelect('harian')} className="w-full flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-2xl hover:border-purple-500 hover:shadow-lg hover:shadow-purple-200 transition-all group text-left">
-                            <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform"><BookOpenCheck size={24}/></div>
-                            <div><span className="font-bold text-slate-700 block text-sm">Penilaian Harian (PH)</span><span className="text-xs text-slate-500">Ulangan atau tes tulis.</span></div>
-                        </button>
-                        <button onClick={() => handleAssessmentSelect('tugas')} className="w-full flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-2xl hover:border-orange-500 hover:shadow-lg hover:shadow-orange-200 transition-all group text-left">
-                            <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform"><ClipboardList size={24}/></div>
-                            <div><span className="font-bold text-slate-700 block text-sm">Tugas / PR</span><span className="text-xs text-slate-500">Pengumpulan tugas siswa.</span></div>
-                        </button>
-                        <button onClick={() => handleAssessmentSelect('none')} className="w-full flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-2xl hover:border-slate-400 hover:shadow-lg hover:shadow-slate-200 transition-all group text-left">
-                            <div className="w-12 h-12 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform"><Ban size={24}/></div>
-                            <div><span className="font-bold text-slate-700 block text-sm">Tidak Ada Penilaian</span><span className="text-xs text-slate-500">Hanya materi biasa.</span></div>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
 
         {/* MODAL 2: PILIH SISWA TIDAK MENGUMPULKAN - TOP ALIGNED */}
         {showStudentChecklistModal && (
