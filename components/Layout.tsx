@@ -288,6 +288,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                     </>
                 ) : isOperator ? (
                     <>
+                        <NavItem path="/dashboard" label="Beranda" icon={Home} />
                         <NavItem path="/operator-dashboard" label="Dashboard KBM" icon={MonitorPlay} />
                         <NavItem path="/qr" label="Presensi QR" icon={Scan} />
                         <NavItem path="/data-jurnal" label="Data Jurnal" icon={BookOpen} />
@@ -519,6 +520,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
       {showNav && isOperator && !isAdmin && (
            <div className="md:hidden fixed bottom-6 left-0 right-0 z-40 flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)]">
                 <nav className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center p-2 pointer-events-auto gap-2">
+                    <BottomNavItem path="/dashboard" label="Beranda" icon={Home} />
                     <BottomNavItem path="/operator-dashboard" label="Monitor" icon={MonitorPlay} />
                     <BottomNavItem path="/profile" label="Profil" icon={User} />
                 </nav>

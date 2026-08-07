@@ -165,8 +165,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             
             if (signUpData?.session) {
-                // Auto create profile
-                // await supabase.from('profiles').update({ role: 'admin', nip: '112233' }).eq('id', signUpData.user?.id);
                 setSession(signUpData.session);
                 setIsLoading(true);
                 await fetchProfile(signUpData.user?.id || "");
@@ -179,8 +177,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         
         if (signInData?.session) {
-            // Make sure profile is admin
-            // await supabase.from('profiles').update({ role: 'admin', nip: '112233' }).eq('id', signInData.user.id);
             setSession(signInData.session);
             setIsLoading(true);
             await fetchProfile(signInData.user.id);
@@ -189,6 +185,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         if (signInError && signInError.message.includes('Email not confirmed')) {
              return { data: null, error: new Error('Harap matikan "Confirm email" di pengaturan Supabase Auth (Authentication -> Providers -> Email) lalu hapus user di menu Users Supabase dan coba login lagi.') };
+        }
+        
+        return { data: signInData, error: signInError };
+    }
+
+    // AUTO-CREATE OPERATOR IF NOT EXISTS (20535439 / spanla8)
+    if (cleanId === '20535439' && password === 'spanla8') {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        
+        if (signInError && signInError.message.includes('Invalid login credentials')) {
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                email,
+                password,
+                options: { data: { full_name: 'Operator Sekolah' } }
+            });
+            
+            if (signUpData?.session) {
+                await supabase.from('profiles').upsert({
+                    id: signUpData.user?.id,
+                    nip: '20535439',
+                    full_name: 'Operator Sekolah',
+                    role: 'operator'
+                });
+                setSession(signUpData.session);
+                setIsLoading(true);
+                await fetchProfile(signUpData.user?.id || "");
+                return { data: signUpData, error: null };
+            } else if (signUpError) {
+                return { data: null, error: signUpError };
+            } else {
+                return { data: null, error: new Error('Harap matikan "Confirm email" di pengaturan Supabase Auth agar operator dapat dibuat otomatis.') };
+            }
+        }
+        
+        if (signInData?.session) {
+            await supabase.from('profiles').upsert({
+                id: signInData.user.id,
+                nip: '20535439',
+                full_name: 'Operator Sekolah',
+                role: 'operator'
+            });
+            setSession(signInData.session);
+            setIsLoading(true);
+            await fetchProfile(signInData.user.id);
+            return { data: signInData, error: null };
+        }
+        
+        if (signInError && signInError.message.includes('Email not confirmed')) {
+             return { data: null, error: new Error('Harap matikan "Confirm email" di pengaturan Supabase Auth.') };
         }
         
         return { data: signInData, error: signInError };
@@ -226,7 +271,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signIn,
       signOut,
       isAdmin: profile?.role === 'admin' || session?.user?.email === '112233@sekolah.id',
-      isOperator: profile?.role === 'operator',
+      isOperator: profile?.role === 'operator' || session?.user?.email === '20535439@sekolah.id',
       isKbmRestricted,
       academicYear,
         semester,

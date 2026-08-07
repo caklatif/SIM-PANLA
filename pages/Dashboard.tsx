@@ -54,14 +54,23 @@ const Dashboard: React.FC = () => {
   else if (currentHour >= 11 && currentHour < 15) greeting = 'Selamat Siang';
   else if (currentHour >= 15 && currentHour < 18) greeting = 'Selamat Sore';
 
-  const { isAdmin, profile, academicYear, semester , activeScheduleVersion , semesterStart, semesterEnd } = useAuth();
+  const { isAdmin, isOperator, profile, academicYear, semester , activeScheduleVersion , semesterStart, semesterEnd } = useAuth();
   const isHeadmaster = profile?.mengajar_mapel === 'Kepala Sekolah' || profile?.role === 'admin'; 
 
   const [stats, setStats] = useState<MonthlyStats>({ totalJp: 0, targetJp: 0, totalMeetings: 0, monthJournals: [] });
   const [homeroomAbsences, setHomeroomAbsences] = useState<WaliKelasAbsence[]>([]);
+  const [selectedWaliKelas, setSelectedWaliKelas] = useState<string>(() => profile?.wali_kelas || '7A');
   const [kbmStatus, setKbmStatus] = useState<KbmStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState(getWIBISOString());
+
+  const activeWaliKelas = profile?.wali_kelas || selectedWaliKelas || '7A';
+
+  useEffect(() => {
+    if (profile?.wali_kelas) {
+      setSelectedWaliKelas(profile.wali_kelas);
+    }
+  }, [profile?.wali_kelas]);
 
   // ACCORDION FORM STATE (Replaced Modal)
   const [showInputForm, setShowInputForm] = useState(false);
@@ -87,7 +96,7 @@ const Dashboard: React.FC = () => {
     } else {
         setLoading(false);
     }
-  }, [profile, filterDate, matrixDate, academicYear, semester, activeScheduleVersion, semesterStart, semesterEnd]); 
+  }, [profile, filterDate, matrixDate, academicYear, semester, activeScheduleVersion, semesterStart, semesterEnd, selectedWaliKelas]); 
 
   // --- LOGIC KEPALA SEKOLAH (MATRIX SCHEDULE) ---
   const fetchHeadmasterMatrix = async () => {
@@ -274,12 +283,11 @@ const Dashboard: React.FC = () => {
         }
         setKbmStatus(hoursList);
 
-        if (profile?.wali_kelas) {
-            let { data: students, error: errSt } = await supabase.from('students').select('*').eq('academic_year', academicYear || '2025/2026').eq('kelas', profile.wali_kelas).eq('academic_year', academicYear || '2025/2026').order('name');
-            if (errSt && (errSt.code === '42703' || errSt.message?.includes('academic_year'))) {
-                const res = await supabase.from('students').select('*').eq('academic_year', academicYear || '2025/2026').eq('kelas', profile.wali_kelas).order('name');
-                if (academicYear === '2025/2026') students = res.data;
-                else students = [];
+        if (activeWaliKelas) {
+            let { data: students, error: errSt } = await supabase.from('students').select('*').eq('academic_year', academicYear || '2025/2026').eq('kelas', activeWaliKelas).order('name');
+            if (errSt || !students || students.length === 0) {
+                const res = await supabase.from('students').select('*').eq('kelas', activeWaliKelas).order('name');
+                students = res.data || [];
             }
             
             if (students && students.length > 0) {
@@ -336,7 +344,7 @@ const Dashboard: React.FC = () => {
                         finalAbsences.push({
                             student_id: student.id,
                             student_name: student.name,
-                            kelas: profile.wali_kelas!,
+                            kelas: activeWaliKelas,
                             status: finalStatus,
                             source: source,
                             hours: hoursStr || 'Full Day'
@@ -346,6 +354,8 @@ const Dashboard: React.FC = () => {
 
                 finalAbsences.sort((a, b) => a.student_name.localeCompare(b.student_name));
                 setHomeroomAbsences(finalAbsences);
+            } else {
+                setHomeroomAbsences([]);
             }
         }
     } catch (e) { console.error(e); } finally { setLoading(false); }
@@ -357,9 +367,9 @@ const Dashboard: React.FC = () => {
           // Open: Fetch Data
           setSavingAttendance(true); 
           try {
-              let { data: students, error: errSt } = await supabase.from('students').select('*').eq('academic_year', academicYear || '2025/2026').eq('kelas', profile?.wali_kelas).eq('academic_year', academicYear || '2025/2026').order('name');
+              let { data: students, error: errSt } = await supabase.from('students').select('*').eq('academic_year', academicYear || '2025/2026').eq('kelas', activeWaliKelas).order('name');
               if (errSt && (errSt.code === '42703' || errSt.message?.includes('academic_year'))) {
-                  const res = await supabase.from('students').select('*').eq('academic_year', academicYear || '2025/2026').eq('kelas', profile?.wali_kelas).order('name');
+                  const res = await supabase.from('students').select('*').eq('academic_year', academicYear || '2025/2026').eq('kelas', activeWaliKelas).order('name');
                   if (academicYear === '2025/2026') students = res.data;
                   else students = [];
               }
@@ -384,7 +394,7 @@ const Dashboard: React.FC = () => {
   };
 
   const handleSaveHomeroomAttendance = async () => {
-      if (!profile?.wali_kelas) return;
+      if (!activeWaliKelas) return;
       setSavingAttendance(true);
       try {
           const studentIds = modalStudents.map(s => s.id);
@@ -392,12 +402,10 @@ const Dashboard: React.FC = () => {
 
           const inserts = Object.entries(modalAttendance).map(([studentId, status]) => ({
               date: filterDate,
-              kelas: profile.wali_kelas,
+              kelas: activeWaliKelas,
               student_id: studentId,
               status: status,
-              created_by: profile.id,
-              
-              
+              created_by: profile?.id,
           }));
 
           if (inserts.length > 0) {
@@ -439,19 +447,17 @@ const Dashboard: React.FC = () => {
   };
 
   const handleSaveSpecific = async () => {
-      if (!profile?.wali_kelas) return;
+      if (!activeWaliKelas) return;
       setSavingAttendance(true);
       try {
           for (const item of specificAbsenceData) {
               if (item.newStatus !== item.currentStatus || item.note) {
                   const payload: any = {
                       date: filterDate,
-                      kelas: profile.wali_kelas,
+                      kelas: activeWaliKelas,
                       student_id: item.student_id,
                       status: item.newStatus,
-                      created_by: profile.id,
-                      
-                      
+                      created_by: profile?.id,
                   };
                   const { error } = await supabase.from('homeroom_attendance').upsert(payload, { onConflict: 'date, student_id' });
                   if (error) console.error("Failed update", error);
@@ -678,16 +684,16 @@ const Dashboard: React.FC = () => {
             </div>
         )}
         
-        {!isAdmin && (
+        {(!isAdmin || isOperator) && (
             <div className="flex flex-col gap-6">
                 {/* WALI KELAS ABSENCE WIDGET */}
-                {profile?.wali_kelas && (
+                {(profile?.wali_kelas || isOperator || isAdmin) && (
                     <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-slate-700 relative overflow-hidden group hover:border-purple-200 transition-colors">
                         <div className="absolute -top-6 -right-6 p-4 opacity-5 dark:opacity-10 pointer-events-none group-hover:opacity-10 transition-opacity rotate-12"><ClipboardList size={140} className="text-slate-800 dark:text-slate-100" /></div>
 
                         <div className="flex flex-col md:flex-row gap-4 md:gap-8 relative z-10">
                             {/* Header Section (Left) */}
-                            <div className="flex flex-row md:flex-col items-center md:items-start gap-4 flex-shrink-0 md:min-w-[180px] md:border-r md:border-slate-100 dark:md:border-slate-700 md:pr-4 pt-2 md:pt-0">
+                            <div className="flex flex-row md:flex-col items-center md:items-start gap-4 flex-shrink-0 md:min-w-[200px] md:border-r md:border-slate-100 dark:md:border-slate-700 md:pr-4 pt-2 md:pt-0">
                                 <div className={`w-10 h-10 md:w-12 md:h-12 rounded-2xl flex items-center justify-center shadow-sm border transition-colors ${
                                     homeroomAbsences.length > 0 
                                     ? 'bg-orange-50 dark:bg-orange-900/30 border-orange-100 dark:border-orange-800 text-orange-600 dark:text-orange-400' 
@@ -695,9 +701,30 @@ const Dashboard: React.FC = () => {
                                 }`}>
                                      {homeroomAbsences.length > 0 ? <Bell size={20} className="animate-pulse" /> : <CheckCircle2 size={22} />}
                                 </div>
-                                <div className="flex-1">
-                                    <h3 className="font-extrabold text-slate-800 dark:text-white text-xs uppercase tracking-wide leading-relaxed">Rekap Absensi <br className="hidden md:block"/>Kelas {profile.wali_kelas}</h3>
-                                    <p className={`text-[10px] font-bold mt-1 leading-tight ${homeroomAbsences.length > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                <div className="flex-1 w-full">
+                                    <h3 className="font-extrabold text-slate-800 dark:text-white text-xs uppercase tracking-wide leading-relaxed">
+                                        Rekap Absensi <br className="hidden md:block"/>Kelas {activeWaliKelas}
+                                    </h3>
+                                    
+                                    {(isOperator || isAdmin || !profile?.wali_kelas) && (
+                                        <div className="mt-1.5">
+                                            <select
+                                                value={selectedWaliKelas}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setSelectedWaliKelas(val);
+                                                    if (showInputForm) setShowInputForm(false);
+                                                }}
+                                                className="w-full text-xs font-bold bg-purple-50 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700 rounded-xl px-2.5 py-1 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm"
+                                            >
+                                                {['7A','7B','7C','7D','7E','7F','7G','7H','8A','8B','8C','8D','8E','8F','8G','8H','9A','9B','9C','9D','9E','9F','9G','9H'].map(k => (
+                                                    <option key={k} value={k}>Pilih Kelas {k}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    <p className={`text-[10px] font-bold mt-1.5 leading-tight ${homeroomAbsences.length > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                         {homeroomAbsences.length > 0 ? `${homeroomAbsences.length} Murid Absen` : 'Semua Hadir'}
                                     </p>
                                     
@@ -749,13 +776,13 @@ const Dashboard: React.FC = () => {
                                                             <p className="text-xs font-bold text-slate-700 dark:text-slate-200 line-clamp-1">{student.name}</p>
                                                         </div>
                                                         <div className="flex gap-1.5 w-24 justify-end">
-                                                            {['S', 'I', 'D'].map(status => (
+                                                            {(['S', 'I', 'D'] as const).map(status => (
                                                                 <button 
                                                                     key={status}
-                                                                    onClick={() => toggleModalStatus(student.id, status as any)}
+                                                                    onClick={() => toggleModalStatus(student.id, status)}
                                                                     className={`w-7 h-7 rounded-md flex items-center justify-center border transition-all text-[10px] font-bold ${
                                                                         modalAttendance[student.id] === status
-                                                                        ? (status === 'S' ? 'bg-yellow-500 border-yellow-600 text-white' : status === 'I' ? 'bg-purple-500 border-purple-600 text-white' : 'bg-purple-500 border-purple-600 text-white')
+                                                                        ? (status === 'S' ? 'bg-yellow-500 border-yellow-600 text-white' : status === 'I' ? 'bg-blue-500 border-blue-600 text-white' : 'bg-purple-600 border-purple-700 text-white')
                                                                         : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                                                                     }`}
                                                                 >

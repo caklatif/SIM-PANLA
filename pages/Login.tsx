@@ -17,12 +17,8 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
 
   const handleRoleSelect = (role: 'guru' | 'operator' | 'admin') => {
-      if (role === 'operator') {
-          navigate('/operator-dashboard');
-      } else {
-          setSelectedRoleLabel(role === 'admin' ? 'Administrator' : 'Guru / Staf');
-          setViewMode('form');
-      }
+      setSelectedRoleLabel(role === 'admin' ? 'Administrator' : role === 'operator' ? 'Operator' : 'Guru / Staf');
+      setViewMode('form');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

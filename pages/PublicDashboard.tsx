@@ -92,10 +92,10 @@ const PublicDashboard: React.FC = () => {
             }
             return res;
         };
-        let studentsRes = await supabase.from('students').select('id, kelas, gender');
+        let studentsRes = await supabase.from('students').select('id, name, kelas, gender');
         if (studentsRes.error) {
             console.error('Error fetching students with gender:', studentsRes.error);
-            studentsRes = await supabase.from('students').select('id, kelas');
+            studentsRes = await supabase.from('students').select('id, name, kelas');
         }
         
         const [journalsRes, attendanceRes, homeroomRes] = await Promise.all([
@@ -107,6 +107,7 @@ const PublicDashboard: React.FC = () => {
         const classCounts: Record<string, number> = {};
         const classGenderCounts: Record<string, { L: number, P: number }> = {};
         const sClassMap: Record<string, string> = {}; 
+        const sNameMap: Record<string, string> = {};
         let c7 = 0, c8 = 0, c9 = 0;
         
         console.log("studentsRes:", studentsRes);
@@ -118,6 +119,7 @@ const PublicDashboard: React.FC = () => {
                 const rawKelas = s.kelas ? s.kelas.toUpperCase().trim() : '';
                 const gender = s.gender === 'P' ? 'P' : 'L';
                 sClassMap[s.id] = rawKelas;
+                if (s.name) sNameMap[s.id] = s.name;
                 if (rawKelas) {
                     classCounts[rawKelas] = (classCounts[rawKelas] || 0) + 1;
                     if (!classGenderCounts[rawKelas]) classGenderCounts[rawKelas] = { L: 0, P: 0 };
@@ -147,25 +149,44 @@ const PublicDashboard: React.FC = () => {
 
         if (homeroomRes.data) {
             homeroomRes.data.forEach((h: any) => {
-                if (['S', 'I', 'A'].includes(h.status)) {
-                    combinedAttendance[h.student_id] = { name: 'Loading...', status: h.status, source: 'Wali' };
+                if (['S', 'I', 'A', 'D'].includes(h.status)) {
+                    const studentName = sNameMap[h.student_id] || h.student_name || '';
+                    combinedAttendance[h.student_id] = { name: studentName || 'Loading...', status: h.status, source: 'Wali' };
                 }
             });
         }
 
         if (attendanceRes.data) {
             attendanceRes.data.forEach((log: any) => {
-                if (['S', 'I', 'A'].includes(log.status)) {
+                if (['S', 'I', 'A', 'D'].includes(log.status)) {
                     if (!combinedAttendance[log.student_id]) {
-                        combinedAttendance[log.student_id] = { name: log.student_name, status: log.status, source: 'Guru' };
+                        const studentName = log.student_name || sNameMap[log.student_id] || 'Siswa';
+                        combinedAttendance[log.student_id] = { name: studentName, status: log.status, source: 'Guru' };
+                    } else if ((combinedAttendance[log.student_id].name === 'Loading...' || !combinedAttendance[log.student_id].name) && log.student_name) {
+                        combinedAttendance[log.student_id].name = log.student_name;
                     }
                 }
             });
         }
 
+        const missingIds = Object.keys(combinedAttendance).filter(id => !combinedAttendance[id].name || combinedAttendance[id].name === 'Loading...');
+        if (missingIds.length > 0) {
+            const { data: missingStudents } = await supabase.from('students').select('id, name, kelas').in('id', missingIds);
+            if (missingStudents) {
+                missingStudents.forEach((s: any) => {
+                    if (s.name && combinedAttendance[s.id]) {
+                        combinedAttendance[s.id].name = s.name;
+                    }
+                    if (s.kelas) {
+                        sClassMap[s.id] = s.kelas.toUpperCase().trim();
+                    }
+                });
+            }
+        }
+
         const finalAttendanceList = Object.entries(combinedAttendance).map(([id, data]) => ({
             student_id: id,
-            name: data.name,
+            name: data.name && data.name !== 'Loading...' ? data.name : (sNameMap[id] || 'Siswa'),
             status: data.status,
             source: data.source
         }));
@@ -175,7 +196,7 @@ const PublicDashboard: React.FC = () => {
 
         setRawAttendance(finalAttendanceList);
 
-        let sCount = 0, iCount = 0, aCount = 0;
+        let sCount = 0, iCount = 0, aCount = 0, dCount = 0;
         const absencePerClass: Record<string, number> = {};
         Object.keys(classCounts).forEach(cls => absencePerClass[cls] = 0);
 
@@ -183,6 +204,7 @@ const PublicDashboard: React.FC = () => {
             if (log.status === 'S') sCount++;
             else if (log.status === 'I') iCount++;
             else if (log.status === 'A') aCount++;
+            else if (log.status === 'D') dCount++;
             
             const cls = sClassMap[log.student_id];
             if (cls) absencePerClass[cls] = (absencePerClass[cls] || 0) + 1;
@@ -193,7 +215,7 @@ const PublicDashboard: React.FC = () => {
             classDetails: classCounts, classGenderDetails: classGenderCounts,
             totalJpRequired: calculatedTotalJp, 
             completedJp: completedJp,
-            absenceCount: sCount + iCount + aCount,
+            absenceCount: sCount + iCount + aCount + dCount,
             absenceDetails: { S: sCount, I: iCount, A: aCount },
             absencePerClass: absencePerClass,
             unfilledKbm: [],
@@ -259,7 +281,7 @@ const PublicDashboard: React.FC = () => {
   const getAbsentStudentsForClass = (cls: string) => {
       const absentStudents = rawAttendance.filter(log => studentClassMap[log.student_id] === cls);
       return absentStudents.map(s => ({
-          name: s.name === 'Loading...' ? 'Siswa (Data Wali)' : s.name, 
+          name: (s.name && s.name !== 'Loading...') ? s.name : 'Siswa', 
           status: s.status,
           source: s.source
       }));
