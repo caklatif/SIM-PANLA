@@ -33,6 +33,7 @@ const PublicDashboard: React.FC = () => {
     data: any;
   } | null>(null);
   const [expandedClass, setExpandedClass] = useState<string | null>(null);
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(getWIBDate()), 1000);
@@ -216,7 +217,7 @@ const PublicDashboard: React.FC = () => {
             totalJpRequired: calculatedTotalJp, 
             completedJp: completedJp,
             absenceCount: sCount + iCount + aCount + dCount,
-            absenceDetails: { S: sCount, I: iCount, A: aCount },
+            absenceDetails: { S: sCount, I: iCount, A: aCount, D: dCount },
             absencePerClass: absencePerClass,
             unfilledKbm: [],
             classesWithJournals: Array.from(classesWithJournalsSet)
@@ -274,12 +275,16 @@ const PublicDashboard: React.FC = () => {
   const handleAbsenceClick = () => {
       if (!stats) return;
       setExpandedClass(null);
+      setSelectedStatusFilter(null);
       setModalContent({ title: 'Rincian Ketidakhadiran Hari Ini', type: 'absence', data: stats });
       setModalOpen(true);
   };
 
   const getAbsentStudentsForClass = (cls: string) => {
-      const absentStudents = rawAttendance.filter(log => studentClassMap[log.student_id] === cls);
+      let absentStudents = rawAttendance.filter(log => studentClassMap[log.student_id] === cls);
+      if (selectedStatusFilter) {
+          absentStudents = absentStudents.filter(log => log.status === selectedStatusFilter);
+      }
       return absentStudents.map(s => ({
           name: (s.name && s.name !== 'Loading...') ? s.name : 'Siswa', 
           status: s.status,
@@ -576,20 +581,138 @@ const PublicDashboard: React.FC = () => {
                           </div>
                       ) : (
                         <>
-                            <div className="grid grid-cols-3 gap-3">
-                                <div className="flex flex-col items-center justify-center p-3 bg-yellow-50 dark:bg-yellow-900/30 rounded-2xl border border-yellow-100 dark:border-yellow-800/50">
-                                    <span className="text-yellow-700 dark:text-yellow-400 font-bold text-[10px] uppercase mb-1">Sakit</span>
-                                    <span className="text-3xl font-extrabold text-yellow-600 dark:text-yellow-400">{modalContent.data.absenceDetails.S}</span>
-                                </div>
-                                <div className="flex flex-col items-center justify-center p-3 bg-purple-50 dark:bg-purple-900/30 rounded-2xl border border-purple-100 dark:border-purple-800/50">
-                                    <span className="text-purple-700 dark:text-purple-400 font-bold text-[10px] uppercase mb-1">Izin</span>
-                                    <span className="text-3xl font-extrabold text-purple-700 dark:text-purple-400">{modalContent.data.absenceDetails.I}</span>
-                                </div>
-                                <div className="flex flex-col items-center justify-center p-3 bg-red-50 dark:bg-red-900/30 rounded-2xl border border-red-100 dark:border-red-800/50">
-                                    <span className="text-red-700 dark:text-red-400 font-bold text-[10px] uppercase mb-1">Alpa</span>
-                                    <span className="text-3xl font-extrabold text-red-600 dark:text-red-400">{modalContent.data.absenceDetails.A}</span>
-                                </div>
+                            <div className="grid grid-cols-4 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedStatusFilter(selectedStatusFilter === 'S' ? null : 'S')}
+                                    className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all text-center cursor-pointer select-none active:scale-95 ${
+                                        selectedStatusFilter === 'S' 
+                                        ? 'bg-yellow-100 border-yellow-400 ring-2 ring-yellow-400 shadow-md scale-[1.02]' 
+                                        : 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-100 dark:border-yellow-800/50 hover:bg-yellow-100/60'
+                                    }`}
+                                >
+                                    <span className="text-yellow-700 dark:text-yellow-400 font-bold text-[10px] uppercase mb-0.5">Sakit</span>
+                                    <span className="text-2xl font-extrabold text-yellow-600 dark:text-yellow-400">{modalContent.data.absenceDetails?.S || 0}</span>
+                                    <span className="text-[8px] font-bold text-yellow-700 dark:text-yellow-300 mt-0.5 bg-yellow-200/60 dark:bg-yellow-900/50 px-1 py-0.5 rounded">
+                                        {selectedStatusFilter === 'S' ? '✓ Dipilih' : 'Klik lihat'}
+                                    </span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedStatusFilter(selectedStatusFilter === 'I' ? null : 'I')}
+                                    className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all text-center cursor-pointer select-none active:scale-95 ${
+                                        selectedStatusFilter === 'I' 
+                                        ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-400 shadow-md scale-[1.02]' 
+                                        : 'bg-blue-50 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800/50 hover:bg-blue-100/60'
+                                    }`}
+                                >
+                                    <span className="text-blue-700 dark:text-blue-400 font-bold text-[10px] uppercase mb-0.5">Izin</span>
+                                    <span className="text-2xl font-extrabold text-blue-600 dark:text-blue-400">{modalContent.data.absenceDetails?.I || 0}</span>
+                                    <span className="text-[8px] font-bold text-blue-700 dark:text-blue-300 mt-0.5 bg-blue-200/60 dark:bg-blue-900/50 px-1 py-0.5 rounded">
+                                        {selectedStatusFilter === 'I' ? '✓ Dipilih' : 'Klik lihat'}
+                                    </span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedStatusFilter(selectedStatusFilter === 'D' ? null : 'D')}
+                                    className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all text-center cursor-pointer select-none active:scale-95 ${
+                                        selectedStatusFilter === 'D' 
+                                        ? 'bg-purple-100 border-purple-400 ring-2 ring-purple-400 shadow-md scale-[1.02]' 
+                                        : 'bg-purple-50 dark:bg-purple-900/30 border-purple-100 dark:border-purple-800/50 hover:bg-purple-100/60'
+                                    }`}
+                                >
+                                    <span className="text-purple-700 dark:text-purple-400 font-bold text-[10px] uppercase mb-0.5">Dispen</span>
+                                    <span className="text-2xl font-extrabold text-purple-600 dark:text-purple-400">{modalContent.data.absenceDetails?.D || 0}</span>
+                                    <span className="text-[8px] font-bold text-purple-700 dark:text-purple-300 mt-0.5 bg-purple-200/60 dark:bg-purple-900/50 px-1 py-0.5 rounded">
+                                        {selectedStatusFilter === 'D' ? '✓ Dipilih' : 'Klik lihat'}
+                                    </span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedStatusFilter(selectedStatusFilter === 'A' ? null : 'A')}
+                                    className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all text-center cursor-pointer select-none active:scale-95 ${
+                                        selectedStatusFilter === 'A' 
+                                        ? 'bg-red-100 border-red-400 ring-2 ring-red-400 shadow-md scale-[1.02]' 
+                                        : 'bg-red-50 dark:bg-red-900/30 border-red-100 dark:border-red-800/50 hover:bg-red-100/60'
+                                    }`}
+                                >
+                                    <span className="text-red-700 dark:text-red-400 font-bold text-[10px] uppercase mb-0.5">Alpa</span>
+                                    <span className="text-2xl font-extrabold text-red-600 dark:text-red-400">{modalContent.data.absenceDetails?.A || 0}</span>
+                                    <span className="text-[8px] font-bold text-red-700 dark:text-red-300 mt-0.5 bg-red-200/60 dark:bg-red-900/50 px-1 py-0.5 rounded">
+                                        {selectedStatusFilter === 'A' ? '✓ Dipilih' : 'Klik lihat'}
+                                    </span>
+                                </button>
                             </div>
+
+                            {selectedStatusFilter && (
+                                <div className="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-2xl p-3.5 space-y-2 animate-fade-in shadow-inner">
+                                    <div className="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-600">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`w-2.5 h-2.5 rounded-full ${
+                                                selectedStatusFilter === 'S' ? 'bg-yellow-500' :
+                                                selectedStatusFilter === 'I' ? 'bg-blue-500' :
+                                                selectedStatusFilter === 'D' ? 'bg-purple-500' : 'bg-red-500'
+                                            }`}></span>
+                                            <span className="font-extrabold text-xs text-slate-800 dark:text-white uppercase">
+                                                Daftar Siswa {selectedStatusFilter === 'S' ? 'Sakit' : selectedStatusFilter === 'I' ? 'Izin' : selectedStatusFilter === 'D' ? 'Dispen' : 'Alpa'} ({
+                                                    rawAttendance.filter(s => s.status === selectedStatusFilter).length
+                                                } Anak)
+                                            </span>
+                                        </div>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setSelectedStatusFilter(null)}
+                                            className="text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline bg-purple-100 dark:bg-purple-900/50 px-2 py-0.5 rounded-md"
+                                        >
+                                            Reset Filter
+                                        </button>
+                                    </div>
+
+                                    <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                                        {rawAttendance.filter(s => s.status === selectedStatusFilter).length === 0 ? (
+                                            <div className="text-center py-4 text-xs text-slate-400 italic">
+                                                Tidak ada siswa dengan status {selectedStatusFilter === 'S' ? 'Sakit' : selectedStatusFilter === 'I' ? 'Izin' : selectedStatusFilter === 'D' ? 'Dispen' : 'Alpa'}.
+                                            </div>
+                                        ) : (
+                                            rawAttendance
+                                                .filter(s => s.status === selectedStatusFilter)
+                                                .map(s => ({
+                                                    ...s,
+                                                    kelas: studentClassMap[s.student_id] || '?'
+                                                }))
+                                                .sort((a, b) => a.kelas.localeCompare(b.kelas) || a.name.localeCompare(b.name))
+                                                .map((student, idx) => (
+                                                    <div key={idx} className="flex justify-between items-center bg-white dark:bg-slate-700 p-2.5 rounded-xl border border-slate-100 dark:border-slate-600 text-xs shadow-sm">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-600 text-slate-700 dark:text-slate-200 font-black rounded text-[10px]">
+                                                                {student.kelas}
+                                                            </span>
+                                                            <span className="font-bold text-slate-800 dark:text-white">
+                                                                {student.name}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            {student.source === 'Wali' && (
+                                                                <span className="text-[9px] bg-purple-100 text-purple-600 px-1 rounded border border-purple-200">
+                                                                    Wali
+                                                                </span>
+                                                            )}
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                                                student.status === 'S' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100' :
+                                                                student.status === 'I' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100' :
+                                                                student.status === 'D' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-100' :
+                                                                'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
+                                                            }`}>
+                                                                {student.status === 'S' ? 'SAKIT' : student.status === 'I' ? 'IZIN' : student.status === 'D' ? 'DISPEN' : 'ALPA'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="p-3 bg-[#F9F7FF] dark:bg-slate-700/30 border border-slate-100 dark:border-slate-600 rounded-xl text-center">
                                 <span className="text-[10px] text-purple-500 dark:text-purple-400 font-bold uppercase">*Termasuk input dari Wali Kelas & Guru Mapel.</span>
                             </div>
@@ -635,8 +758,8 @@ const PublicDashboard: React.FC = () => {
                                                                 <span className="font-bold text-slate-700 dark:text-white">{s.name}</span>
                                                                 <div className="flex items-center gap-2">
                                                                     {s.source === 'Wali' && <span className="text-[9px] bg-purple-100 text-purple-600 px-1 rounded border border-purple-200">Wali</span>}
-                                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${s.status === 'S' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-100' : s.status === 'I' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-100' : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-100'}`}>
-                                                                        {s.status === 'S' ? 'Sakit' : s.status === 'I' ? 'Izin' : 'Alpa'}
+                                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${s.status === 'S' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-100' : s.status === 'I' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-100' : s.status === 'D' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-100' : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-100'}`}>
+                                                                        {s.status === 'S' ? 'Sakit' : s.status === 'I' ? 'Izin' : s.status === 'D' ? 'Dispen' : 'Alpa'}
                                                                     </span>
                                                                 </div>
                                                             </div>

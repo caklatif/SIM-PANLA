@@ -76,7 +76,7 @@ export interface PublicStats {
   totalJpRequired: number;
   completedJp: number;
   absenceCount: number;
-  absenceDetails: { S: number; I: number; A: number };
+  absenceDetails: { S: number; I: number; A: number; D?: number };
   absencePerClass: Record<string, number>;
   unfilledKbm: { guru: string; kelas: string; jam: string }[];
   classesWithJournals?: string[];
