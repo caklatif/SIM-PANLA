@@ -50,6 +50,7 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-180x180.png" />
     <link rel="mask-icon" href="/pwa-512x512.png" color="#9333ea" />
+    <link rel="manifest" href="/manifest.json" />
     <script>
       window.deferredPWAInstallPrompt = null;
       window.addEventListener('beforeinstallprompt', function(e) {
@@ -57,6 +58,15 @@
         window.deferredPWAInstallPrompt = e;
         window.dispatchEvent(new CustomEvent('pwa-prompt-available'));
       });
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').then(function(reg) {
+            console.log('SIM-PANLA PWA ServiceWorker registered:', reg.scope);
+          }).catch(function(err) {
+            console.warn('SIM-PANLA PWA ServiceWorker registration notice:', err);
+          });
+        });
+      }
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

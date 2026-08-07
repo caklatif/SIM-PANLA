@@ -18,6 +18,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallback: '/index.html',
         cleanupOutdatedCaches: true,
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB limit for precaching bundle
       },
       manifest: {
         name: 'SIM-PANLA | UPT SMP Negeri 8 Pasuruan',
