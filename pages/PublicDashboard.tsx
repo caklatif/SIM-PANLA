@@ -469,14 +469,15 @@ const PublicDashboard: React.FC = () => {
                           </div>
 
                           {/* 3D-like Icon Simulation */}
-                          <div className="absolute right-4 bottom-4 w-[60px] h-[60px] bg-gradient-to-br from-[#c4b5fd] to-[#8b5cf6] rounded-[1.25rem] shadow-[0_8px_16px_rgba(139,92,246,0.3)] flex items-center justify-center transform -rotate-3 border-t-[3px] border-l-[3px] border-white/40 z-10">
-                              <div className="w-10 h-10 bg-white rounded-xl shadow-inner flex items-center justify-center relative overflow-hidden">
-                                 <div className="absolute top-0 w-full h-2.5 bg-gradient-to-b from-slate-100 to-white"></div>
-                                 <Check size={24} strokeWidth={4} className="text-[#8b5cf6] drop-shadow-sm z-10" />
+                          <div className="absolute right-3 top-3.5 w-[50px] h-[50px] sm:w-[58px] sm:h-[58px] bg-gradient-to-br from-[#c4b5fd] to-[#8b5cf6] rounded-[1.2rem] shadow-[0_6px_14px_rgba(139,92,246,0.25)] flex items-center justify-center transform -rotate-3 border-t-[3px] border-l-[3px] border-white/40 z-10 pointer-events-none">
+                              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-xl shadow-inner flex items-center justify-center relative overflow-hidden">
+                                 <div className="absolute top-0 w-full h-2 bg-gradient-to-b from-slate-100 to-white"></div>
+                                 <Check size={20} strokeWidth={4} className="text-[#8b5cf6] drop-shadow-sm z-10 sm:hidden" />
+                                 <Check size={24} strokeWidth={4} className="text-[#8b5cf6] drop-shadow-sm z-10 hidden sm:block" />
                               </div>
                               {/* Binder rings */}
-                              <div className="absolute -top-1.5 left-3 w-1.5 h-3.5 bg-slate-200 rounded-full shadow-sm border border-slate-300"></div>
-                              <div className="absolute -top-1.5 right-3 w-1.5 h-3.5 bg-slate-200 rounded-full shadow-sm border border-slate-300"></div>
+                              <div className="absolute -top-1.5 left-2.5 sm:left-3 w-1.5 h-3 bg-slate-200 rounded-full shadow-sm border border-slate-300"></div>
+                              <div className="absolute -top-1.5 right-2.5 sm:right-3 w-1.5 h-3 bg-slate-200 rounded-full shadow-sm border border-slate-300"></div>
                           </div>
                       </button>
 
@@ -494,19 +495,19 @@ const PublicDashboard: React.FC = () => {
                           </div>
 
                            {/* 3D-like Icon Simulation */}
-                           <div className="absolute right-4 bottom-4 w-[56px] h-[64px] bg-gradient-to-br from-[#fed7aa] to-[#f97316] rounded-xl shadow-[0_8px_16px_rgba(249,115,22,0.3)] flex flex-col items-center justify-center transform rotate-6 border-t-[3px] border-l-[3px] border-white/50 z-10 pt-2">
+                           <div className="absolute right-3 top-3.5 w-[46px] h-[52px] sm:w-[54px] sm:h-[60px] bg-gradient-to-br from-[#fed7aa] to-[#f97316] rounded-xl shadow-[0_6px_14px_rgba(249,115,22,0.25)] flex flex-col items-center justify-center transform rotate-6 border-t-[3px] border-l-[3px] border-white/50 z-10 pt-2 pointer-events-none">
                               {/* Paper */}
-                              <div className="w-10 h-10 bg-white rounded shadow-inner flex flex-col items-center justify-center gap-1">
-                                  <div className="w-6 h-0.5 bg-slate-200 rounded-full"></div>
-                                  <div className="w-6 h-0.5 bg-slate-200 rounded-full"></div>
-                                  <div className="w-4 h-0.5 bg-slate-200 rounded-full mr-2"></div>
+                              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded shadow-inner flex flex-col items-center justify-center gap-1">
+                                  <div className="w-5 h-0.5 sm:w-6 bg-slate-200 rounded-full"></div>
+                                  <div className="w-5 h-0.5 sm:w-6 bg-slate-200 rounded-full"></div>
+                                  <div className="w-3 h-0.5 sm:w-4 bg-slate-200 rounded-full mr-2"></div>
                               </div>
                               {/* Clip */}
-                              <div className="absolute -top-1 w-6 h-3 bg-slate-700 rounded-md shadow-md border-b-2 border-slate-800"></div>
+                              <div className="absolute -top-1 w-5 sm:w-6 h-2.5 sm:h-3 bg-slate-700 rounded-md shadow-md border-b-2 border-slate-800"></div>
                               <div className="absolute -top-3 w-3 h-3 border-2 border-slate-700 rounded-full"></div>
                               
                               {/* Alert Badge */}
-                              <div className="absolute -right-2 -bottom-2 w-7 h-7 bg-orange-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg text-white font-black text-[13px] leading-none">!</div>
+                              <div className="absolute -right-1.5 -bottom-1.5 w-5 h-5 sm:w-6 sm:h-6 bg-orange-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg text-white font-black text-[10px] sm:text-[12px] leading-none">!</div>
                           </div>
                       </button>
                   </div>
