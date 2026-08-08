@@ -327,10 +327,10 @@ const OperatorDashboard: React.FC = () => {
               }
           }
 
-          const profileRoleMap: Record<string, string> = {};
+          const profileRoleMap: Record<string, { role?: string; nip?: string; name?: string }> = {};
           if (activeProfiles && activeProfiles.length > 0) {
               activeProfiles.forEach((p: any) => {
-                  if (p.id) profileRoleMap[p.id] = p.role;
+                  if (p.id) profileRoleMap[p.id] = { role: p.role, nip: p.nip, name: p.full_name };
               });
           }
 
@@ -338,15 +338,21 @@ const OperatorDashboard: React.FC = () => {
           homeroomLogs.forEach((h: any) => { 
             if (['S', 'I', 'A', 'D'].includes(h.status)) { 
               let src = 'Wali';
-              if (h.created_by && profileRoleMap[h.created_by]) {
-                const creatorRole = profileRoleMap[h.created_by];
-                if (creatorRole === 'operator' || creatorRole === 'admin') {
-                  src = 'TU';
+              if (h.created_by) {
+                const creator = profileRoleMap[h.created_by];
+                if (creator) {
+                  const r = (creator.role || '').toLowerCase();
+                  const nip = creator.nip || '';
+                  const name = (creator.name || '').toLowerCase();
+                  if (r === 'operator' || r === 'admin' || nip === '112233' || nip === '20535439' || name.includes('admin') || name.includes('operator')) {
+                    src = 'TU';
+                  } else {
+                    src = 'Wali';
+                  }
                 } else {
-                  src = 'Wali';
+                  src = 'TU';
                 }
               } else {
-                // If created_by is missing or null, default to TU
                 src = 'TU';
               }
               uniqueAbsenceMap[h.student_id] = { 

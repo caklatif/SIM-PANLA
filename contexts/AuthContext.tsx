@@ -165,6 +165,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             
             if (signUpData?.session) {
+                await supabase.from('profiles').upsert({
+                    id: signUpData.user?.id,
+                    nip: '112233',
+                    full_name: 'Administrator',
+                    role: 'admin'
+                });
                 setSession(signUpData.session);
                 setIsLoading(true);
                 await fetchProfile(signUpData.user?.id || "");
@@ -177,6 +183,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         
         if (signInData?.session) {
+            await supabase.from('profiles').upsert({
+                id: signInData.user.id,
+                nip: '112233',
+                full_name: 'Administrator',
+                role: 'admin'
+            });
             setSession(signInData.session);
             setIsLoading(true);
             await fetchProfile(signInData.user.id);

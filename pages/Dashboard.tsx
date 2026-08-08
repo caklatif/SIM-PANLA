@@ -23,7 +23,7 @@ interface WaliKelasAbsence {
     student_name: string;
     kelas: string;
     status: string;
-    source: 'wali' | 'guru'; 
+    source: 'wali' | 'tu' | 'guru'; 
     hours?: string; 
 }
 
@@ -110,7 +110,7 @@ const Dashboard: React.FC = () => {
           const endOfDay = `${matrixDate}T23:59:59+07:00`;
 
           const [profilesRes, schedulesRes, journalsRes] = await Promise.all([
-              supabase.from('profiles').select('*').neq('role', 'operator').order('full_name'),
+              supabase.from('profiles').select('*').order('full_name'),
               supabase.from('schedules').select('*').eq('day_of_week', dbDay).eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').eq('schedule_version', activeScheduleVersion || 'Utama').then(async (res) => {
                   if (res.error && (res.error.code === '42703' || res.error.message?.includes('academic_year') || res.error.message?.includes('schedule_version'))) {
                       const fallback = await supabase.from('schedules').select('*').eq('day_of_week', dbDay).eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil');
@@ -292,32 +292,57 @@ const Dashboard: React.FC = () => {
             
             if (students && students.length > 0) {
                 const studentIds = students.map(s => s.id);
-                const { data: homeroomLogs } = await supabase
-                    .from('homeroom_attendance')
-                    .select('student_id, status')
-                    .eq('date', filterDate)
-                    .in('student_id', studentIds);
+                const [homeroomRes, teacherLogsRes, profilesRes] = await Promise.all([
+                    supabase
+                        .from('homeroom_attendance')
+                        .select('student_id, status, created_by')
+                        .eq('date', filterDate)
+                        .in('student_id', studentIds),
+                    supabase
+                        .from('attendance_logs')
+                        .select(`student_id, status, journals (hours)`)
+                        .in('student_id', studentIds)
+                        .gte('created_at', startOfDay)
+                        .lte('created_at', endOfDay),
+                    supabase
+                        .from('profiles')
+                        .select('id, role, nip, full_name')
+                ]);
 
-                const homeroomMap: Record<string, string> = {};
-                homeroomLogs?.forEach(log => { homeroomMap[log.student_id] = log.status; });
+                const homeroomLogs = homeroomRes.data;
+                const teacherLogs = teacherLogsRes.data;
+                const allProfiles = profilesRes.data || [];
 
-                const { data: teacherLogs } = await supabase
-                    .from('attendance_logs')
-                    .select(`student_id, status, journals (hours)`)
-                    .in('student_id', studentIds)
-                    .gte('created_at', startOfDay)
-                    .lte('created_at', endOfDay);
+                const homeroomMap: Record<string, { status: string; created_by?: string }> = {};
+                homeroomLogs?.forEach(log => { homeroomMap[log.student_id] = { status: log.status, created_by: log.created_by }; });
 
                 const finalAbsences: WaliKelasAbsence[] = [];
 
                 students.forEach(student => {
                     let finalStatus = '';
-                    let source: 'wali' | 'guru' = 'guru';
+                    let source: 'wali' | 'tu' | 'guru' = 'guru';
                     let hoursStr = '';
 
                     if (homeroomMap[student.id]) {
-                        finalStatus = homeroomMap[student.id];
-                        source = 'wali';
+                        finalStatus = homeroomMap[student.id].status;
+                        const cId = homeroomMap[student.id].created_by;
+                        let isTu = false;
+                        if (cId) {
+                            const creator = allProfiles.find((p: any) => p.id === cId);
+                            if (creator) {
+                                const r = (creator.role || '').toLowerCase();
+                                const nip = creator.nip || '';
+                                const name = (creator.full_name || '').toLowerCase();
+                                if (r === 'operator' || r === 'admin' || nip === '112233' || nip === '20535439' || name.includes('admin') || name.includes('operator')) {
+                                    isTu = true;
+                                }
+                            } else {
+                                isTu = true;
+                            }
+                        } else {
+                            isTu = true;
+                        }
+                        source = isTu ? 'tu' : 'wali';
                     } else {
                          const myLogs = teacherLogs?.filter((l: any) => l.student_id === student.id) || [];
                          if (myLogs.length > 0) {
@@ -492,6 +517,7 @@ const Dashboard: React.FC = () => {
                 {list.map((a: any, i: number) => (
                     <div key={i} className="flex justify-between items-center w-full text-[11px] leading-tight text-slate-700 dark:text-slate-300 font-medium group">
                         <span className="truncate pr-2">{a.student_name}</span>
+                        {a.source === 'tu' && <span className="text-[9px] px-1 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded mr-1 font-bold" title="Input TU/Operator">TU</span>}
                         {a.source === 'wali' && <span className="text-[9px] px-1 bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300 rounded mr-1" title="Input Wali Kelas">W</span>}
                         <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-100 dark:border-slate-700 group-hover:border-slate-200 dark:group-hover:border-slate-600 transition-colors whitespace-nowrap">
                              {a.hours === 'Full Day' ? 'Seharian' : `Jam ${a.hours}`}

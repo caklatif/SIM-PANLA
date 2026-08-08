@@ -148,10 +148,10 @@ const PublicDashboard: React.FC = () => {
             });
         }
 
-        const profileRoleMap: Record<string, string> = {};
+        const profileRoleMap: Record<string, { role?: string; nip?: string; name?: string }> = {};
         if (profilesRes?.data) {
             profilesRes.data.forEach((p: any) => {
-                if (p.id) profileRoleMap[p.id] = p.role;
+                if (p.id) profileRoleMap[p.id] = { role: p.role, nip: p.nip, name: p.full_name };
             });
         }
 
@@ -162,12 +162,19 @@ const PublicDashboard: React.FC = () => {
                 if (['S', 'I', 'A', 'D'].includes(h.status)) {
                     const studentName = sNameMap[h.student_id] || h.student_name || '';
                     let src: 'Wali' | 'TU' | 'Guru' = 'Wali';
-                    if (h.created_by && profileRoleMap[h.created_by]) {
-                        const creatorRole = profileRoleMap[h.created_by];
-                        if (creatorRole === 'operator' || creatorRole === 'admin') {
-                            src = 'TU';
+                    if (h.created_by) {
+                        const creator = profileRoleMap[h.created_by];
+                        if (creator) {
+                            const r = (creator.role || '').toLowerCase();
+                            const nip = creator.nip || '';
+                            const name = (creator.name || '').toLowerCase();
+                            if (r === 'operator' || r === 'admin' || nip === '112233' || nip === '20535439' || name.includes('admin') || name.includes('operator')) {
+                                src = 'TU';
+                            } else {
+                                src = 'Wali';
+                            }
                         } else {
-                            src = 'Wali';
+                            src = 'TU';
                         }
                     } else {
                         src = 'TU';
