@@ -71,6 +71,7 @@ const PublicDashboard: React.FC = () => {
   const fetchStatsClientSide = async () => {
     const todayStr = getWIBISOString();
     const startOfDay = `${todayStr}T00:00:00+07:00`;
+    const endOfDay = `${todayStr}T23:59:59+07:00`;
 
     const todayObj = new Date(todayStr);
     const jsDay = todayObj.getDay();
@@ -99,10 +100,11 @@ const PublicDashboard: React.FC = () => {
             studentsRes = await supabase.from('students').select('id, name, kelas');
         }
         
-        const [journalsRes, attendanceRes, homeroomRes] = await Promise.all([
-            supabase.from('journals').select('hours, kelas').gte('created_at', startOfDay),
-            supabase.from('attendance_logs').select('student_id, student_name, status, created_at, subject').gte('created_at', startOfDay),
-            supabase.from('homeroom_attendance').select('student_id, status, kelas').eq('date', todayStr)
+        const [journalsRes, attendanceRes, homeroomRes, profilesRes] = await Promise.all([
+            supabase.from('journals').select('hours, kelas').gte('created_at', startOfDay).lte('created_at', endOfDay),
+            supabase.from('attendance_logs').select('student_id, student_name, status, created_at, subject').gte('created_at', startOfDay).lte('created_at', endOfDay),
+            supabase.from('homeroom_attendance').select('student_id, status, kelas, created_by').eq('date', todayStr),
+            supabase.from('profiles').select('id, role')
         ]);
 
         const classCounts: Record<string, number> = {};
@@ -146,13 +148,31 @@ const PublicDashboard: React.FC = () => {
             });
         }
 
-        const combinedAttendance: Record<string, {name: string, status: string, source: 'Wali' | 'Guru'}> = {};
+        const profileRoleMap: Record<string, string> = {};
+        if (profilesRes?.data) {
+            profilesRes.data.forEach((p: any) => {
+                if (p.id) profileRoleMap[p.id] = p.role;
+            });
+        }
+
+        const combinedAttendance: Record<string, {name: string, status: string, source: 'Wali' | 'TU' | 'Guru'}> = {};
 
         if (homeroomRes.data) {
             homeroomRes.data.forEach((h: any) => {
                 if (['S', 'I', 'A', 'D'].includes(h.status)) {
                     const studentName = sNameMap[h.student_id] || h.student_name || '';
-                    combinedAttendance[h.student_id] = { name: studentName || 'Loading...', status: h.status, source: 'Wali' };
+                    let src: 'Wali' | 'TU' | 'Guru' = 'Wali';
+                    if (h.created_by && profileRoleMap[h.created_by]) {
+                        const creatorRole = profileRoleMap[h.created_by];
+                        if (creatorRole === 'operator' || creatorRole === 'admin') {
+                            src = 'TU';
+                        } else {
+                            src = 'Wali';
+                        }
+                    } else {
+                        src = 'TU';
+                    }
+                    combinedAttendance[h.student_id] = { name: studentName || 'Loading...', status: h.status, source: src };
                 }
             });
         }
@@ -692,9 +712,19 @@ const PublicDashboard: React.FC = () => {
                                                             </span>
                                                         </div>
                                                         <div className="flex items-center gap-1.5">
+                                                            {student.source === 'TU' && (
+                                                                <span className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800 font-bold">
+                                                                    TU
+                                                                </span>
+                                                            )}
                                                             {student.source === 'Wali' && (
-                                                                <span className="text-[9px] bg-purple-100 text-purple-600 px-1 rounded border border-purple-200">
+                                                                <span className="text-[9px] bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-200 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800 font-bold">
                                                                     Wali
+                                                                </span>
+                                                            )}
+                                                            {student.source === 'Guru' && (
+                                                                <span className="text-[9px] bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-200 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 font-bold">
+                                                                    Guru
                                                                 </span>
                                                             )}
                                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
@@ -757,7 +787,9 @@ const PublicDashboard: React.FC = () => {
                                                             <div key={idx} className="flex justify-between items-center bg-white dark:bg-slate-700 p-3 rounded-xl border border-gray-100 dark:border-slate-600 text-xs shadow-sm">
                                                                 <span className="font-bold text-slate-700 dark:text-white">{s.name}</span>
                                                                 <div className="flex items-center gap-2">
-                                                                    {s.source === 'Wali' && <span className="text-[9px] bg-purple-100 text-purple-600 px-1 rounded border border-purple-200">Wali</span>}
+                                                                    {s.source === 'TU' && <span className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 px-1 rounded border border-amber-200 dark:border-amber-800 font-bold">TU</span>}
+                                                                    {s.source === 'Wali' && <span className="text-[9px] bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-200 px-1 rounded border border-purple-200 dark:border-purple-800 font-bold">Wali</span>}
+                                                                    {s.source === 'Guru' && <span className="text-[9px] bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-200 px-1 rounded border border-blue-200 dark:border-blue-800 font-bold">Guru</span>}
                                                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${s.status === 'S' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-100' : s.status === 'I' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-100' : s.status === 'D' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-100' : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-100'}`}>
                                                                         {s.status === 'S' ? 'Sakit' : s.status === 'I' ? 'Izin' : s.status === 'D' ? 'Dispen' : 'Alpa'}
                                                                     </span>

@@ -306,8 +306,7 @@ const Dashboard: React.FC = () => {
                     .select(`student_id, status, journals (hours)`)
                     .in('student_id', studentIds)
                     .gte('created_at', startOfDay)
-                    .lte('created_at', endOfDay)
-                    .neq('status', 'D'); 
+                    .lte('created_at', endOfDay);
 
                 const finalAbsences: WaliKelasAbsence[] = [];
 
@@ -326,6 +325,7 @@ const Dashboard: React.FC = () => {
                              if (statuses.has('S')) finalStatus = 'S';
                              else if (statuses.has('I')) finalStatus = 'I';
                              else if (statuses.has('A')) finalStatus = 'A';
+                             else if (statuses.has('D')) finalStatus = 'D';
                              
                              const hoursSet = new Set<number>();
                              myLogs.forEach((l: any) => {

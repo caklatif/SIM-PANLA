@@ -149,7 +149,7 @@ const OperatorDashboard: React.FC = () => {
         kelas: selectedOperatorClass,
         student_id: studentId,
         status: status,
-        created_by: profilesRef.current?.[0]?.id
+        created_by: profile?.id || profilesRef.current?.[0]?.id
       }));
 
       if (studentIds.length > 0) {
@@ -226,25 +226,20 @@ const OperatorDashboard: React.FC = () => {
                   }
                   return res;
               }),
-              supabase.from('journals').select('teacher_id, kelas, subject, hours, cleanliness, validation, inval_teacher_name').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', startOfDay).lte('created_at', endOfDay).then(async (res) => {
+              supabase.from('journals').select('teacher_id, kelas, subject, hours, cleanliness, validation, inval_teacher_name').gte('created_at', startOfDay).lte('created_at', endOfDay).then(async (res) => {
                   if (res.error && (res.error.code === '42703' || res.error.message?.includes('validation') || res.error.message?.includes('inval_teacher_name'))) {
-                      return supabase.from('journals').select('teacher_id, kelas, subject, hours, cleanliness').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', startOfDay).lte('created_at', endOfDay);
+                      return supabase.from('journals').select('teacher_id, kelas, subject, hours, cleanliness').gte('created_at', startOfDay).lte('created_at', endOfDay);
                   }
                   return res;
               }),
-              supabase.from('attendance_logs').select('student_id, student_name, status, created_at').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', startOfDay).lte('created_at', endOfDay).neq('status', 'D'),
+              supabase.from('attendance_logs').select('student_id, student_name, status, created_at').gte('created_at', startOfDay).lte('created_at', endOfDay),
               supabase.from('students').select('id, kelas, name').eq('academic_year', academicYear || '2025/2026').then(async (res) => {
                   if (res.error || !res.data || res.data.length === 0) {
                       return supabase.from('students').select('id, kelas, name');
                   }
                   return res;
               }),
-              supabase.from('homeroom_attendance').select('student_id, status, kelas').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('date', semesterStart ? `${semesterStart}` : '2000-01-01').lte('date', semesterEnd ? `${semesterEnd}` : '2100-01-01').eq('date', filterDate).then(async (res) => {
-                  if (res.error || !res.data || res.data.length === 0) {
-                      return supabase.from('homeroom_attendance').select('student_id, status, kelas').eq('date', filterDate);
-                  }
-                  return res;
-              })
+              supabase.from('homeroom_attendance').select('student_id, status, kelas, created_by').eq('date', filterDate)
           ]);
 
           const schedules = schedulesRes.data || [];
@@ -332,14 +327,33 @@ const OperatorDashboard: React.FC = () => {
               }
           }
 
+          const profileRoleMap: Record<string, string> = {};
+          if (activeProfiles && activeProfiles.length > 0) {
+              activeProfiles.forEach((p: any) => {
+                  if (p.id) profileRoleMap[p.id] = p.role;
+              });
+          }
+
           const uniqueAbsenceMap: Record<string, {name: string, status: string, kelas: string, source?: string}> = {};
           homeroomLogs.forEach((h: any) => { 
             if (['S', 'I', 'A', 'D'].includes(h.status)) { 
+              let src = 'Wali';
+              if (h.created_by && profileRoleMap[h.created_by]) {
+                const creatorRole = profileRoleMap[h.created_by];
+                if (creatorRole === 'operator' || creatorRole === 'admin') {
+                  src = 'TU';
+                } else {
+                  src = 'Wali';
+                }
+              } else {
+                // If created_by is missing or null, default to TU
+                src = 'TU';
+              }
               uniqueAbsenceMap[h.student_id] = { 
                 name: studentNameMap[h.student_id] || h.student_name || 'Siswa', 
                 status: h.status, 
                 kelas: studentClassMap[h.student_id] || h.kelas || '?',
-                source: 'homeroom'
+                source: src
               }; 
             } 
           });
@@ -350,7 +364,7 @@ const OperatorDashboard: React.FC = () => {
                   name: log.student_name || studentNameMap[log.student_id] || 'Siswa', 
                   status: log.status, 
                   kelas: studentClassMap[log.student_id] || '?',
-                  source: 'kbm'
+                  source: 'Guru'
                 }; 
               } 
             } 
@@ -368,9 +382,24 @@ const OperatorDashboard: React.FC = () => {
           setAbsenceList(absenceListFinal);
           setAbsenceStats({ S: sCount, I: iCount, A: aCount, D: dCount });
 
-          const totalSchedules = processed.length;
-          const filledSchedules = processed.filter(i => i.isFilled).length;
-          const kbmPct = totalSchedules > 0 ? Math.round((filledSchedules / totalSchedules) * 100) : 0;
+          let completedJp = 0;
+          journals.forEach((j: any) => {
+              if (typeof j.hours === 'string') {
+                  const parts = j.hours.split(',').filter((h: string) => h.trim().length > 0);
+                  completedJp += parts.length;
+              }
+          });
+
+          let jpPerClass = 0;
+          if (jsDay === 1) jpPerClass = 7;
+          else if (jsDay >= 2 && jsDay <= 4) jpPerClass = 8;
+          else if (jsDay === 5) jpPerClass = 5;
+          else if (jsDay === 6) jpPerClass = 6;
+
+          const activeClassesCount = Object.keys(classCounts).length || 12;
+          const totalJpRequired = activeClassesCount * jpPerClass;
+
+          const kbmPct = totalJpRequired > 0 ? (Math.round((completedJp / totalJpRequired) * 1000) / 10) : 0;
 
           const cleanCounts: Record<string, number> = {};
           journals.forEach(j => { if (j.cleanliness === 'sudah_bersih') cleanCounts[j.kelas] = (cleanCounts[j.kelas] || 0) + 1; });
@@ -382,7 +411,7 @@ const OperatorDashboard: React.FC = () => {
           let emptiest = '-'; let maxEmpty = -1;
           Object.entries(emptyCounts).forEach(([cls, count]) => { if (count > maxEmpty) { maxEmpty = count; emptiest = cls; } });
 
-          setStats({ alpaCount: aCount + iCount + sCount, kbmPercentage: `${kbmPct}%`, cleanestClass: cleanest, mostEmptyClass: emptiest });
+          setStats({ alpaCount: absenceListFinal.length, kbmPercentage: `${kbmPct}%`, cleanestClass: cleanest, mostEmptyClass: emptiest });
 
           const missing = processed.filter(i => !i.isFilled).map(i => ({ name: i.teacherName, kelas: i.kelas }));
           const uniqueMissing: {name: string, kelas: string}[] = [];
@@ -681,7 +710,10 @@ const OperatorDashboard: React.FC = () => {
             <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[calc(env(safe-area-inset-top)+1rem)] sm:p-4 bg-slate-900/50 backdrop-blur-sm transition-all duration-300" onClick={() => setModalOpen(false)}>
               <div className="bg-white rounded-2xl shadow-2xl w-full md:w-full md:max-w-md flex flex-col max-h-[85vh] overflow-hidden border border-slate-100 relative animate-fade-in" onClick={e => e.stopPropagation()}>
                   <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100">
-                      <h3 className="font-extrabold text-slate-800 text-lg leading-tight">Rincian Ketidakhadiran</h3>
+                      <div>
+                          <h3 className="font-extrabold text-slate-800 text-lg leading-tight">Rincian Ketidakhadiran Hari Ini</h3>
+                          <p className="text-[10px] font-bold text-purple-500 uppercase mt-1">Rekap Ketidakhadiran</p>
+                      </div>
                       <button onClick={() => setModalOpen(false)} className="text-gray-400 hover:text-gray-600 p-1 bg-gray-50 rounded-full"><X size={20} /></button>
                   </div>
                   <div className="overflow-y-auto p-6 space-y-6 custom-scrollbar bg-white flex-1">
@@ -748,6 +780,10 @@ const OperatorDashboard: React.FC = () => {
                             </button>
                         </div>
 
+                        <div className="p-3 bg-[#F9F7FF] border border-slate-100 rounded-xl text-center">
+                            <span className="text-[10px] text-purple-500 font-bold uppercase">*Termasuk input dari Wali Kelas & Guru Mapel.</span>
+                        </div>
+
                         {selectedStatusFilter && (
                             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2 animate-fade-in shadow-inner">
                                 <div className="flex justify-between items-center pb-2 border-b border-slate-200">
@@ -792,9 +828,19 @@ const OperatorDashboard: React.FC = () => {
                                                         </span>
                                                     </div>
                                                     <div className="flex items-center gap-1.5">
-                                                        {student.source === 'homeroom' && (
-                                                            <span className="text-[9px] bg-purple-100 text-purple-700 px-1 rounded border border-purple-200 font-bold">
+                                                        {student.source === 'TU' && (
+                                                            <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200 font-bold">
+                                                                TU
+                                                            </span>
+                                                        )}
+                                                        {student.source === 'Wali' && (
+                                                            <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded border border-purple-200 font-bold">
                                                                 Wali
+                                                            </span>
+                                                        )}
+                                                        {student.source === 'Guru' && (
+                                                            <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200 font-bold">
+                                                                Guru
                                                             </span>
                                                         )}
                                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
@@ -826,7 +872,7 @@ const OperatorDashboard: React.FC = () => {
                                         return (
                                             <div key={cls} className="border border-gray-100 rounded-2xl overflow-hidden transition-all hover:shadow-sm">
                                                 <button onClick={() => hasAbsence && setExpandedClass(isExpanded ? null : cls)} className={`w-full flex items-center justify-between p-3 bg-white ${!hasAbsence ? 'cursor-default' : ''}`}><div className="flex items-center gap-3"><div className={`w-10 h-10 flex items-center justify-center rounded-xl font-bold text-sm shadow-sm ${hasAbsence ? 'bg-red-50 border border-red-100 text-red-700' : 'bg-green-50 border border-green-100 text-green-700'}`}>{cls}</div><div className="text-xs font-bold text-slate-700"><span className="text-green-600">{presentCount > 0 ? `${presentCount} Hadir` : 'Hadir'}</span><span className="text-gray-300 mx-2">|</span><span className={hasAbsence ? 'text-red-500' : 'text-slate-300'}>{absentCount} Tidak Hadir</span></div></div>{hasAbsence && (<div className="text-gray-300">{isExpanded ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</div>)}</button>
-                                                {isExpanded && hasAbsence && (<div className="bg-gray-50 p-3 border-t border-gray-100 space-y-2 animate-fade-in">{studentsInClass.map((s: any, idx: number) => (<div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100 text-xs shadow-sm"><span className="font-bold text-slate-700">{s.name}</span><div className="flex items-center gap-1.5">{s.source === 'homeroom' && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700">Wali</span>}<span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${s.status === 'S' ? 'bg-yellow-100 text-yellow-800' : s.status === 'I' ? 'bg-blue-100 text-blue-800' : s.status === 'D' ? 'bg-purple-100 text-purple-800' : 'bg-red-100 text-red-800'}`}>{s.status === 'S' ? 'SAKIT' : s.status === 'I' ? 'IZIN' : s.status === 'D' ? 'DISPEN' : 'ALPA'}</span></div></div>))}</div>)}
+                                                {isExpanded && hasAbsence && (<div className="bg-gray-50 p-3 border-t border-gray-100 space-y-2 animate-fade-in">{studentsInClass.map((s: any, idx: number) => (<div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100 text-xs shadow-sm"><span className="font-bold text-slate-700">{s.name}</span><div className="flex items-center gap-1.5">{s.source === 'TU' && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">TU</span>}{s.source === 'Wali' && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 border border-purple-200">Wali</span>}{s.source === 'Guru' && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-700 border border-blue-200">Guru</span>}<span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${s.status === 'S' ? 'bg-yellow-100 text-yellow-800' : s.status === 'I' ? 'bg-blue-100 text-blue-800' : s.status === 'D' ? 'bg-purple-100 text-purple-800' : 'bg-red-100 text-red-800'}`}>{s.status === 'S' ? 'SAKIT' : s.status === 'I' ? 'IZIN' : s.status === 'D' ? 'DISPEN' : 'ALPA'}</span></div></div>))}</div>)}
                                             </div>
                                         );
                                     })}
