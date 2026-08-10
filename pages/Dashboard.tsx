@@ -331,9 +331,9 @@ const Dashboard: React.FC = () => {
                             const creator = allProfiles.find((p: any) => p.id === cId);
                             if (creator) {
                                 const r = (creator.role || '').toLowerCase();
-                                const nip = creator.nip || '';
+                                const nip = String(creator.nip || '');
                                 const name = (creator.full_name || '').toLowerCase();
-                                if (r === 'operator' || r === 'admin' || nip === '112233' || nip === '20535439' || name.includes('admin') || name.includes('operator')) {
+                                if (r === 'operator' || r === 'admin' || nip === '112233' || nip === '20535439' || name.includes('admin') || name.includes('operator') || name.includes('tata usaha') || name.includes('tu')) {
                                     isTu = true;
                                 }
                             } else {
@@ -642,8 +642,8 @@ const Dashboard: React.FC = () => {
                         </div>
                     </div>
                     <div>
-                        <p className="text-purple-50 text-sm mb-1" style={{ width: '132px', fontSize: '18px', lineHeight: '21px' }}>{greeting},</p>
-                        <h1 className="text-xl md:text-2xl font-semibold mb-0.5" style={{ width: '131px', height: '31.375px', fontSize: '14px' }}>{profile?.full_name}</h1>
+                        <p className="text-purple-50 text-sm mb-1" style={{ width: '141px', fontSize: '17px', lineHeight: '21px' }}>{greeting},</p>
+                        <h1 className="text-xl md:text-2xl font-semibold mb-0.5" style={{ width: '124px', fontSize: '13px' }}>{profile?.full_name}</h1>
                                                 <p className="text-purple-100/90 text-sm font-mono">{isAdmin ? 'Administrator' : (profile?.nip ? `NIP ${profile.nip}` : 'NIP -')}</p>
                     </div>
                 </div>

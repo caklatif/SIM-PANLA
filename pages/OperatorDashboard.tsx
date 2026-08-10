@@ -342,9 +342,9 @@ const OperatorDashboard: React.FC = () => {
                 const creator = profileRoleMap[h.created_by];
                 if (creator) {
                   const r = (creator.role || '').toLowerCase();
-                  const nip = creator.nip || '';
+                  const nip = String(creator.nip || '');
                   const name = (creator.name || '').toLowerCase();
-                  if (r === 'operator' || r === 'admin' || nip === '112233' || nip === '20535439' || name.includes('admin') || name.includes('operator')) {
+                  if (r === 'operator' || r === 'admin' || nip === '112233' || nip === '20535439' || name.includes('admin') || name.includes('operator') || name.includes('tata usaha') || name.includes('tu')) {
                     src = 'TU';
                   } else {
                     src = 'Wali';

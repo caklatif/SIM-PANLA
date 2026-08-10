@@ -104,7 +104,7 @@ const PublicDashboard: React.FC = () => {
             supabase.from('journals').select('hours, kelas').gte('created_at', startOfDay).lte('created_at', endOfDay),
             supabase.from('attendance_logs').select('student_id, student_name, status, created_at, subject').gte('created_at', startOfDay).lte('created_at', endOfDay),
             supabase.from('homeroom_attendance').select('student_id, status, kelas, created_by').eq('date', todayStr),
-            supabase.from('profiles').select('id, role')
+            supabase.from('profiles').select('id, role, nip, full_name')
         ]);
 
         const classCounts: Record<string, number> = {};
@@ -166,9 +166,9 @@ const PublicDashboard: React.FC = () => {
                         const creator = profileRoleMap[h.created_by];
                         if (creator) {
                             const r = (creator.role || '').toLowerCase();
-                            const nip = creator.nip || '';
+                            const nip = String(creator.nip || '');
                             const name = (creator.name || '').toLowerCase();
-                            if (r === 'operator' || r === 'admin' || nip === '112233' || nip === '20535439' || name.includes('admin') || name.includes('operator')) {
+                            if (r === 'operator' || r === 'admin' || nip === '112233' || nip === '20535439' || name.includes('admin') || name.includes('operator') || name.includes('tata usaha') || name.includes('tu')) {
                                 src = 'TU';
                             } else {
                                 src = 'Wali';
