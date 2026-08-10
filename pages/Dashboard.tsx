@@ -642,7 +642,7 @@ const Dashboard: React.FC = () => {
                         </div>
                     </div>
                     <div>
-                        <p className="text-purple-50 text-sm mb-1" style={{ width: '124px', fontSize: '17px', lineHeight: '21px' }}>{greeting},</p>
+                        <p className="text-purple-50 text-sm mb-1" style={{ width: '140px', fontSize: '20px', lineHeight: '21px' }}>{greeting},</p>
                         <h1 className="text-xl md:text-2xl font-semibold mb-0.5" style={{ width: '132px', fontSize: '14px' }}>{profile?.full_name}</h1>
                                                 <p className="text-purple-100/90 text-sm font-mono">{isAdmin ? 'Administrator' : (profile?.nip ? `NIP ${profile.nip}` : 'NIP -')}</p>
                     </div>

@@ -11,7 +11,7 @@ export default defineConfig({
       injectRegister: 'auto',
       manifestFilename: 'manifest.json',
       devOptions: {
-        enabled: true
+        enabled: false
       },
       includeAssets: ['favicon.ico', 'icon.png', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       workbox: {
