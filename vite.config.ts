@@ -14,7 +14,7 @@ export default defineConfig({
         enabled: true,
         type: 'classic'
       },
-      includeAssets: ['favicon.ico', 'icon.png', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png'],
+      includeAssets: ['favicon.ico', 'icon.png', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png', 'screenshot-desktop.png', 'screenshot-mobile.png'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallback: '/index.html',
@@ -32,7 +32,7 @@ export default defineConfig({
         orientation: 'portrait',
         scope: '/',
         start_url: '/',
-        id: 'sim-panla-pwa',
+        id: '/',
         categories: ['education', 'productivity'],
         icons: [
           {
@@ -42,8 +42,8 @@ export default defineConfig({
             purpose: 'any'
           },
           {
-            src: '/pwa-192x192.png',
-            sizes: '192x192',
+            src: '/pwa-maskable-512x512.png',
+            sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'
           },
@@ -52,12 +52,6 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any'
-          },
-          {
-            src: '/pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable'
           },
           {
             src: '/apple-touch-icon-180x180.png',
@@ -68,6 +62,22 @@ export default defineConfig({
             src: '/icon.png',
             sizes: '512x512',
             type: 'image/png'
+          }
+        ],
+        screenshots: [
+          {
+            src: '/screenshot-desktop.png',
+            sizes: '1280x720',
+            type: 'image/png',
+            form_factor: 'wide',
+            label: 'Tampilan Desktop Dashboard SIM-PANLA'
+          },
+          {
+            src: '/screenshot-mobile.png',
+            sizes: '750x1334',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: 'Tampilan Mobile Presensi & Jurnal Guru'
           }
         ]
       }

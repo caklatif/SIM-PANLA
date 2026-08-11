@@ -5,6 +5,7 @@
   "theme_color": "#9333ea",
   "background_color": "#F9F7FF",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",
   "scope": "/",
   "start_url": "/",
@@ -18,8 +19,8 @@
       "purpose": "any"
     },
     {
-      "src": "/pwa-192x192.png",
-      "sizes": "192x192",
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
@@ -30,12 +31,6 @@
       "purpose": "any"
     },
     {
-      "src": "/pwa-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
       "src": "/apple-touch-icon-180x180.png",
       "sizes": "180x180",
       "type": "image/png"
@@ -44,6 +39,22 @@
       "src": "/icon.png",
       "sizes": "512x512",
       "type": "image/png"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Tampilan Desktop Dashboard SIM-PANLA"
+    },
+    {
+      "src": "/screenshot-mobile.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Tampilan Mobile Presensi & Jurnal Guru"
     }
   ]
 }
