@@ -50,21 +50,12 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-180x180.png" />
     <link rel="mask-icon" href="/pwa-512x512.png" color="#9333ea" />
-    <link rel="manifest" href="/manifest.json" />
     <script>
       window.deferredPWAInstallPrompt = null;
       window.addEventListener('beforeinstallprompt', function(e) {
-        e.preventDefault();
         window.deferredPWAInstallPrompt = e;
         window.dispatchEvent(new CustomEvent('pwa-prompt-available'));
       });
-      if ('serviceWorker' in navigator && (window.location.hostname === 'localhost' || window.location.hostname.includes('ais-dev') || window.location.hostname.includes('run.app'))) {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-          for (var reg of registrations) {
-            reg.unregister();
-          }
-        });
-      }
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
