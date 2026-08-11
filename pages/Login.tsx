@@ -58,10 +58,10 @@ const Login: React.FC = () => {
              alt="Logo Sekolah" 
              className="h-24 w-auto mx-auto mb-4 drop-shadow-sm" 
            />
-           <h1 className="text-xl md:text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight uppercase leading-tight">
+           <h1 className="text-[26px] md:text-[31px] font-extrabold text-slate-800 dark:text-white tracking-tight uppercase leading-tight">
              UPT SMP Negeri 8 Pasuruan
            </h1>
-           <p className="text-slate-600 dark:text-slate-400 font-medium text-sm mt-1">
+           <p className="text-slate-600 dark:text-slate-400 font-medium text-[18px] mt-1">
              SIM-PANLA
            </p>
       </div>

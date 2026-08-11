@@ -354,8 +354,8 @@ const PublicDashboard: React.FC = () => {
                               <img src="https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0" alt="Logo" className="w-full h-full object-contain drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                           </div>
                           <div className="flex flex-col justify-center">
-                              <h1 className="text-[12px] mt-0 -ml-[7px] w-[118px] text-slate-800 leading-[1.1] tracking-normal mb-0.5 uppercase drop-shadow-sm" style={{ fontFamily: "'Stormfaze', sans-serif" }}>UPT SMP NEGERI 8<br/>PASURUAN</h1>
-                              <p className="text-[15px] -ml-[7px] font-bold w-[118px] tracking-wider leading-none mt-0.5" style={{ fontFamily: "'Alphacorsa', sans-serif", color: '#ffffff', WebkitTextStroke: '0.75px #9333ea', textShadow: '1px 1px 2px rgba(147, 51, 234, 0.4)', letterSpacing: '0.05em' }}>SIM-PANLA</p>
+                              <h1 className="text-[16px] sm:text-[18px] mt-0 -ml-[4px] text-slate-800 leading-[1.15] tracking-normal mb-0.5 uppercase drop-shadow-sm" style={{ fontFamily: "'Stormfaze', sans-serif" }}>UPT SMP NEGERI 8<br/>PASURUAN</h1>
+                              <p className="text-[20px] sm:text-[23px] -ml-[4px] font-bold tracking-wider leading-none mt-0.5" style={{ fontFamily: "'Alphacorsa', sans-serif", color: '#ffffff', WebkitTextStroke: '0.85px #9333ea', textShadow: '1px 1px 2px rgba(147, 51, 234, 0.4)', letterSpacing: '0.05em' }}>SIM-PANLA</p>
                           </div>
                       </div>
                       
