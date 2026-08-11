@@ -364,6 +364,10 @@ const OperatorDashboard: React.FC = () => {
             } 
           });
           attendanceLogs.forEach((log: any) => { 
+            const isBambangPJOK = (log.teacher_name || '').toLowerCase().includes('bambang rastudianto') || (log.subject || '').toLowerCase().includes('pendidikan jasmani') || (log.subject || '').toLowerCase().includes('pjok') || (log.subject || '').toLowerCase().includes('penjasorkes');
+            if (isBambangPJOK && log.status === 'A') {
+              return;
+            }
             if (!uniqueAbsenceMap[log.student_id]) { 
               if (['S', 'I', 'A', 'D'].includes(log.status)) { 
                 uniqueAbsenceMap[log.student_id] = { 

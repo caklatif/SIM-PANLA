@@ -186,6 +186,10 @@ const PublicDashboard: React.FC = () => {
 
         if (attendanceRes.data) {
             attendanceRes.data.forEach((log: any) => {
+                const isBambangPJOK = (log.teacher_name || '').toLowerCase().includes('bambang rastudianto') || (log.subject || '').toLowerCase().includes('pendidikan jasmani') || (log.subject || '').toLowerCase().includes('pjok') || (log.subject || '').toLowerCase().includes('penjasorkes');
+                if (isBambangPJOK && log.status === 'A') {
+                    return;
+                }
                 if (['S', 'I', 'A', 'D'].includes(log.status)) {
                     if (!combinedAttendance[log.student_id]) {
                         const studentName = log.student_name || sNameMap[log.student_id] || 'Siswa';

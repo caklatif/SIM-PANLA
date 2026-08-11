@@ -364,7 +364,8 @@ const JurnalForm: React.FC = () => {
             }
         } if (journalError) throw journalError; finalJournalId = journal.id; }
       if (finalJournalId) {
-          const attendanceInserts = Object.entries(formData.attendance).map(([studentId, status]) => { const studentName = students.find(s => s.id === studentId)?.name || 'Unknown'; return { journal_id: finalJournalId, student_id: studentId, student_name: studentName, status: status, teacher_name: profile.full_name, subject: formData.subject, academic_year: academicYear || '2025/2026', semester: semester || 'Ganjil' }; });
+          const attendanceInserts = Object.entries(formData.attendance)
+            .map(([studentId, status]) => { const studentName = students.find(s => s.id === studentId)?.name || 'Unknown'; return { journal_id: finalJournalId, student_id: studentId, student_name: studentName, status: status, teacher_name: profile.full_name, subject: formData.subject, academic_year: academicYear || '2025/2026', semester: semester || 'Ganjil' }; });
           if (attendanceInserts.length > 0) { let { error: attError } = await supabase.from('attendance_logs').insert(attendanceInserts);
           if (attError && (attError.code === '42703' || attError.message?.includes('academic_year') || attError.message?.includes('semester'))) {
               const fallbackAtts = attendanceInserts.map(a => {
@@ -445,6 +446,7 @@ const JurnalForm: React.FC = () => {
                     const currentStatus = formData.attendance[student.id];
                     let prevStatusDisplay = 'H';
                     let prevStatusColor = 'bg-green-100 text-green-700 border-green-200';
+                    let isFromPrevMeeting = false;
 
                     if (currentStatus) {
                       if (currentStatus === 'S') { prevStatusDisplay = 'S'; prevStatusColor = 'bg-yellow-100 text-yellow-700 border-yellow-200'; }
@@ -454,13 +456,16 @@ const JurnalForm: React.FC = () => {
                     } else if (hasPrevMeeting) {
                       const rawStatus = prevMeetingStats[student.id];
                       if (!rawStatus) { prevStatusDisplay = 'H'; prevStatusColor = 'bg-green-100 text-green-700 border-green-200'; } 
-                      else if (rawStatus === 'D') { prevStatusDisplay = 'D'; prevStatusColor = 'bg-purple-100 text-purple-700 border-purple-200'; } 
-                      else if (isDhuha && ['S', 'I', 'A'].includes(rawStatus)) { prevStatusDisplay = 'TH'; prevStatusColor = 'bg-red-100 text-red-700 border-red-200'; } 
+                      else if (rawStatus === 'D') { prevStatusDisplay = 'D'; prevStatusColor = 'bg-purple-100 text-purple-700 border-purple-200'; isFromPrevMeeting = true; } 
+                      else if (isDhuha && ['S', 'I', 'A'].includes(rawStatus)) { prevStatusDisplay = 'TH'; prevStatusColor = 'bg-red-100 text-red-700 border-red-200'; isFromPrevMeeting = true; } 
                       else { 
                         prevStatusDisplay = rawStatus; 
                         if (rawStatus === 'S') prevStatusColor = 'bg-yellow-100 text-yellow-700 border-yellow-200'; 
                         else if (rawStatus === 'I') prevStatusColor = 'bg-purple-100 text-purple-700 border-purple-200'; 
                         else if (rawStatus === 'A') prevStatusColor = 'bg-red-100 text-red-700 border-red-200'; 
+                        if (['S', 'I', 'A', 'D'].includes(rawStatus)) {
+                          isFromPrevMeeting = true;
+                        }
                       }
                     }
                     const stats = studentStats[student.id] || { A: 0, D: 0 };
@@ -485,6 +490,11 @@ const JurnalForm: React.FC = () => {
                             {stats.A > 0 && <span className="text-red-600 text-[10px] font-extrabold bg-red-50 px-1.5 py-0.5 rounded border border-red-100 whitespace-nowrap">A: {stats.A}</span>}
                             {isDhuha && stats.D > 0 && <span className="text-purple-600 text-[10px] font-extrabold bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 whitespace-nowrap">D: {stats.D}</span>}
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${prevStatusColor} whitespace-nowrap`}>{prevStatusDisplay}</span>
+                            {isFromPrevMeeting && (
+                              <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 whitespace-nowrap">
+                                Pertemuan Sebelumnya
+                              </span>
+                            )}
                           </div>
                         </td>
                         {isDhuha ? (
