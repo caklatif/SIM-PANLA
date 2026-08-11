@@ -5,11 +5,10 @@
   "theme_color": "#9333ea",
   "background_color": "#F9F7FF",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",
   "scope": "/",
   "start_url": "/",
-  "id": "sim-panla-pwa",
+  "id": "/",
   "categories": ["education", "productivity"],
   "icons": [
     {
