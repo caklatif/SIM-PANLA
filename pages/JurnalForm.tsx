@@ -5,7 +5,7 @@ import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Student, Schedule, Journal, Profile } from '../types';
 import { getWIBISOString, getWIBDate } from '../utils/dateUtils';
-import {  ArrowLeft, ArrowRight, Check, Send, Sparkles, BookOpen, Clock, ToggleLeft, ToggleRight, Loader2, Edit3, XCircle, CheckCircle2, MessageSquare, History, ClipboardCheck, X, ClipboardList, BookOpenCheck, Ban, ChevronRight, Plus, Trash2, ChevronDown, CheckSquare, Square, Gavel, Lock , BookOpenText, UserCheck, UserX, Users } from 'lucide-react';
+import {  ArrowLeft, ArrowRight, Check, Send, Sparkles, BookOpen, Clock, ToggleLeft, ToggleRight, Loader2, Edit3, XCircle, CheckCircle2, MessageSquare, History, ClipboardCheck, X, ClipboardList, BookOpenCheck, Ban, ChevronRight, Plus, Trash2, ChevronDown, CheckSquare, Square, Gavel, Lock, Unlock, BookOpenText, UserCheck, UserX, Users } from 'lucide-react';
 
 interface NoteItem {
     category: string;
@@ -79,6 +79,11 @@ const JurnalForm: React.FC = () => {
   }>({ isOpen: false, type: 'success', title: '', message: '' });
 
   const [lockedAttendance, setLockedAttendance] = useState<string[]>([]);
+  const toggleLockStudent = (studentId: string) => {
+    setLockedAttendance(prev =>
+      prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]
+    );
+  };
   const [formData, setFormData] = useState({
     kelas: '',
     subject: '',
@@ -240,6 +245,23 @@ const JurnalForm: React.FC = () => {
         if (studentsData) {
             setStudents(studentsData as Student[]);
             setLoading(false); 
+            if (!editJournalId) {
+                const todayStr = getWIBISOString();
+                supabase.from('homeroom_attendance').select('student_id, status').eq('date', todayStr).eq('kelas', formData.kelas).then(({data: hrData}) => {
+                    if (hrData && hrData.length > 0) {
+                        const initialAttendance: Record<string, any> = {};
+                        const locked: string[] = [];
+                        hrData.forEach(r => {
+                            if (['S', 'I', 'A', 'D'].includes(r.status)) {
+                                initialAttendance[r.student_id] = r.status;
+                                locked.push(r.student_id);
+                            }
+                        });
+                        setFormData(prev => ({ ...prev, attendance: { ...prev.attendance, ...initialAttendance } }));
+                        setLockedAttendance(locked);
+                    }
+                });
+            }
             const studentIds = studentsData.map(s => s.id);
             if (studentIds.length > 0) {
                 let query = supabase.from('attendance_logs').select('student_id, status, journal_id, journals!inner(teacher_id, subject)').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').eq('schedule_version', activeScheduleVersion || 'Utama').in('status', ['A', 'D']).in('student_id', studentIds).eq('journals.teacher_id', profile.id);
@@ -420,9 +442,16 @@ const JurnalForm: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {students.map(student => {
+                    const currentStatus = formData.attendance[student.id];
                     let prevStatusDisplay = 'H';
                     let prevStatusColor = 'bg-green-100 text-green-700 border-green-200';
-                    if (hasPrevMeeting) {
+
+                    if (currentStatus) {
+                      if (currentStatus === 'S') { prevStatusDisplay = 'S'; prevStatusColor = 'bg-yellow-100 text-yellow-700 border-yellow-200'; }
+                      else if (currentStatus === 'I') { prevStatusDisplay = 'I'; prevStatusColor = 'bg-purple-100 text-purple-700 border-purple-200'; }
+                      else if (currentStatus === 'A') { prevStatusDisplay = 'A'; prevStatusColor = 'bg-red-100 text-red-700 border-red-200'; }
+                      else if (currentStatus === 'D') { prevStatusDisplay = 'D'; prevStatusColor = 'bg-purple-100 text-purple-700 border-purple-200'; }
+                    } else if (hasPrevMeeting) {
                       const rawStatus = prevMeetingStats[student.id];
                       if (!rawStatus) { prevStatusDisplay = 'H'; prevStatusColor = 'bg-green-100 text-green-700 border-green-200'; } 
                       else if (rawStatus === 'D') { prevStatusDisplay = 'D'; prevStatusColor = 'bg-purple-100 text-purple-700 border-purple-200'; } 
@@ -439,7 +468,18 @@ const JurnalForm: React.FC = () => {
                       <tr key={student.id} className="hover:bg-slate-50 transition-colors">
                         <td className="p-2 sm:p-3 pl-3 sm:pl-4 overflow-hidden">
                           <div className="font-bold text-slate-700 text-xs sm:text-sm truncate w-full flex items-center gap-1" title={student.name}>
-                            {student.name}{lockedAttendance.includes(student.id) && <span title="Diisi & dikunci oleh Wali Kelas" className="flex items-center"><Lock size={12} className="text-slate-400" /></span>}
+                            {student.name}
+                            {lockedAttendance.includes(student.id) ? (
+                              <button
+                                type="button"
+                                onClick={() => toggleLockStudent(student.id)}
+                                title="Diisi & dikunci oleh Wali Kelas / Operator. Klik untuk membuka kunci jika murid sebenarnya Hadir"
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-200 px-1.5 py-0.5 rounded-md border border-amber-300 transition-colors cursor-pointer"
+                              >
+                                <Lock size={11} />
+                                <span>Terkunci (Klik u/ Buka)</span>
+                              </button>
+                            ) : null}
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5 mt-1">
                             {stats.A > 0 && <span className="text-red-600 text-[10px] font-extrabold bg-red-50 px-1.5 py-0.5 rounded border border-red-100 whitespace-nowrap">A: {stats.A}</span>}
