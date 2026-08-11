@@ -1,4 +1,3 @@
-
 // Utility untuk menangani Waktu Indonesia Barat (WIB / Asia/Jakarta)
 
 // Mendapatkan objek Date saat ini dalam WIB
@@ -20,35 +19,53 @@ export const getWIBISOString = (): string => {
 };
 
 // Format Tanggal Lengkap Indonesia (Contoh: Senin, 20 Januari 2025)
-export const formatDateIndo = (dateInput: string | Date): string => {
+export const formatDateIndo = (dateInput: string | Date | undefined | null): string => {
+  if (!dateInput) return '-';
   const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  return new Intl.DateTimeFormat('id-ID', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'Asia/Jakarta'
-  }).format(date);
+  if (isNaN(date.getTime())) return typeof dateInput === 'string' ? dateInput : '-';
+  try {
+    return new Intl.DateTimeFormat('id-ID', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'Asia/Jakarta'
+    }).format(date);
+  } catch (e) {
+    return String(dateInput);
+  }
 };
 
 // Format Tanggal Tanda Tangan (Contoh: 20 Januari 2025) - Tanpa Nama Hari
-export const formatDateSignature = (dateInput: string | Date): string => {
+export const formatDateSignature = (dateInput: string | Date | undefined | null): string => {
+  if (!dateInput) return '-';
   const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  return new Intl.DateTimeFormat('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'Asia/Jakarta'
-  }).format(date);
+  if (isNaN(date.getTime())) return typeof dateInput === 'string' ? dateInput : '-';
+  try {
+    return new Intl.DateTimeFormat('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'Asia/Jakarta'
+    }).format(date);
+  } catch (e) {
+    return String(dateInput);
+  }
 };
 
 // Format Jam (Contoh: 07:30)
-export const formatTimeIndo = (dateInput: string | Date): string => {
+export const formatTimeIndo = (dateInput: string | Date | undefined | null): string => {
+  if (!dateInput) return '-';
   const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  return new Intl.DateTimeFormat('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Asia/Jakarta',
-    hour12: false
-  }).format(date).replace(/\./g, ':');
+  if (isNaN(date.getTime())) return '-';
+  try {
+    return new Intl.DateTimeFormat('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Jakarta',
+      hour12: false
+    }).format(date).replace(/\./g, ':');
+  } catch (e) {
+    return '-';
+  }
 };

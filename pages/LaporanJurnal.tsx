@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Layout } from '../components/Layout';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -6,7 +6,7 @@ import {
     Printer, Download, Trash2, Edit3, Search, Filter, RefreshCw, X, 
     AlertTriangle, BookOpen, CheckSquare, Square, Calendar, Check, 
     Loader2, User, Sparkles, ChevronDown, CheckCircle2,
-    FileSpreadsheet, Sparkle
+    FileSpreadsheet, Eye, Info, Clock, AlertCircle
 } from 'lucide-react';
 import { formatDateIndo, formatDateSignature, getWIBISOString } from '../utils/dateUtils';
 
@@ -26,10 +26,8 @@ interface JournalItem {
     notes?: string;
     teacher_name?: string;
     teacher_nip?: string;
-    profiles?: {
-        full_name: string;
-        nip: string;
-    };
+    is_unfilled?: boolean;
+    is_out_of_schedule?: boolean;
     attendance_logs?: {
         id: string;
         student_id: string;
@@ -45,8 +43,21 @@ interface JournalItem {
     }[];
 }
 
-const LaporanJurnal: React.FC = () => {
-    const { profile, isAdmin, isOperator, academicYear, semester, semesterStart, semesterEnd } = useAuth();
+interface ScheduleItem {
+    id: string;
+    teacher_id: string;
+    kelas: string;
+    subject: string;
+    day_of_week: number;
+    hour: string | number;
+    academic_year?: string;
+    semester?: string;
+    teacher_name?: string;
+    teacher_nip?: string;
+}
+
+export const LaporanJurnal: React.FC = () => {
+    const { profile, isAdmin, isOperator, academicYear, semester } = useAuth();
     const [loading, setLoading] = useState(false);
     const [journals, setJournals] = useState<JournalItem[]>([]);
     const [teachersList, setTeachersList] = useState<{ id: string; full_name: string; nip: string }[]>([]);
@@ -58,7 +69,11 @@ const LaporanJurnal: React.FC = () => {
     const [startDate, setStartDate] = useState<string>('');
     const [endDate, setEndDate] = useState<string>('');
     const [searchQuery, setSearchQuery] = useState<string>('');
-    const [quickRange, setQuickRange] = useState<'today' | 'month' | 'all'>('all');
+    const [quickRange, setQuickRange] = useState<'today' | 'month' | 'all'>('month');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+    // Print Preview Modal State
+    const [showPrintPreview, setShowPrintPreview] = useState(false);
 
     // Selection & Bulk Actions
     const [selectedJournalIds, setSelectedJournalIds] = useState<string[]>([]);
@@ -93,13 +108,11 @@ const LaporanJurnal: React.FC = () => {
         headmaster_nip: '197001011995031002'
     });
 
-    const componentRef = useRef<HTMLDivElement>(null);
-
     useEffect(() => {
         if (profile) {
             fetchInitialData();
         }
-    }, [profile, academicYear, semester]);
+    }, [profile, academicYear, semester, sortOrder]);
 
     const fetchInitialData = async () => {
         setLoading(true);
@@ -129,30 +142,43 @@ const LaporanJurnal: React.FC = () => {
         }
     };
 
+    // Helper to generate dates range
+    const getDatesInRange = (startStr: string, endStr: string): string[] => {
+        const dates: string[] = [];
+        if (!startStr || !endStr) return dates;
+        const curr = new Date(startStr + 'T00:00:00');
+        const end = new Date(endStr + 'T00:00:00');
+        if (isNaN(curr.getTime()) || isNaN(end.getTime())) return dates;
+        
+        let count = 0;
+        while (curr <= end && count < 60) {
+            const y = curr.getFullYear();
+            const m = String(curr.getMonth() + 1).padStart(2, '0');
+            const d = String(curr.getDate()).padStart(2, '0');
+            dates.push(`${y}-${m}-${d}`);
+            curr.setDate(curr.getDate() + 1);
+            count++;
+        }
+        return dates;
+    };
+
+    const getDayNum = (dateStr: string): number => {
+        if (!dateStr) return 1;
+        const parts = dateStr.split('T')[0].split('-');
+        if (parts.length < 3) return 1;
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getDay();
+        return d === 0 ? 7 : d;
+    };
+
     const loadJournals = async () => {
         setLoading(true);
         try {
+            // 1. Fetch raw journals cleanly with select('*')
             let query = supabase
                 .from('journals')
-                .select(`
-                    *,
-                    attendance_logs (
-                        id,
-                        student_id,
-                        student_name,
-                        status
-                    ),
-                    journal_notes (
-                        id,
-                        student_name,
-                        type,
-                        category,
-                        note
-                    )
-                `)
-                .order('created_at', { ascending: false });
+                .select('*')
+                .order('created_at', { ascending: sortOrder === 'asc' });
 
-            // If not admin and not operator, scope to current teacher only
             if (!isAdmin && !isOperator) {
                 query = query.eq('teacher_id', profile?.id);
             } else if (selectedTeacherId !== 'ALL') {
@@ -167,9 +193,14 @@ const LaporanJurnal: React.FC = () => {
                 query = query.eq('cleanliness', selectedCleanliness);
             }
 
-            // Date filtering
+            // Date bounds
+            const todayIso = getWIBISOString();
+            let startIso = startDate;
+            let endIso = endDate;
+
             if (quickRange === 'today') {
-                const todayIso = getWIBISOString();
+                startIso = todayIso;
+                endIso = todayIso;
                 query = query.gte('created_at', `${todayIso}T00:00:00+07:00`)
                              .lte('created_at', `${todayIso}T23:59:59+07:00`);
             } else if (quickRange === 'month') {
@@ -177,39 +208,169 @@ const LaporanJurnal: React.FC = () => {
                 const year = now.getFullYear();
                 const month = String(now.getMonth() + 1).padStart(2, '0');
                 const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
-                query = query.gte('created_at', `${year}-${month}-01T00:00:00+07:00`)
-                             .lte('created_at', `${year}-${month}-${lastDay}T23:59:59+07:00`);
+                startIso = `${year}-${month}-01`;
+                endIso = `${year}-${month}-${lastDay}`;
+                query = query.gte('created_at', `${startIso}T00:00:00+07:00`)
+                             .lte('created_at', `${endIso}T23:59:59+07:00`);
             } else {
                 if (startDate) query = query.gte('created_at', `${startDate}T00:00:00+07:00`);
                 if (endDate) query = query.lte('created_at', `${endDate}T23:59:59+07:00`);
             }
 
-            const { data, error } = await query;
-            if (error) throw error;
+            const { data: rawJournalsData, error: jErr } = await query;
+            if (jErr) throw jErr;
 
-            let journalList: JournalItem[] = (data as any[]) || [];
+            let rawJournalsList: JournalItem[] = (rawJournalsData as any[]) || [];
 
-            // If admin/operator, resolve teacher names from profiles map or inline
-            if (isAdmin || isOperator) {
-                const { data: profiles } = await supabase.from('profiles').select('id, full_name, nip');
-                const profMap = new Map((profiles || []).map(p => [p.id, p]));
-                journalList = journalList.map(j => {
-                    const prof = profMap.get(j.teacher_id);
-                    return {
+            // 1b. Fetch attendance_logs and journal_notes for these journals
+            if (rawJournalsList.length > 0) {
+                const journalIds = rawJournalsList.map(j => j.id).filter(Boolean);
+                if (journalIds.length > 0) {
+                    const [{ data: attLogs }, { data: jNotes }] = await Promise.all([
+                        supabase.from('attendance_logs').select('*').in('journal_id', journalIds),
+                        supabase.from('journal_notes').select('*').in('journal_id', journalIds)
+                    ]);
+
+                    const attMap = new Map<string, any[]>();
+                    (attLogs || []).forEach(l => {
+                        if (!attMap.has(l.journal_id)) attMap.set(l.journal_id, []);
+                        attMap.get(l.journal_id)!.push(l);
+                    });
+
+                    const noteMap = new Map<string, any[]>();
+                    (jNotes || []).forEach(n => {
+                        if (!noteMap.has(n.journal_id)) noteMap.set(n.journal_id, []);
+                        noteMap.get(n.journal_id)!.push(n);
+                    });
+
+                    rawJournalsList = rawJournalsList.map(j => ({
                         ...j,
-                        teacher_name: prof?.full_name || j.inval_teacher_name || 'Guru',
-                        teacher_nip: prof?.nip || '-'
-                    };
-                });
-            } else {
-                journalList = journalList.map(j => ({
-                    ...j,
-                    teacher_name: profile?.full_name,
-                    teacher_nip: profile?.nip
-                }));
+                        attendance_logs: attMap.get(j.id) || [],
+                        journal_notes: noteMap.get(j.id) || []
+                    }));
+                }
             }
 
-            setJournals(journalList);
+            // 2. Fetch profiles mapping
+            const { data: profiles } = await supabase.from('profiles').select('id, full_name, nip');
+            const profMap = new Map((profiles || []).map(p => [p.id, p]));
+
+            // 3. Fetch schedules
+            let schedQuery = supabase.from('schedules').select('*');
+            if (!isAdmin && !isOperator && profile?.id) {
+                schedQuery = schedQuery.eq('teacher_id', profile.id);
+            } else if (selectedTeacherId !== 'ALL') {
+                schedQuery = schedQuery.eq('teacher_id', selectedTeacherId);
+            }
+            if (selectedKelas !== 'ALL') {
+                schedQuery = schedQuery.eq('kelas', selectedKelas);
+            }
+
+            const { data: rawSchedules } = await schedQuery;
+            const schedules: ScheduleItem[] = rawSchedules || [];
+
+            // Determine date bounds if not set
+            if (!startIso || !endIso) {
+                if (rawJournalsList.length > 0) {
+                    const dates = rawJournalsList.map(j => j.created_at ? j.created_at.split('T')[0] : todayIso).sort();
+                    startIso = dates[0] < todayIso ? dates[0] : todayIso;
+                    endIso = todayIso;
+                } else {
+                    startIso = `${todayIso.slice(0, 7)}-01`;
+                    endIso = todayIso;
+                }
+            }
+
+            const datesInRange = getDatesInRange(startIso, endIso);
+
+            // 4. Match journals with schedules
+            const unfilledJournals: JournalItem[] = [];
+
+            datesInRange.forEach(dStr => {
+                const dayNum = getDayNum(dStr);
+                const daySchedules = schedules.filter(s => Number(s.day_of_week) === dayNum);
+
+                daySchedules.forEach(sch => {
+                    // Check if journal exists for this schedule on this date
+                    const matchedJournal = rawJournalsList.find(j => {
+                        const jDate = j.created_at ? j.created_at.split('T')[0] : '';
+                        const sameDate = jDate === dStr;
+                        const sameTeacher = j.teacher_id === sch.teacher_id;
+                        const sameKelas = j.kelas?.trim().toLowerCase() === sch.kelas?.trim().toLowerCase();
+                        return sameDate && sameTeacher && sameKelas;
+                    });
+
+                    if (!matchedJournal) {
+                        // Create unfilled placeholder entry
+                        const prof = profMap.get(sch.teacher_id);
+                        const teacherName = prof?.full_name || sch.teacher_name || (profile?.id === sch.teacher_id ? profile?.full_name : 'Guru');
+                        const teacherNip = prof?.nip || sch.teacher_nip || (profile?.id === sch.teacher_id ? profile?.nip : '-');
+
+                        const firstHourMatch = String(sch.hour).match(/\d+/);
+                        const firstHourNum = firstHourMatch ? parseInt(firstHourMatch[0], 10) : 7;
+                        const hourFormatted = String(firstHourNum).padStart(2, '0');
+                        const createdIso = `${dStr}T${hourFormatted}:00:00+07:00`;
+
+                        unfilledJournals.push({
+                            id: `unfilled-${sch.id}-${dStr}`,
+                            created_at: createdIso,
+                            teacher_id: sch.teacher_id,
+                            teacher_name: teacherName,
+                            teacher_nip: teacherNip,
+                            kelas: sch.kelas,
+                            subject: sch.subject,
+                            hours: String(sch.hour),
+                            material: 'Jurnal mengajar belum diisi',
+                            cleanliness: 'perlu_dibersihkan',
+                            validation: 'Belum',
+                            notes: 'Jurnal mengajar belum diisi',
+                            is_unfilled: true,
+                            is_out_of_schedule: false
+                        });
+                    }
+                });
+            });
+
+            // 5. Process filled journals & detect out-of-schedule entries
+            const processedJournals: JournalItem[] = rawJournalsList.map(j => {
+                const prof = profMap.get(j.teacher_id);
+                const teacherName = (isAdmin || isOperator) ? (prof?.full_name || j.inval_teacher_name || 'Guru') : (profile?.full_name || 'Guru');
+                const teacherNip = (isAdmin || isOperator) ? (prof?.nip || '-') : (profile?.nip || '-');
+
+                const jDateStr = j.created_at ? j.created_at.split('T')[0] : '';
+                const jDayNum = getDayNum(jDateStr);
+
+                // Check if this journal entry corresponds to a scheduled slot on its day
+                const matchesSchedule = schedules.some(s => 
+                    s.teacher_id === j.teacher_id &&
+                    s.kelas?.trim().toLowerCase() === j.kelas?.trim().toLowerCase() &&
+                    Number(s.day_of_week) === jDayNum
+                );
+
+                const isOutOfSchedule = !matchesSchedule;
+
+                return {
+                    ...j,
+                    teacher_name: teacherName,
+                    teacher_nip: teacherNip,
+                    is_unfilled: false,
+                    is_out_of_schedule: isOutOfSchedule
+                };
+            });
+
+            // Merge and sort by date (ascending: Tanggal 1 -> 30)
+            const merged = [...processedJournals, ...unfilledJournals].sort((a, b) => {
+                const timeA = new Date(a.created_at).getTime() || 0;
+                const timeB = new Date(b.created_at).getTime() || 0;
+                if (timeA !== timeB) {
+                    return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+                }
+                const hA = parseInt(String(a.hours || '0').replace(/\D/g, ''), 10) || 0;
+                const hB = parseInt(String(b.hours || '0').replace(/\D/g, ''), 10) || 0;
+                return sortOrder === 'asc' ? hA - hB : hB - hA;
+            });
+
+            setJournals(merged);
             setSelectedJournalIds([]);
         } catch (err: any) {
             console.error("Error fetching journals:", err);
@@ -233,10 +394,10 @@ const LaporanJurnal: React.FC = () => {
         );
     });
 
-    // Checkbox selections
+    // Selection Handlers
     const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.checked) {
-            setSelectedJournalIds(filteredJournals.map(j => j.id));
+            setSelectedJournalIds(filteredJournals.filter(j => !j.is_unfilled).map(j => j.id));
         } else {
             setSelectedJournalIds([]);
         }
@@ -250,7 +411,7 @@ const LaporanJurnal: React.FC = () => {
 
     // Single Delete Execution
     const handleExecuteSingleDelete = async () => {
-        if (!journalToDelete) return;
+        if (!journalToDelete || journalToDelete.is_unfilled) return;
         setIsDeletingSingle(true);
         try {
             await supabase.from('attendance_logs').delete().eq('journal_id', journalToDelete.id);
@@ -295,6 +456,7 @@ const LaporanJurnal: React.FC = () => {
 
     // Open Edit Modal
     const handleOpenEdit = (journal: JournalItem) => {
+        if (journal.is_unfilled) return;
         setJournalToEdit(journal);
         const dateStr = journal.created_at ? journal.created_at.split('T')[0] : getWIBISOString();
         setEditFormData({
@@ -310,7 +472,7 @@ const LaporanJurnal: React.FC = () => {
 
     // Save Edit
     const handleSaveEdit = async () => {
-        if (!journalToEdit) return;
+        if (!journalToEdit || journalToEdit.is_unfilled) return;
         setIsSavingEdit(true);
         try {
             const timePart = journalToEdit.created_at ? journalToEdit.created_at.split('T')[1] : '07:00:00+07:00';
@@ -333,23 +495,7 @@ const LaporanJurnal: React.FC = () => {
 
             setAlertMsg({ type: 'success', text: 'Data jurnal berhasil diperbarui.' });
             
-            // Update local list
-            setJournals(prev => prev.map(j => {
-                if (j.id === journalToEdit.id) {
-                    return {
-                        ...j,
-                        created_at: updatedCreatedAt,
-                        hours: editFormData.hours,
-                        kelas: editFormData.kelas,
-                        subject: editFormData.subject,
-                        material: editFormData.material,
-                        cleanliness: editFormData.cleanliness,
-                        notes: editFormData.notes
-                    };
-                }
-                return j;
-            }));
-
+            await loadJournals();
             setJournalToEdit(null);
         } catch (err: any) {
             setAlertMsg({ type: 'error', text: 'Gagal memperbarui jurnal: ' + (err.message || '') });
@@ -358,19 +504,26 @@ const LaporanJurnal: React.FC = () => {
         }
     };
 
-    // Export Excel CSV
+    // Export Excel CSV (Admin / Operator only)
     const handleExportCSV = () => {
         if (filteredJournals.length === 0) {
             setAlertMsg({ type: 'info', text: 'Tidak ada data jurnal untuk diunduh.' });
             return;
         }
 
-        const headers = ["No", "Tanggal", "Jam Ke", "Nama Guru", "NIP Guru", "Kelas", "Mata Pelajaran", "Materi Pembelajaran", "Kebersihan Kelas", "Ketidakhadiran Siswa", "Catatan"];
+        const headers = ["No", "Tanggal", "Jam Ke", "Nama Guru", "NIP Guru", "Kelas", "Mata Pelajaran", "Materi Pembelajaran", "Kebersihan Kelas", "Ketidakhadiran Siswa", "Status Jadwal", "Catatan"];
         const rows = filteredJournals.map((j, idx) => {
             const absents = (j.attendance_logs || [])
                 .filter(l => ['S', 'I', 'A'].includes(l.status))
                 .map(l => `${l.student_name} (${l.status})`)
                 .join('; ');
+
+            let statusJadwal = "Sesuai Jadwal";
+            if (j.is_unfilled) {
+                statusJadwal = "Jurnal Belum Diisi";
+            } else if (j.is_out_of_schedule) {
+                statusJadwal = "Jurnal diisi tidak sesuai Jadwal";
+            }
 
             return [
                 idx + 1,
@@ -383,6 +536,7 @@ const LaporanJurnal: React.FC = () => {
                 `"${(j.material || '').replace(/"/g, '""')}"`,
                 `"${j.cleanliness === 'sudah_bersih' ? 'Sudah Bersih' : 'Perlu Dibersihkan'}"`,
                 `"${absents || 'NIHIL'}"`,
+                `"${statusJadwal}"`,
                 `"${(j.notes || '').replace(/"/g, '""')}"`
             ].join(',');
         });
@@ -397,12 +551,14 @@ const LaporanJurnal: React.FC = () => {
         document.body.removeChild(link);
     };
 
-    // Print Report
-    const handlePrint = () => {
+    // Print Execution
+    const handlePrintExecution = () => {
         window.print();
     };
 
-    const renderAttendanceBadge = (logs: any[]) => {
+    const renderAttendanceBadge = (logs: any[], isUnfilled?: boolean) => {
+        if (isUnfilled) return <span className="text-xs text-slate-400 italic">-</span>;
+
         const absents = (logs || []).filter(l => ['S', 'I', 'A'].includes(l.status));
         if (absents.length === 0) {
             return <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">Nihil (Hadir Semua)</span>;
@@ -424,10 +580,36 @@ const LaporanJurnal: React.FC = () => {
 
     return (
         <Layout>
+            <style>{`
+                @media print {
+                    body * {
+                        visibility: hidden !important;
+                    }
+                    #printable-report-area, #printable-report-area * {
+                        visibility: visible !important;
+                    }
+                    #printable-report-area {
+                        position: absolute !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100% !important;
+                        background: white !important;
+                        color: black !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                }
+            `}</style>
+
             <div className="space-y-6">
 
                 {/* HEADER TITLE BAR */}
-                <div className="print:hidden flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700">
+                <div className="no-print flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700">
                     <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-lg shadow-purple-200 dark:shadow-none">
                             <BookOpen size={26} />
@@ -436,7 +618,7 @@ const LaporanJurnal: React.FC = () => {
                             <h1 className="text-xl font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
                                 Data Jurnal KBM Guru
                                 <span className="text-xs font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-2.5 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
-                                    {filteredJournals.length} Jurnal
+                                    {filteredJournals.length} Item Jurnal
                                 </span>
                             </h1>
                             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
@@ -455,15 +637,19 @@ const LaporanJurnal: React.FC = () => {
                             </button>
                         )}
 
-                        <button
-                            onClick={handleExportCSV}
-                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
-                        >
-                            <FileSpreadsheet size={16} /> Export Excel
-                        </button>
+                        {/* HAPUS EXPORT EXCEL UNTUK ROLE GURU - HANYA DITAMPILKAN JIKA ADMIN / OPERATOR */}
+                        {(isAdmin || isOperator) && (
+                            <button
+                                onClick={handleExportCSV}
+                                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
+                            >
+                                <FileSpreadsheet size={16} /> Export Excel
+                            </button>
+                        )}
 
+                        {/* CETAK LAPORAN DENGAN PREVIEW */}
                         <button
-                            onClick={handlePrint}
+                            onClick={() => setShowPrintPreview(true)}
                             className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
                         >
                             <Printer size={16} /> Cetak Laporan
@@ -473,7 +659,7 @@ const LaporanJurnal: React.FC = () => {
 
                 {/* ALERT MESSAGE */}
                 {alertMsg && (
-                    <div className={`print:hidden p-4 rounded-2xl border flex items-center justify-between text-sm animate-fade-in ${
+                    <div className={`no-print p-4 rounded-2xl border flex items-center justify-between text-sm animate-fade-in ${
                         alertMsg.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
                         alertMsg.type === 'error' ? 'bg-red-50 text-red-800 border-red-200' :
                         'bg-blue-50 text-blue-800 border-blue-200'
@@ -488,7 +674,7 @@ const LaporanJurnal: React.FC = () => {
                 )}
 
                 {/* FILTER PANEL */}
-                <div className="print:hidden bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4 shadow-sm">
+                <div className="no-print bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700 pb-3">
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
                             <Filter size={16} className="text-purple-600" /> Filter & Pencarian Data Jurnal
@@ -517,7 +703,7 @@ const LaporanJurnal: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                         {/* Search Input */}
                         <div className="lg:col-span-1">
                             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Cari Kata Kunci</label>
@@ -586,6 +772,19 @@ const LaporanJurnal: React.FC = () => {
                                 onChange={e => { setEndDate(e.target.value); setQuickRange('all'); }}
                             />
                         </div>
+
+                        {/* Urutan Tanggal */}
+                        <div>
+                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Urutan Tanggal</label>
+                            <select
+                                className="w-full p-2 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-purple-500"
+                                value={sortOrder}
+                                onChange={e => setSortOrder(e.target.value as 'asc' | 'desc')}
+                            >
+                                <option value="asc">Tanggal 1 → 30 (Awal ke Akhir)</option>
+                                <option value="desc">Tanggal 30 → 1 (Akhir ke Awal)</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div className="flex justify-end items-center gap-2 pt-1">
@@ -599,31 +798,17 @@ const LaporanJurnal: React.FC = () => {
                 </div>
 
                 {/* TABLE DATA CONTAINER */}
-                <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden print:border-none print:shadow-none print:p-0">
+                <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden no-print">
                     
-                    {/* OFFICIAL PRINT KOP (VISIBLE ONLY ON PRINT) */}
-                    <div className="hidden print:block p-8 border-b-2 border-black mb-6">
-                        <div className="flex items-center gap-6">
-                            <img src="https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0" alt="Logo Sekolah" className="h-20 w-auto" />
-                            <div>
-                                <h1 className="text-xl font-bold uppercase tracking-wider text-black leading-tight">UPT SMP NEGERI 8 PASURUAN</h1>
-                                <h2 className="text-base font-bold text-black leading-tight">LAPORAN REKAPITULASI JURNAL KBM GURU</h2>
-                                <p className="text-xs text-gray-700 mt-1">
-                                    T.A {settings.academic_year} - Semester {settings.semester} | Dicetak Pada: {new Date().toLocaleDateString('id-ID')}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse text-xs">
                             <thead>
                                 <tr className="bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
-                                    <th className="p-3.5 print:hidden text-center w-10">
+                                    <th className="p-3.5 text-center w-10">
                                         <input
                                             type="checkbox"
                                             className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
-                                            checked={filteredJournals.length > 0 && selectedJournalIds.length === filteredJournals.length}
+                                            checked={filteredJournals.filter(j=>!j.is_unfilled).length > 0 && selectedJournalIds.length === filteredJournals.filter(j=>!j.is_unfilled).length}
                                             onChange={handleSelectAll}
                                         />
                                     </th>
@@ -635,8 +820,8 @@ const LaporanJurnal: React.FC = () => {
                                     <th className="p-3.5 min-w-[220px]">Materi Pembelajaran</th>
                                     <th className="p-3.5 w-32">Kebersihan</th>
                                     <th className="p-3.5 min-w-[160px]">Siswa Tidak Hadir</th>
-                                    <th className="p-3.5 min-w-[140px]">Catatan</th>
-                                    <th className="p-3.5 print:hidden text-center w-24">Aksi</th>
+                                    <th className="p-3.5 min-w-[140px]">Keterangan</th>
+                                    <th className="p-3.5 text-center w-24">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
@@ -644,7 +829,7 @@ const LaporanJurnal: React.FC = () => {
                                     <tr>
                                         <td colSpan={11} className="p-12 text-center text-slate-400">
                                             <Loader2 size={24} className="animate-spin inline mr-2 text-purple-600" />
-                                            Memuat data jurnal...
+                                            Memuat data jurnal KBM...
                                         </td>
                                     </tr>
                                 ) : filteredJournals.length === 0 ? (
@@ -660,16 +845,19 @@ const LaporanJurnal: React.FC = () => {
                                             <tr 
                                                 key={journal.id} 
                                                 className={`transition-colors hover:bg-purple-50/30 dark:hover:bg-slate-700/30 ${
+                                                    journal.is_unfilled ? 'bg-red-50/30 dark:bg-red-950/20' :
                                                     isSelected ? 'bg-purple-50/60 dark:bg-purple-950/20' : ''
                                                 }`}
                                             >
-                                                <td className="p-3.5 print:hidden text-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
-                                                        checked={isSelected}
-                                                        onChange={() => handleToggleSelectRow(journal.id)}
-                                                    />
+                                                <td className="p-3.5 text-center">
+                                                    {!journal.is_unfilled && (
+                                                        <input
+                                                            type="checkbox"
+                                                            className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
+                                                            checked={isSelected}
+                                                            onChange={() => handleToggleSelectRow(journal.id)}
+                                                        />
+                                                    )}
                                                 </td>
                                                 <td className="p-3.5 text-center font-semibold text-slate-500">
                                                     {index + 1}
@@ -709,13 +897,22 @@ const LaporanJurnal: React.FC = () => {
                                                 </td>
 
                                                 <td className="p-3.5 max-w-[280px]">
-                                                    <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed line-clamp-3">
-                                                        {journal.material}
-                                                    </p>
+                                                    {journal.is_unfilled ? (
+                                                        <div className="text-red-600 dark:text-red-400 font-extrabold bg-red-100/80 dark:bg-red-950/80 px-3 py-1.5 rounded-xl border border-red-300 dark:border-red-800 flex items-center gap-1.5 w-fit">
+                                                            <AlertCircle size={15} className="text-red-600 shrink-0" />
+                                                            Jurnal mengajar belum diisi
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed line-clamp-3">
+                                                            {journal.material}
+                                                        </p>
+                                                    )}
                                                 </td>
 
                                                 <td className="p-3.5">
-                                                    {journal.cleanliness === 'sudah_bersih' ? (
+                                                    {journal.is_unfilled ? (
+                                                        <span className="text-slate-400 italic text-[11px]">-</span>
+                                                    ) : journal.cleanliness === 'sudah_bersih' ? (
                                                         <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
                                                             Sudah Bersih
                                                         </span>
@@ -727,33 +924,46 @@ const LaporanJurnal: React.FC = () => {
                                                 </td>
 
                                                 <td className="p-3.5">
-                                                    {renderAttendanceBadge(journal.attendance_logs || [])}
+                                                    {renderAttendanceBadge(journal.attendance_logs || [], journal.is_unfilled)}
                                                 </td>
 
                                                 <td className="p-3.5 text-slate-600 dark:text-slate-400">
-                                                    {journal.notes || '-'}
+                                                    {journal.is_out_of_schedule ? (
+                                                        <span className="text-amber-800 dark:text-amber-300 font-bold bg-amber-100 dark:bg-amber-950/60 px-2.5 py-1 rounded-lg border border-amber-300 dark:border-amber-800 text-[11px] inline-flex items-center gap-1">
+                                                            <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                                                            Jurnal diisi tidak sesuai Jadwal
+                                                        </span>
+                                                    ) : journal.is_unfilled ? (
+                                                        <span className="text-red-600 font-bold text-[11px] italic">Jurnal Belum Diisi</span>
+                                                    ) : (
+                                                        journal.notes || '-'
+                                                    )}
                                                 </td>
 
-                                                <td className="p-3.5 print:hidden text-center">
-                                                    <div className="flex items-center justify-center gap-1">
-                                                        <button
-                                                            onClick={() => handleOpenEdit(journal)}
-                                                            className="p-1.5 hover:bg-purple-100 dark:hover:bg-purple-900/40 text-purple-600 dark:text-purple-400 rounded-lg transition-colors"
-                                                            title="Edit Jurnal"
-                                                        >
-                                                            <Edit3 size={15} />
-                                                        </button>
-
-                                                        {(isAdmin || isOperator) && (
+                                                <td className="p-3.5 text-center">
+                                                    {!journal.is_unfilled ? (
+                                                        <div className="flex items-center justify-center gap-1">
                                                             <button
-                                                                onClick={() => setJournalToDelete(journal)}
-                                                                className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 rounded-lg transition-colors"
-                                                                title="Hapus Jurnal"
+                                                                onClick={() => handleOpenEdit(journal)}
+                                                                className="p-1.5 hover:bg-purple-100 dark:hover:bg-purple-900/40 text-purple-600 dark:text-purple-400 rounded-lg transition-colors"
+                                                                title="Edit Jurnal"
                                                             >
-                                                                <Trash2 size={15} />
+                                                                <Edit3 size={15} />
                                                             </button>
-                                                        )}
-                                                    </div>
+
+                                                            {(isAdmin || isOperator) && (
+                                                                <button
+                                                                    onClick={() => setJournalToDelete(journal)}
+                                                                    className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 rounded-lg transition-colors"
+                                                                    title="Hapus Jurnal"
+                                                                >
+                                                                    <Trash2 size={15} />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-slate-400 italic text-[11px]">-</span>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );
@@ -762,214 +972,351 @@ const LaporanJurnal: React.FC = () => {
                             </tbody>
                         </table>
                     </div>
-
-                    {/* OFFICIAL PRINT SIGNATURE FOOTER */}
-                    <div className="hidden print:flex justify-between items-start pt-12 p-8 text-black break-inside-avoid">
-                        <div className="text-center">
-                            <p className="mb-16">Mengetahui,<br/>Kepala UPT SMP Negeri 8 Pasuruan</p>
-                            <p className="font-bold underline">{settings.headmaster}</p>
-                            <p className="text-xs">NIP. {settings.headmaster_nip}</p>
-                        </div>
-
-                        <div className="text-center">
-                            <p className="mb-16">Kota Pasuruan, {currentDateStr}<br/>Petugas / Admin SIM-PANLA</p>
-                            <p className="font-bold underline">{profile?.full_name || 'Admin SIM-PANLA'}</p>
-                            <p className="text-xs">NIP. {profile?.nip || '-'}</p>
-                        </div>
-                    </div>
-
                 </div>
 
-            </div>
+                {/* MODAL PRINT PREVIEW */}
+                {showPrintPreview && (
+                    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+                        <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200 flex flex-col">
+                            
+                            {/* PREVIEW MODAL HEADER BAR */}
+                            <div className="no-print bg-slate-900 text-white p-5 rounded-t-3xl flex items-center justify-between sticky top-0 z-10">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center text-white">
+                                        <Eye size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-base">Pratinjau Cetak Laporan Jurnal KBM</h3>
+                                        <p className="text-xs text-slate-400">Pastikan format dan isi laporan sudah sesuai sebelum dicetak.</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={handlePrintExecution}
+                                        className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-2"
+                                    >
+                                        <Printer size={16} /> Cetak Sekarang
+                                    </button>
+                                    <button
+                                        onClick={() => setShowPrintPreview(false)}
+                                        className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-colors"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                </div>
+                            </div>
 
-            {/* MODAL EDIT JURNAL */}
-            {journalToEdit && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in print:hidden">
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100 dark:border-slate-700">
-                        <div className="bg-purple-600 p-5 flex justify-between items-center text-white">
-                            <h3 className="font-bold text-base flex items-center gap-2">
-                                <Edit3 size={18} /> Edit Data Jurnal
-                            </h3>
-                            <button onClick={() => setJournalToEdit(null)} className="hover:bg-white/20 p-1.5 rounded-full transition-colors">
-                                <X size={18} />
-                            </button>
+                            {/* PRINTABLE CONTENT AREA */}
+                            <div id="printable-report-area" className="p-8 bg-white text-black space-y-6">
+                                
+                                {/* KOP SURAT */}
+                                <div className="border-b-4 border-double border-black pb-4 text-center">
+                                    <div className="flex items-center justify-center gap-4">
+                                        <img 
+                                            src="https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0" 
+                                            alt="Logo Sekolah" 
+                                            className="h-20 w-auto object-contain"
+                                        />
+                                        <div className="text-center">
+                                            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Pemerintah Kota Pasuruan</h2>
+                                            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Dinas Pendidikan dan Kebudayaan</h2>
+                                            <h1 className="text-xl font-extrabold uppercase tracking-widest text-black leading-tight">UPT SMP NEGERI 8 PASURUAN</h1>
+                                            <p className="text-xs text-slate-600 italic">Jl. Soekarno Hatta No. 25 Pasuruan, Jawa Timur | Telp: (0343) 424123</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* DOCUMENT TITLE */}
+                                <div className="text-center space-y-1">
+                                    <h3 className="text-base font-extrabold uppercase tracking-wide text-black underline">
+                                        LAPORAN JURNAL KEGIATAN BELAJAR MENGAJAR (KBM)
+                                    </h3>
+                                    <p className="text-xs font-semibold text-slate-700">
+                                        Semester {settings.semester} | Tahun Ajaran {settings.academic_year}
+                                    </p>
+                                    {(!isAdmin && !isOperator && profile) ? (
+                                        <p className="text-xs font-bold text-purple-900 mt-1">
+                                            Guru Pengampu: {profile.full_name} (NIP {profile.nip || '-'})
+                                        </p>
+                                    ) : selectedTeacherId !== 'ALL' ? (
+                                        <p className="text-xs font-bold text-purple-900 mt-1">
+                                            Guru Pengampu: {teachersList.find(t=>t.id===selectedTeacherId)?.full_name}
+                                        </p>
+                                    ) : null}
+                                </div>
+
+                                {/* PRINTABLE TABLE */}
+                                <table className="w-full text-left border-collapse border border-black text-[11px]">
+                                    <thead>
+                                        <tr className="bg-slate-100 text-black font-bold border-b border-black text-center">
+                                            <th className="border border-black p-2 w-8">No</th>
+                                            <th className="border border-black p-2 w-28">Tanggal & Jam</th>
+                                            {(isAdmin || isOperator) && <th className="border border-black p-2 min-w-[110px]">Guru Pengampu</th>}
+                                            <th className="border border-black p-2 w-14">Kelas</th>
+                                            <th className="border border-black p-2 min-w-[100px]">Mata Pelajaran</th>
+                                            <th className="border border-black p-2 min-w-[180px]">Materi Pembelajaran</th>
+                                            <th className="border border-black p-2 w-20">Kebersihan</th>
+                                            <th className="border border-black p-2 min-w-[120px]">Ketidakhadiran Siswa</th>
+                                            <th className="border border-black p-2 min-w-[110px]">Keterangan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredJournals.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={9} className="border border-black p-6 text-center italic text-slate-500">
+                                                    Tidak ada data jurnal untuk dicetak.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            filteredJournals.map((j, idx) => {
+                                                const absents = (j.attendance_logs || []).filter(l => ['S', 'I', 'A'].includes(l.status));
+                                                return (
+                                                    <tr key={j.id} className="border-b border-black">
+                                                        <td className="border border-black p-2 text-center font-semibold">{idx + 1}</td>
+                                                        <td className="border border-black p-2">
+                                                            <div className="font-bold">{formatDateIndo(j.created_at)}</div>
+                                                            <div className="text-[10px] text-slate-600">Jam ke {j.hours}</div>
+                                                        </td>
+
+                                                        {(isAdmin || isOperator) && (
+                                                            <td className="border border-black p-2">
+                                                                <div className="font-bold">{j.teacher_name || 'Guru'}</div>
+                                                                <div className="text-[10px] text-slate-500">NIP: {j.teacher_nip || '-'}</div>
+                                                            </td>
+                                                        )}
+
+                                                        <td className="border border-black p-2 text-center font-bold">{j.kelas}</td>
+                                                        <td className="border border-black p-2 font-semibold">{j.subject}</td>
+                                                        <td className="border border-black p-2">
+                                                            {j.is_unfilled ? (
+                                                                <span className="font-bold text-red-600 uppercase">Jurnal mengajar belum diisi</span>
+                                                            ) : (
+                                                                j.material
+                                                            )}
+                                                        </td>
+                                                        <td className="border border-black p-2 text-center">
+                                                            {j.is_unfilled ? '-' : (j.cleanliness === 'sudah_bersih' ? 'Bersih' : 'Kurang Bersih')}
+                                                        </td>
+                                                        <td className="border border-black p-2">
+                                                            {j.is_unfilled ? '-' : absents.length === 0 ? 'NIHIL' : (
+                                                                <ul className="list-disc list-inside text-[10px]">
+                                                                    {absents.map((a, i) => (
+                                                                        <li key={i}>{a.student_name} ({a.status})</li>
+                                                                    ))}
+                                                                </ul>
+                                                            )}
+                                                        </td>
+                                                        <td className="border border-black p-2">
+                                                            {j.is_out_of_schedule ? (
+                                                                <span className="font-bold text-amber-700">Jurnal diisi tidak sesuai Jadwal</span>
+                                                            ) : j.is_unfilled ? (
+                                                                <span className="font-bold text-red-600">Jurnal Belum Diisi</span>
+                                                            ) : (
+                                                                j.notes || '-'
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+
+                                {/* SIGNATURE SECTION */}
+                                <div className="pt-8 flex items-center justify-between text-xs font-semibold">
+                                    <div className="text-center space-y-12">
+                                        <p>Mengetahui,<br/>Kepala UPT SMP Negeri 8 Pasuruan</p>
+                                        <p className="font-bold underline">{settings.headmaster}</p>
+                                        <p className="-mt-11 text-[11px]">NIP. {settings.headmaster_nip}</p>
+                                    </div>
+
+                                    <div className="text-center space-y-12">
+                                        <p>Kota Pasuruan, {currentDateStr}<br/>Petugas / Guru Pengampu Jurnal</p>
+                                        <p className="font-bold underline">{profile?.full_name || 'Guru SIM-PANLA'}</p>
+                                        <p className="-mt-11 text-[11px]">NIP. {profile?.nip || '-'}</p>
+                                    </div>
+                                </div>
+
+                            </div>
                         </div>
-                        <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-                            <div className="grid grid-cols-2 gap-3">
+                    </div>
+                )}
+
+                {/* MODAL EDIT JURNAL */}
+                {journalToEdit && (
+                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                                <h3 className="font-bold text-base text-slate-800 dark:text-white flex items-center gap-2">
+                                    <Edit3 size={18} className="text-purple-600" /> Edit Data Jurnal KBM
+                                </h3>
+                                <button onClick={() => setJournalToEdit(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400">
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            <div className="space-y-3 text-xs">
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Tanggal</label>
+                                    <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Tanggal</label>
                                     <input
                                         type="date"
-                                        className="w-full border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs bg-slate-50 dark:bg-slate-700"
+                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
                                         value={editFormData.created_at}
                                         onChange={e => setEditFormData({ ...editFormData, created_at: e.target.value })}
                                     />
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Jam Ke</label>
-                                    <input
-                                        type="text"
-                                        className="w-full border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs bg-slate-50 dark:bg-slate-700"
-                                        placeholder="Contoh: 1,2,3"
-                                        value={editFormData.hours}
-                                        onChange={e => setEditFormData({ ...editFormData, hours: e.target.value })}
-                                    />
-                                </div>
-                            </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Kelas</label>
-                                    <input
-                                        type="text"
-                                        className="w-full border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs bg-slate-50 dark:bg-slate-700"
-                                        value={editFormData.kelas}
-                                        onChange={e => setEditFormData({ ...editFormData, kelas: e.target.value })}
-                                    />
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Jam Ke</label>
+                                        <input
+                                            type="text"
+                                            className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                            value={editFormData.hours}
+                                            onChange={e => setEditFormData({ ...editFormData, hours: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Kelas</label>
+                                        <input
+                                            type="text"
+                                            className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                            value={editFormData.kelas}
+                                            onChange={e => setEditFormData({ ...editFormData, kelas: e.target.value })}
+                                        />
+                                    </div>
                                 </div>
+
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Mata Pelajaran</label>
+                                    <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Mata Pelajaran</label>
                                     <input
                                         type="text"
-                                        className="w-full border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs bg-slate-50 dark:bg-slate-700"
+                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
                                         value={editFormData.subject}
                                         onChange={e => setEditFormData({ ...editFormData, subject: e.target.value })}
                                     />
                                 </div>
+
+                                <div>
+                                    <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Materi Pembelajaran</label>
+                                    <textarea
+                                        rows={3}
+                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                        value={editFormData.material}
+                                        onChange={e => setEditFormData({ ...editFormData, material: e.target.value })}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Kebersihan Kelas</label>
+                                    <select
+                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                        value={editFormData.cleanliness}
+                                        onChange={e => setEditFormData({ ...editFormData, cleanliness: e.target.value })}
+                                    >
+                                        <option value="sudah_bersih">Sudah Bersih</option>
+                                        <option value="perlu_dibersihkan">Perlu Dibersihkan</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Catatan Tambahan</label>
+                                    <input
+                                        type="text"
+                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                        value={editFormData.notes}
+                                        onChange={e => setEditFormData({ ...editFormData, notes: e.target.value })}
+                                    />
+                                </div>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Materi Pembelajaran</label>
-                                <textarea
-                                    className="w-full border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs bg-slate-50 dark:bg-slate-700"
-                                    rows={3}
-                                    value={editFormData.material}
-                                    onChange={e => setEditFormData({ ...editFormData, material: e.target.value })}
-                                ></textarea>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Kondisi Kebersihan Kelas</label>
-                                <select
-                                    className="w-full border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs bg-slate-50 dark:bg-slate-700"
-                                    value={editFormData.cleanliness}
-                                    onChange={e => setEditFormData({ ...editFormData, cleanliness: e.target.value })}
-                                >
-                                    <option value="sudah_bersih">Sudah Bersih</option>
-                                    <option value="perlu_dibersihkan">Perlu Dibersihkan</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Catatan Tambahan</label>
-                                <textarea
-                                    className="w-full border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs bg-slate-50 dark:bg-slate-700"
-                                    rows={2}
-                                    value={editFormData.notes}
-                                    onChange={e => setEditFormData({ ...editFormData, notes: e.target.value })}
-                                ></textarea>
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                            <div className="flex justify-end gap-2 pt-2">
                                 <button
                                     onClick={() => setJournalToEdit(null)}
-                                    disabled={isSavingEdit}
-                                    className="px-4 py-2 border border-slate-200 dark:border-slate-600 text-xs font-bold text-slate-600 dark:text-slate-300 rounded-xl hover:bg-slate-50"
+                                    className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-xl"
                                 >
                                     Batal
                                 </button>
                                 <button
                                     onClick={handleSaveEdit}
                                     disabled={isSavingEdit}
-                                    className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 disabled:opacity-50"
+                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md"
                                 >
-                                    {isSavingEdit ? <Loader2 size={14} className="animate-spin"/> : <Check size={14}/>}
+                                    {isSavingEdit && <Loader2 size={14} className="animate-spin" />}
                                     Simpan Perubahan
                                 </button>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* MODAL KONFIRMASI HAPUS SINGLE */}
-            {journalToDelete && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in print:hidden">
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 dark:border-slate-700">
-                        <div className="bg-red-600 p-5 flex justify-between items-center text-white">
-                            <h3 className="font-bold text-base flex items-center gap-2">
-                                <AlertTriangle size={18} /> Konfirmasi Hapus Jurnal
-                            </h3>
-                            <button onClick={() => setJournalToDelete(null)} className="hover:bg-white/20 p-1.5 rounded-full transition-colors">
-                                <X size={18} />
-                            </button>
-                        </div>
-                        <div className="p-6 space-y-4">
+                {/* MODAL HAPUS TUNGGAL */}
+                {journalToDelete && (
+                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+                            <div className="flex items-center gap-3 text-red-600">
+                                <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center">
+                                    <AlertTriangle size={20} />
+                                </div>
+                                <h3 className="font-bold text-base text-slate-800 dark:text-white">Konfirmasi Hapus Jurnal</h3>
+                            </div>
                             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                                Apakah Anda yakin ingin menghapus jurnal kelas <strong>{journalToDelete.kelas}</strong> ({journalToDelete.subject}) oleh <strong>{journalToDelete.teacher_name || 'Guru'}</strong> pada <strong>{formatDateIndo(journalToDelete.created_at)}</strong>?
-                            </p>
-                            <p className="text-[11px] text-red-500 bg-red-50 dark:bg-red-950/30 p-3 rounded-xl border border-red-200 dark:border-red-800">
-                                Tindakan ini tidak dapat dibatalkan. Log presensi siswa terkait jurnal ini juga akan terhapus.
+                                Apakah Anda yakin ingin menghapus jurnal kelas <strong className="text-slate-800 dark:text-white">{journalToDelete.kelas}</strong> mata pelajaran <strong className="text-slate-800 dark:text-white">{journalToDelete.subject}</strong> tanggal <strong className="text-slate-800 dark:text-white">{formatDateIndo(journalToDelete.created_at)}</strong>?
                             </p>
                             <div className="flex justify-end gap-2 pt-2">
                                 <button
                                     onClick={() => setJournalToDelete(null)}
-                                    disabled={isDeletingSingle}
-                                    className="px-4 py-2 border border-slate-200 dark:border-slate-600 text-xs font-bold text-slate-600 dark:text-slate-300 rounded-xl hover:bg-slate-50"
+                                    className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-xl"
                                 >
                                     Batal
                                 </button>
                                 <button
                                     onClick={handleExecuteSingleDelete}
                                     disabled={isDeletingSingle}
-                                    className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 disabled:opacity-50"
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md"
                                 >
-                                    {isDeletingSingle ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>}
-                                    Hapus Sekarang
+                                    {isDeletingSingle && <Loader2 size={14} className="animate-spin" />}
+                                    Ya, Hapus
                                 </button>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* MODAL KONFIRMASI HAPUS BULK */}
-            {showBulkDeleteModal && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in print:hidden">
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 dark:border-slate-700">
-                        <div className="bg-red-600 p-5 flex justify-between items-center text-white">
-                            <h3 className="font-bold text-base flex items-center gap-2">
-                                <AlertTriangle size={18} /> Hapus Massal Data Jurnal
-                            </h3>
-                            <button onClick={() => setShowBulkDeleteModal(false)} className="hover:bg-white/20 p-1.5 rounded-full transition-colors">
-                                <X size={18} />
-                            </button>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            <div className="p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-2xl text-red-800 dark:text-red-300 text-xs leading-relaxed">
-                                Anda telah memilih <strong>{selectedJournalIds.length} data jurnal</strong>. Seluruh data tersebut beserta catatan presensi siswa di dalamnya akan dihapus secara permanen.
+                {/* MODAL HAPUS MASSAL */}
+                {showBulkDeleteModal && (
+                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+                            <div className="flex items-center gap-3 text-red-600">
+                                <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center">
+                                    <Trash2 size={20} />
+                                </div>
+                                <h3 className="font-bold text-base text-slate-800 dark:text-white">Hapus {selectedJournalIds.length} Jurnal Terpilih</h3>
                             </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                Tindakan ini akan menghapus <strong>{selectedJournalIds.length} data jurnal</strong> beserta seluruh log presensi siswa yang terkait. Data yang dihapus tidak dapat dikembalikan.
+                            </p>
                             <div className="flex justify-end gap-2 pt-2">
                                 <button
                                     onClick={() => setShowBulkDeleteModal(false)}
-                                    disabled={isDeletingBulk}
-                                    className="px-4 py-2 border border-slate-200 dark:border-slate-600 text-xs font-bold text-slate-600 dark:text-slate-300 rounded-xl hover:bg-slate-50"
+                                    className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-xl"
                                 >
                                     Batal
                                 </button>
                                 <button
                                     onClick={handleExecuteBulkDelete}
                                     disabled={isDeletingBulk}
-                                    className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 disabled:opacity-50"
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md"
                                 >
-                                    {isDeletingBulk ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>}
-                                    Ya, Hapus {selectedJournalIds.length} Jurnal
+                                    {isDeletingBulk && <Loader2 size={14} className="animate-spin" />}
+                                    Hapus Permanen
                                 </button>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+
+            </div>
         </Layout>
     );
 };
