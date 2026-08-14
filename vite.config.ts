@@ -11,10 +11,9 @@ export default defineConfig({
       injectRegister: 'script',
       manifestFilename: 'manifest.json',
       devOptions: {
-        enabled: true,
-        type: 'classic'
+        enabled: false
       },
-      includeAssets: ['favicon.ico', 'icon.png', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png', 'screenshot-desktop.png', 'screenshot-mobile.png'],
+      includeAssets: ['favicon.ico', 'icon.png', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png', 'screenshot-desktop.png', 'screenshot-mobile.png', 'registerSW.js', 'sw.js'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallback: '/index.html',

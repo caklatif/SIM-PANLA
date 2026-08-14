@@ -227,6 +227,40 @@ const StudentsData: React.FC = () => {
       }
   };
 
+  const executeDeleteStudent = async (studentId: string) => {
+    // 1. Hapus riwayat di attendance_logs
+    const { error: errAtt } = await supabase.from('attendance_logs').delete().eq('student_id', studentId);
+    if (errAtt) console.warn("Error deleting attendance_logs:", errAtt);
+
+    // 2. Hapus riwayat di homeroom_attendance
+    const { error: errHome } = await supabase.from('homeroom_attendance').delete().eq('student_id', studentId);
+    if (errHome) console.warn("Error deleting homeroom_attendance:", errHome);
+
+    // 3. Hapus catatan di journal_notes
+    const { error: errNotes } = await supabase.from('journal_notes').delete().eq('student_id', studentId);
+    if (errNotes) console.warn("Error deleting journal_notes:", errNotes);
+
+    // 4. Hapus data utama murid dari tabel students
+    const { error } = await supabase.from('students').delete().eq('id', studentId);
+    if (error) throw error;
+  };
+
+  const handleDeleteStudent = async (s: Student) => {
+      const confirmed = await showConfirm(`Apakah Anda yakin ingin menghapus data murid "${s.name}" (${s.kelas})?\n\nCatatan: Seluruh riwayat presensi terkait murid ini juga akan dibersihkan.`);
+      if (!confirmed) return;
+
+      setLoading(true);
+      try {
+          await executeDeleteStudent(s.id);
+          setStudents(prev => prev.filter(item => item.id !== s.id));
+          showAlert(`Data murid "${s.name}" berhasil dihapus.`);
+      } catch (err: any) {
+          showAlert("Gagal menghapus murid: " + err.message);
+      } finally {
+          setLoading(false);
+      }
+  };
+
   const handleSaveKeluar = async () => {
       if (!mutasiKeluarData.kelas || !mutasiKeluarData.studentId) {
           showAlert("Pilih Kelas dan Murid terlebih dahulu.");
@@ -235,8 +269,7 @@ const StudentsData: React.FC = () => {
       setSaving(true);
       try {
           if (mutasiKeluarData.status === 'tidak_aktif') {
-              const { error } = await supabase.from('students').delete().eq('id', mutasiKeluarData.studentId);
-              if (error) throw error;
+              await executeDeleteStudent(mutasiKeluarData.studentId);
               setStudents(prev => prev.filter(s => s.id !== mutasiKeluarData.studentId));
               showAlert("Data murid berhasil dihapus (Mutasi Keluar).");
           } else {
@@ -311,7 +344,14 @@ const StudentsData: React.FC = () => {
                        <td className="px-6 py-4 text-slate-500 font-mono text-xs">{s.nisn} <span className="text-slate-300">{s.nis ? `/ ${s.nis}` : ''}</span></td>
                         <td className="px-6 py-4 text-center"><span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg font-bold text-xs">{s.kelas}</span></td>
                        <td className="px-6 py-4 text-center"><span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${s.gender === 'P' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-purple-50 text-purple-600 border border-purple-100'}`}>{s.gender || 'L'}</span></td>
-                       <td className="px-6 py-4 text-center"><button onClick={() => handleEdit(s)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-xl transition-colors"><Edit size={16}/></button></td>
+                       <td className="px-6 py-4 text-center"><div className="flex items-center justify-center gap-1.5">
+                            <button onClick={() => handleEdit(s)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-xl transition-colors" title="Edit Data Murid">
+                              <Edit size={16}/>
+                            </button>
+                            <button onClick={() => handleDeleteStudent(s)} className="p-2 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-colors" title="Hapus Data Murid">
+                              <Trash2 size={16}/>
+                            </button>
+                          </div></td>
                      </tr>
                    ))
                  )}
