@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
@@ -8,7 +9,7 @@ import {
   Search, Printer, Download, Trash2, RefreshCw, Volume2, VolumeX, 
   Sparkles, GraduationCap, Sun, Check, ArrowRight, ShieldCheck, X,
   Trophy, Lock, UserCheck, ShieldAlert, UserCog, Save, CheckSquare, Square,
-  FlipHorizontal, Calendar, FileText, Filter
+  FlipHorizontal, Calendar, FileText, Filter, Maximize2, Minimize2
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { showAlert, showConfirm } from '../utils/alert';
@@ -144,6 +145,66 @@ export default function PresensiQR() {
   });
   const lastScanTimeRef = useRef<number>(0);
   const [scanCooldown, setScanCooldown] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [currentTime, setCurrentTime] = useState<string>(() => 
+    new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const toggleFullscreen = async (enable?: boolean) => {
+    const target = enable !== undefined ? enable : !isFullscreen;
+    const wasScanning = isScanning;
+    if (isScanning) {
+      await stopCamera();
+    }
+    setIsFullscreen(target);
+    if (target) {
+      try {
+        if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      } catch (e) {}
+    } else {
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      } catch (e) {}
+    }
+    setTimeout(() => {
+      if (canScan && (wasScanning || target)) {
+        startCamera();
+      }
+    }, 200);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        toggleFullscreen(false);
+      }
+    };
+    const handleFsChange = () => {
+      if (!document.fullscreenElement && isFullscreen) {
+        setIsFullscreen(false);
+        setTimeout(() => {
+          if (canScan) startCamera();
+        }, 200);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('fullscreenchange', handleFsChange);
+    };
+  }, [isFullscreen, isScanning, canScan]);
 
   useEffect(() => {
     try {
@@ -174,6 +235,9 @@ export default function PresensiQR() {
     return [];
   });
 
+  const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
+  const [isRealtimeActive, setIsRealtimeActive] = useState<boolean>(true);
+
   // Filter history
   const [historySearch, setHistorySearch] = useState<string>('');
   const [historyClassFilter, setHistoryClassFilter] = useState<string>('');
@@ -185,6 +249,142 @@ export default function PresensiQR() {
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const scannerContainerId = 'qr-reader-viewfinder';
   const manualInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper to get start and end ISO timestamps for today
+  const getTodayBounds = () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return { startISO: start.toISOString(), endISO: end.toISOString(), todayStr };
+  };
+
+  // Fetch today's scan logs from Supabase across all teachers/devices
+  const fetchTodayLogs = async (showLoading = false) => {
+    if (showLoading) setLoadingLogs(true);
+    try {
+      const { startISO, endISO } = getTodayBounds();
+      const { data, error } = await supabase
+        .from('qr_presensi_logs')
+        .select('*')
+        .gte('scanned_at', startISO)
+        .lte('scanned_at', endISO)
+        .order('scanned_at', { ascending: false });
+
+      if (!error && data) {
+        const remoteRecords: QRScanRecord[] = data.map((item: any) => ({
+          id: item.id || `${item.student_id}-${item.scanned_at}`,
+          nisn: item.nisn || '-',
+          studentName: item.student_name || '-',
+          kelas: item.kelas || '-',
+          timestamp: item.scanned_at,
+          mode: item.mode || 'harian',
+          status: item.status || 'Hadir',
+          subject: item.subject || undefined,
+        }));
+
+        setScanHistory(prev => {
+          const map = new Map<string, QRScanRecord>();
+          // Add remote records first (they are authoritative from DB)
+          remoteRecords.forEach(r => {
+            const key = `${r.nisn}_${r.mode}_${r.subject || ''}_${r.timestamp.substring(0, 16)}`;
+            map.set(key, r);
+          });
+          // Preserve any local records not yet present in remote response
+          prev.forEach(p => {
+            const key = `${p.nisn}_${p.mode}_${p.subject || ''}_${p.timestamp.substring(0, 16)}`;
+            if (!map.has(key)) {
+              map.set(key, p);
+            }
+          });
+          return Array.from(map.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to fetch today presensi logs:', err);
+    } finally {
+      if (showLoading) setLoadingLogs(false);
+    }
+  };
+
+  // Realtime Supabase Subscription & 10s Background Polling
+  useEffect(() => {
+    fetchTodayLogs(true);
+
+    const channel = supabase
+      .channel('qr_presensi_logs_realtime_stream')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'qr_presensi_logs',
+        },
+        (payload) => {
+          setIsRealtimeActive(true);
+          if (payload.eventType === 'INSERT') {
+            const newRow = payload.new;
+            if (!newRow) return;
+
+            const { todayStr } = getTodayBounds();
+            if (newRow.scanned_at && newRow.scanned_at.startsWith(todayStr)) {
+              const newRecord: QRScanRecord = {
+                id: newRow.id || `${Date.now()}`,
+                nisn: newRow.nisn || '-',
+                studentName: newRow.student_name || '-',
+                kelas: newRow.kelas || '-',
+                timestamp: newRow.scanned_at,
+                mode: newRow.mode || 'harian',
+                status: newRow.status || 'Hadir',
+                subject: newRow.subject || undefined,
+              };
+
+              setScanHistory(prev => {
+                const key = `${newRecord.nisn}_${newRecord.mode}_${newRecord.subject || ''}_${newRecord.timestamp.substring(0, 16)}`;
+                const alreadyExists = prev.some(item => 
+                  item.id === newRecord.id || 
+                  `${item.nisn}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key
+                );
+                if (alreadyExists) {
+                  return prev.map(item => item.id === newRecord.id ? newRecord : item);
+                }
+                return [newRecord, ...prev];
+              });
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old?.id;
+            if (deletedId) {
+              setScanHistory(prev => prev.filter(item => item.id !== deletedId));
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedRow = payload.new;
+            if (updatedRow && updatedRow.id) {
+              setScanHistory(prev => prev.map(item => item.id === updatedRow.id ? {
+                ...item,
+                status: updatedRow.status || item.status,
+                mode: updatedRow.mode || item.mode,
+                subject: updatedRow.subject || item.subject,
+              } : item));
+            }
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setIsRealtimeActive(true);
+        }
+      });
+
+    // Fallback polling every 10 seconds so even if websocket drops, data stays live
+    const interval = setInterval(() => {
+      fetchTodayLogs(false);
+    }, 10000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Safety fallback for non-admins trying to open admin tabs
   useEffect(() => {
@@ -628,13 +828,22 @@ export default function PresensiQR() {
         await stopCamera();
       }
 
+      const element = document.getElementById(scannerContainerId);
+      if (!element) {
+        setTimeout(() => startCamera(), 100);
+        return;
+      }
+
       const html5QrCode = new Html5Qrcode(scannerContainerId);
       html5QrCodeRef.current = html5QrCode;
 
       const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0,
+        fps: 15,
+        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+          const qrboxSize = Math.floor(minEdge * 0.75);
+          return { width: Math.max(220, qrboxSize), height: Math.max(220, qrboxSize) };
+        },
       };
 
       try {
@@ -791,7 +1000,8 @@ export default function PresensiQR() {
   // Sync to database
   const syncToSupabase = async (student: Student, status: 'Hadir' | 'Terlambat', mode: string, subject?: string) => {
     try {
-      await supabase.from('qr_presensi_logs').insert([{
+      const nowIso = new Date().toISOString();
+      const { data, error } = await supabase.from('qr_presensi_logs').insert([{
         student_id: student.id,
         student_name: student.name,
         nisn: student.nisn,
@@ -799,9 +1009,18 @@ export default function PresensiQR() {
         mode: mode,
         status: status,
         subject: subject || null,
-        scanned_at: new Date().toISOString(),
+        scanned_at: nowIso,
         academic_year: academicYear || '2025/2026'
-      }]);
+      }]).select();
+
+      if (!error && data && data[0]) {
+        // Update local item with real DB ID
+        setScanHistory(prev => prev.map(item => 
+          (item.nisn === (student.nisn || student.nis) && item.mode === mode && item.timestamp.substring(0, 16) === nowIso.substring(0, 16))
+            ? { ...item, id: data[0].id }
+            : item
+        ));
+      }
     } catch (e) {
       console.warn('Could not sync to cloud, stored locally:', e);
     }
@@ -819,22 +1038,35 @@ export default function PresensiQR() {
   };
 
   // Delete item from history
-  const handleDeleteHistory = (id: string) => {
-    showConfirm('Hapus catatan presensi ini dari daftar scan hari ini?').then((confirmed) => {
-      if (confirmed) {
-        setScanHistory(prev => prev.filter(item => item.id !== id));
+  const handleDeleteHistory = async (id: string) => {
+    const confirmed = await showConfirm('Hapus catatan presensi ini dari daftar scan hari ini?');
+    if (confirmed) {
+      setScanHistory(prev => prev.filter(item => item.id !== id));
+      try {
+        await supabase.from('qr_presensi_logs').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Failed to delete row from supabase:', err);
       }
-    });
+    }
   };
 
-  // Clear all history
-  const handleClearHistory = () => {
-    showConfirm('Apakah Anda yakin ingin menghapus SELURUH riwayat scan presensi hari ini?').then((confirmed) => {
-      if (confirmed) {
-        setScanHistory([]);
-        setLastScannedStudent(null);
+  // Clear all history for today
+  const handleClearHistory = async () => {
+    const confirmed = await showConfirm('Apakah Anda yakin ingin menghapus SELURUH riwayat scan presensi hari ini? Tindakan ini akan menghapus log hari ini baik di server maupun perangkat ini.');
+    if (confirmed) {
+      setScanHistory([]);
+      setLastScannedStudent(null);
+      try {
+        const { startISO, endISO } = getTodayBounds();
+        await supabase
+          .from('qr_presensi_logs')
+          .delete()
+          .gte('scanned_at', startISO)
+          .lte('scanned_at', endISO);
+      } catch (err) {
+        console.warn('Failed to clear remote logs for today:', err);
       }
-    });
+    }
   };
 
   // Filtered History
@@ -1044,31 +1276,411 @@ export default function PresensiQR() {
         {/* TAB 1: SCANNER VIEW */}
         {activeTab === 'scan' && (
           <div>
-            {/* Scanner UI for All Teachers & Admin */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* FULLSCREEN IMMERSIVE SCANNER VIEW - PORTAL TO BODY FOR TRUE 100% FULLSCREEN */}
+            {isFullscreen ? (
+              createPortal(
+                <div className="fixed inset-0 w-screen h-screen z-[999999] bg-slate-950 text-slate-100 flex flex-col p-3 md:p-6 overflow-hidden select-none animate-fade-in">
+                  {/* Fullscreen Header Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 shrink-0">
+                    {/* Left: Exit Fullscreen & Mode Switcher */}
+                    <div className="flex items-center flex-wrap gap-2.5">
+                      <button
+                        onClick={() => toggleFullscreen(false)}
+                        className="px-3.5 py-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 rounded-2xl text-xs font-black flex items-center gap-2 transition-all shadow-sm active:scale-95"
+                        title="Keluar dari Layar Penuh (Atau tekan tombol ESC di keyboard)"
+                      >
+                        <Minimize2 size={16} />
+                        <span>Keluar Fullscreen</span>
+                        <kbd className="px-1.5 py-0.5 text-[10px] bg-rose-950/80 rounded border border-rose-700/50">Esc</kbd>
+                      </button>
+
+                      {/* Mode Selector in Fullscreen */}
+                      <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-2xl border border-slate-800">
+                        <button
+                          onClick={() => setPresensiMode('harian')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                            presensiMode === 'harian'
+                              ? 'bg-purple-600 text-white shadow-md shadow-purple-600/40'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <ShieldCheck size={14} />
+                          <span>Scan Masuk</span>
+                        </button>
+
+                        <button
+                          onClick={() => setPresensiMode('dhuha')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                            presensiMode === 'dhuha'
+                              ? 'bg-amber-500 text-white shadow-md shadow-amber-500/40'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Sun size={14} />
+                          <span>Dhuha</span>
+                        </button>
+
+                        <button
+                          onClick={() => setPresensiMode('dzuhur')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                            presensiMode === 'dzuhur'
+                              ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/40'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Sun size={14} />
+                          <span>Dzuhur</span>
+                        </button>
+
+                        <button
+                          onClick={() => setPresensiMode('ekstra')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                            presensiMode === 'ekstra'
+                              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/40'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Trophy size={14} />
+                          <span>Ekstra</span>
+                        </button>
+                      </div>
+
+                      {/* Quick Ekstra Dropdown in Fullscreen if in Ekstra mode */}
+                      {presensiMode === 'ekstra' && allowedEkstraForUser.length > 0 && (
+                        <select
+                          value={selectedEkstra}
+                          onChange={(e) => setSelectedEkstra(e.target.value)}
+                          className="px-3 py-1.5 bg-emerald-950/80 border border-emerald-700/80 text-emerald-300 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                          {allowedEkstraForUser.map(e => (
+                            <option key={e} value={e} className="bg-slate-900 text-white">{e}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    {/* Center: Live Digital Clock */}
+                    <div className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-900/90 border border-slate-800 font-mono text-sm font-black text-purple-400 shadow-inner">
+                      <Clock size={16} className="text-purple-400 animate-pulse" />
+                      <span>{currentTime} WIB</span>
+                    </div>
+
+                    {/* Right: Camera Controls */}
+                    <div className="flex items-center gap-2">
+                      {/* Beep Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextState = !soundEnabled;
+                          setSoundEnabled(nextState);
+                          if (nextState) playBeep('success', true);
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                          soundEnabled 
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700' 
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                        }`}
+                      >
+                        {soundEnabled ? <Volume2 size={14} className="animate-pulse text-emerald-400" /> : <VolumeX size={14} />}
+                        <span>{soundEnabled ? 'Beep ON' : 'Beep OFF'}</span>
+                      </button>
+
+                      {/* Mirror Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => setIsMirrored(!isMirrored)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                          isMirrored 
+                            ? 'bg-purple-950/80 text-purple-300 border-purple-700' 
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                        }`}
+                      >
+                        <FlipHorizontal size={14} />
+                        <span>{isMirrored ? 'Cermin ON' : 'Cermin OFF'}</span>
+                      </button>
+
+                      {/* Camera Power */}
+                      {isScanning ? (
+                        <button
+                          onClick={stopCamera}
+                          className="px-3.5 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800 rounded-xl text-xs font-bold transition-colors"
+                        >
+                          Matikan Kamera
+                        </button>
+                      ) : (
+                        <button
+                          onClick={startCamera}
+                          className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/30 transition-all flex items-center gap-1.5"
+                        >
+                          <Camera size={14} />
+                          <span>Nyalakan Kamera</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Fullscreen Body: Spacious Camera & Live Recent Scans */}
+                  <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 pt-3 min-h-0 overflow-hidden">
+                    
+                    {/* Left (7 Cols): Big Spacious Camera Viewfinder & Result Card */}
+                    <div className="lg:col-span-7 flex flex-col gap-3 min-h-0 h-full overflow-hidden">
+                      
+                      {/* Viewfinder Frame - Fully responsive and filling available height/width */}
+                      <div className="flex-1 w-full min-h-[300px] bg-black rounded-3xl relative overflow-hidden border-2 border-purple-500/40 shadow-2xl flex items-center justify-center">
+                        <style>{`
+                          #${scannerContainerId} {
+                            width: 100% !important;
+                            height: 100% !important;
+                            display: flex !important;
+                            align-items: center !important;
+                            justify-content: center !important;
+                            background-color: #000 !important;
+                            border: none !important;
+                            position: relative !important;
+                          }
+                          #${scannerContainerId} video {
+                            width: 100% !important;
+                            height: 100% !important;
+                            max-width: 100% !important;
+                            max-height: 100% !important;
+                            object-fit: contain !important;
+                            border-radius: 1.5rem !important;
+                            transform: ${isMirrored ? 'scaleX(-1)' : 'none'} !important;
+                            -webkit-transform: ${isMirrored ? 'scaleX(-1)' : 'none'} !important;
+                          }
+                          #${scannerContainerId}__scan_region {
+                            display: flex !important;
+                            align-items: center !important;
+                            justify-content: center !important;
+                            width: 100% !important;
+                            height: 100% !important;
+                          }
+                          #${scannerContainerId}__dashboard_section_csr,
+                          #${scannerContainerId}__header_message,
+                          #${scannerContainerId} img[alt="Info icon"] {
+                            display: none !important;
+                          }
+                        `}</style>
+                        <div id={scannerContainerId} className="w-full h-full"></div>
+
+                        {/* HUD Corner Reticle Overlay */}
+                        {isScanning && (
+                          <div className="absolute inset-4 md:inset-8 pointer-events-none border border-purple-500/20 rounded-3xl flex flex-col justify-between p-3">
+                            <div className="flex justify-between">
+                              <div className="w-10 h-10 border-t-4 border-l-4 border-purple-400 rounded-tl-xl"></div>
+                              <div className="w-10 h-10 border-t-4 border-r-4 border-purple-400 rounded-tr-xl"></div>
+                            </div>
+                            <div className="flex justify-between">
+                              <div className="w-10 h-10 border-b-4 border-l-4 border-purple-400 rounded-bl-xl"></div>
+                              <div className="w-10 h-10 border-b-4 border-r-4 border-purple-400 rounded-br-xl"></div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Laser scanning bar */}
+                        {isScanning && (
+                          <div className="absolute inset-x-8 top-1/2 h-0.5 bg-gradient-to-r from-transparent via-purple-400 to-transparent shadow-[0_0_15px_#c084fc] animate-pulse pointer-events-none"></div>
+                        )}
+
+                        {/* Scan Cooldown Banner */}
+                        {scanCooldown && isScanning && (
+                          <div className="absolute top-4 inset-x-8 bg-amber-500/90 text-white font-bold text-xs px-4 py-2 rounded-2xl shadow-xl backdrop-blur-md text-center flex items-center justify-center gap-2 animate-pulse z-20">
+                            <Clock size={16} />
+                            <span>Jeda 1 detik untuk scan berikutnya...</span>
+                          </div>
+                        )}
+
+                        {/* Idle / Camera Off State */}
+                        {!isScanning && (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-950/90 text-slate-300">
+                            <Scan size={64} className="text-purple-400 mb-3 animate-bounce" />
+                            <p className="font-black text-lg text-white">Scanner Kamera Siap</p>
+                            <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                              Klik tombol di bawah untuk menyalakan kamera pemindai QR Card NISN.
+                            </p>
+                            <button
+                              onClick={startCamera}
+                              className="mt-4 px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-2xl text-xs shadow-lg shadow-purple-600/40 flex items-center gap-2 transition-all active:scale-95"
+                            >
+                              <Camera size={16} />
+                              <span>Nyalakan Kamera Fullscreen</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Error state */}
+                        {cameraError && (
+                          <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center text-rose-400">
+                            <AlertCircle size={48} className="mb-2" />
+                            <p className="font-bold text-sm">{cameraError}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom Strip: Last Scanned Result & Barcode Input */}
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 shrink-0">
+                        {/* Hasil Scan Terakhir Banner */}
+                        <div className="md:col-span-8 bg-slate-900/90 rounded-2xl p-3 border border-slate-800/80 shadow-lg">
+                          {lastScannedStudent ? (
+                            <div className={`p-3 rounded-xl border transition-all ${
+                              lastScannedStudent.isDuplicate
+                                ? 'bg-amber-950/60 border-amber-500/50 text-amber-200'
+                                : lastScannedStudent.status === 'Terlambat'
+                                ? 'bg-rose-950/60 border-rose-500/50 text-rose-200'
+                                : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+                            }`}>
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-md">
+                                  {lastScannedStudent.student.name.charAt(0)}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                      lastScannedStudent.isDuplicate
+                                        ? 'bg-amber-500 text-white'
+                                        : lastScannedStudent.status === 'Terlambat'
+                                        ? 'bg-rose-600 text-white'
+                                        : 'bg-emerald-600 text-white'
+                                    }`}>
+                                      {lastScannedStudent.isDuplicate ? 'Sudah Di-Scan' : lastScannedStudent.status}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 capitalize">{getModeLabel(presensiMode, selectedEkstra)}</span>
+                                  </div>
+                                  <h4 className="font-black text-white text-sm truncate mt-0.5">
+                                    {lastScannedStudent.student.name}
+                                  </h4>
+                                  <p className="text-[11px] font-semibold text-purple-300">
+                                    Kelas {lastScannedStudent.student.kelas} • NISN: {lastScannedStudent.student.nisn || '-'}
+                                  </p>
+                                </div>
+                                <div className="text-right shrink-0 font-mono font-black text-sm text-white">
+                                  {lastScannedStudent.recordTime}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="py-2.5 text-center text-slate-400 flex items-center justify-center gap-2">
+                              <Scan size={16} className="text-purple-400 animate-pulse" />
+                              <span className="text-xs font-semibold">Arahkan Kartu QR NISN Siswa ke kamera pemindai...</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Barcode Gun / Manual Input Bar */}
+                        <div className="md:col-span-4 flex items-center">
+                          <form onSubmit={handleManualSubmit} className="flex gap-2 w-full">
+                            <input
+                              ref={manualInputRef}
+                              type="text"
+                              placeholder="Barcode Gun / NISN..."
+                              value={manualInput}
+                              onChange={(e) => setManualInput(e.target.value)}
+                              className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono font-bold text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                            />
+                            <button
+                              type="submit"
+                              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs shadow-sm transition-all active:scale-95"
+                            >
+                              Scan
+                            </button>
+                          </form>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* Right (5 Cols): Realtime Activity History Feed in Fullscreen */}
+                    <div className="lg:col-span-5 bg-slate-900/90 rounded-3xl p-4 border border-slate-800/80 shadow-2xl flex flex-col min-h-0 h-full overflow-hidden">
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
+                        <div>
+                          <h3 className="font-black text-white text-sm flex items-center gap-2">
+                            <Clock size={16} className="text-purple-400" />
+                            <span>Aktivitas Scan Terbaru</span>
+                          </h3>
+                          <p className="text-[11px] text-slate-400 mt-0.5">Riwayat kehadiran realtime hari ini</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-xl bg-purple-950/80 border border-purple-800 text-purple-300 font-mono text-xs font-bold">
+                            Total: {totalScanned}
+                          </span>
+                          <span className="px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-300 font-mono text-xs font-bold">
+                            {totalHadir} Hadir
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Scrollable Scans List */}
+                      <div className="flex-1 overflow-y-auto space-y-2 mt-3 pr-1 custom-scrollbar min-h-0">
+                        {scanHistory.length === 0 ? (
+                          <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-500">
+                            <Users size={36} className="mb-2 opacity-40" />
+                            <p className="text-xs font-bold text-slate-400">Belum ada riwayat scan hari ini</p>
+                            <p className="text-[11px] mt-1 text-slate-500">Data siswa yang discan akan otomatis muncul di sini secara realtime.</p>
+                          </div>
+                        ) : (
+                          scanHistory.map((item, idx) => (
+                            <div
+                              key={item.id}
+                              className={`p-3 rounded-2xl border flex items-center justify-between text-xs transition-all ${
+                                idx === 0 
+                                  ? 'bg-slate-800/90 border-purple-500/50 shadow-md ring-1 ring-purple-500/30' 
+                                  : 'bg-slate-900/60 border-slate-800/80 hover:bg-slate-800/50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className={`w-8 h-8 rounded-xl font-bold flex items-center justify-center shrink-0 text-xs text-white ${
+                                  item.status === 'Terlambat' ? 'bg-rose-600' : 'bg-emerald-600'
+                                }`}>
+                                  {item.studentName.charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-extrabold text-white truncate">{item.studentName}</div>
+                                  <div className="text-[11px] text-slate-400">
+                                    Kelas {item.kelas} • <span className="font-mono text-slate-500">{item.nisn}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0 ml-2">
+                                <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold ${
+                                  item.status === 'Terlambat' 
+                                    ? 'bg-rose-950/80 text-rose-300 border border-rose-800' 
+                                    : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800'
+                                }`}>
+                                  {item.status}
+                                </span>
+                                <div className="text-[10px] font-mono text-slate-400 mt-1">
+                                  {new Date(item.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+
+                </div>,
+                document.body
+              )
+            ) : (
+              /* REGULAR SCANNER UI */
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 
                 {/* Left Scanner & Controls (7 Cols) */}
                 <div className="lg:col-span-7 space-y-6">
                   
-                  {/* Activity Selector Card */}
+                  {/* Activity Selector Card (Redundant Top Sound Button Removed) */}
                   <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="font-extrabold text-slate-800 dark:text-white text-sm flex items-center gap-2">
                         <Sparkles size={16} className="text-purple-600" />
-                        Pilih Kegiatan Presensi
+                        <span>Pilih Kegiatan Presensi</span>
                       </h3>
-                      <button
-                        onClick={() => setSoundEnabled(!soundEnabled)}
-                        className={`p-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                          soundEnabled 
-                            ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300' 
-                            : 'bg-slate-100 dark:bg-slate-700 text-slate-500'
-                        }`}
-                        title="Toggle suara scanner"
-                      >
-                        {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
-                        <span>{soundEnabled ? 'Suara ON' : 'Mute'}</span>
-                      </button>
+                      <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                        {getModeLabel(presensiMode, selectedEkstra)}
+                      </span>
                     </div>
 
                     {/* Activity Buttons Grid (4 Modes: Harian, Dhuha, Dzuhur, Ekstra) */}
@@ -1154,41 +1766,39 @@ export default function PresensiQR() {
                             {allowedEkstraForUser.map((ekstra) => (
                               <button
                                 key={ekstra}
-                                type="button"
                                 onClick={() => setSelectedEkstra(ekstra)}
-                                className={`px-2.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${
+                                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all text-center border ${
                                   selectedEkstra === ekstra
-                                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                                    : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                    : 'bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100'
                                 }`}
                               >
-                                <span className="truncate">{ekstra}</span>
-                                {selectedEkstra === ekstra && <Check size={12} className="shrink-0 ml-1" />}
+                                {ekstra}
                               </button>
                             ))}
                           </div>
                         ) : (
-                          <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 text-xs font-medium text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                            <Lock size={16} className="shrink-0 text-amber-600" />
-                            <span>Menu pilihan Ekstrakurikuler khusus untuk Guru yang telah ditunjuk/dikelola sebagai Pembina Ekstrakurikuler di Dashboard Admin.</span>
+                          <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                            <Lock size={16} className="shrink-0" />
+                            <span>Anda belum ditunjuk sebagai Pembina Ekstrakurikuler oleh Admin.</span>
                           </div>
                         )}
                       </div>
                     )}
                   </div>
 
-                  {/* Camera Scanner Viewfinder */}
-                  <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm relative space-y-4">
-                    <div className="flex items-center justify-between gap-2">
+                  {/* QR Camera Scanner Card */}
+                  <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full ${isScanning ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                        <div className={`w-3 h-3 rounded-full ${isScanning ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'}`}></div>
                         <h3 className="font-extrabold text-slate-800 dark:text-white text-xs sm:text-sm">
                           {isScanning ? `Kamera Aktif — Presensi ${getModeLabel(presensiMode, selectedEkstra)}` : 'Kamera Non-Aktif'}
                         </h3>
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {/* Sound Beep Toggle & Test Button */}
+                        {/* Sound Beep Toggle */}
                         <button
                           type="button"
                           onClick={() => {
@@ -1224,6 +1834,17 @@ export default function PresensiQR() {
                           <span className="hidden sm:inline">{isMirrored ? 'Cermin ON' : 'Cermin OFF'}</span>
                         </button>
 
+                        {/* FULLSCREEN BUTTON */}
+                        <button
+                          type="button"
+                          onClick={() => toggleFullscreen(true)}
+                          title="Tampilan Layar Penuh (Fullscreen Scanner)"
+                          className="px-2.5 py-1.5 bg-purple-100 dark:bg-purple-950/60 hover:bg-purple-200 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs"
+                        >
+                          <Maximize2 size={14} />
+                          <span className="hidden sm:inline">Fullscreen</span>
+                        </button>
+
                         {isScanning ? (
                           <button
                             onClick={stopCamera}
@@ -1243,16 +1864,42 @@ export default function PresensiQR() {
                       </div>
                     </div>
 
-                    {/* Viewfinder Frame */}
-                    <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-square max-w-sm mx-auto flex items-center justify-center border-2 border-purple-500/40">
+                    {/* Viewfinder Frame - Clean uncropped video */}
+                    <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-video sm:aspect-[4/3] max-w-lg mx-auto flex items-center justify-center border-2 border-purple-500/40">
                       <style>{`
+                        #${scannerContainerId} {
+                          width: 100% !important;
+                          height: 100% !important;
+                          display: flex !important;
+                          align-items: center !important;
+                          justify-content: center !important;
+                          background-color: #000 !important;
+                          border: none !important;
+                          position: relative !important;
+                        }
                         #${scannerContainerId} video {
+                          width: 100% !important;
+                          height: 100% !important;
+                          max-width: 100% !important;
+                          max-height: 100% !important;
+                          object-fit: contain !important;
                           transform: ${isMirrored ? 'scaleX(-1)' : 'none'} !important;
                           -webkit-transform: ${isMirrored ? 'scaleX(-1)' : 'none'} !important;
-                          object-fit: cover !important;
+                        }
+                        #${scannerContainerId}__scan_region {
+                          display: flex !important;
+                          align-items: center !important;
+                          justify-content: center !important;
+                          width: 100% !important;
+                          height: 100% !important;
+                        }
+                        #${scannerContainerId}__dashboard_section_csr,
+                        #${scannerContainerId}__header_message,
+                        #${scannerContainerId} img[alt="Info icon"] {
+                          display: none !important;
                         }
                       `}</style>
-                      <div id={scannerContainerId} className="w-full h-full object-cover"></div>
+                      <div id={scannerContainerId} className="w-full h-full"></div>
 
                       {scanCooldown && isScanning && (
                         <div className="absolute top-3 inset-x-3 bg-amber-500/90 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-lg backdrop-blur-xs text-center flex items-center justify-center gap-1.5 animate-pulse z-20">
@@ -1430,6 +2077,7 @@ export default function PresensiQR() {
                 </div>
 
               </div>
+            )}
           </div>
         )}
 
@@ -1440,11 +2088,31 @@ export default function PresensiQR() {
             {/* Action Bar */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h3 className="text-lg font-black text-slate-800 dark:text-white">Daftar Scan Presensi Hari Ini</h3>
-                <p className="text-xs text-slate-500">Total {scanHistory.length} data presensi recorded pada {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-lg font-black text-slate-800 dark:text-white">Daftar Scan Presensi Hari Ini</h3>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Live Realtime Sync</span>
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Total <strong>{scanHistory.length}</strong> data presensi recorded pada {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (Sinkron otomatis dari seluruh guru & perangkat pemindai)
+                </p>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Refresh Data Button */}
+                <button
+                  type="button"
+                  onClick={() => fetchTodayLogs(true)}
+                  disabled={loadingLogs}
+                  className="px-3.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-600 shadow-xs disabled:opacity-60"
+                  title="Tarik & perbarui data scan hari ini dari database server"
+                >
+                  <RefreshCw size={14} className={loadingLogs ? 'animate-spin text-purple-600' : ''} />
+                  <span>{loadingLogs ? 'Memuat Data...' : 'Refresh Data'}</span>
+                </button>
+
                 {/* Download CSV button ONLY shown for Admin */}
                 {isAdmin && (
                   <button
@@ -1511,7 +2179,14 @@ export default function PresensiQR() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {filteredHistory.length === 0 ? (
+                  {loadingLogs && scanHistory.length === 0 ? (
+                    <tr>
+                      <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-slate-400 italic">
+                        <RefreshCw size={20} className="animate-spin text-purple-600 mx-auto mb-2" />
+                        <span>Menghubungkan & mengambil data presensi realtime dari server...</span>
+                      </td>
+                    </tr>
+                  ) : filteredHistory.length === 0 ? (
                     <tr>
                       <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-slate-400 italic">
                         Tidak ada catatan scan presensi yang cocok.
