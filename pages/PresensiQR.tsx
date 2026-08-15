@@ -9,7 +9,8 @@ import {
   Search, Printer, Download, Trash2, RefreshCw, Volume2, VolumeX, 
   Sparkles, GraduationCap, Sun, Check, ArrowRight, ShieldCheck, X,
   Trophy, Lock, UserCheck, ShieldAlert, UserCog, Save, CheckSquare, Square,
-  FlipHorizontal, Calendar, FileText, Filter, Maximize2, Minimize2
+  FlipHorizontal, Calendar, FileText, Filter, Maximize2, Minimize2,
+  Edit3, PlusCircle, ChevronDown, CheckCircle, ExternalLink, FileSpreadsheet
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { showAlert, showConfirm } from '../utils/alert';
@@ -238,9 +239,49 @@ export default function PresensiQR() {
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   const [isRealtimeActive, setIsRealtimeActive] = useState<boolean>(true);
 
+  // Database Log Manager Filter State
+  const [logDateMode, setLogDateMode] = useState<'today' | 'date' | 'month' | 'all'>('today');
+  const [logSelectedDate, setLogSelectedDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [logSelectedMonth, setLogSelectedMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [logModeFilter, setLogModeFilter] = useState<string>(''); // '' = all
+  const [logEkstraFilter, setLogEkstraFilter] = useState<string>('');
+  const [logStatusFilter, setLogStatusFilter] = useState<string>('');
+  const [databaseLogs, setDatabaseLogs] = useState<QRScanRecord[]>([]);
+
   // Filter history
   const [historySearch, setHistorySearch] = useState<string>('');
   const [historyClassFilter, setHistoryClassFilter] = useState<string>('');
+
+  // Manual Add Modal State
+  const [showManualAddModal, setShowManualAddModal] = useState<boolean>(false);
+  const [manualAddStudentSearch, setManualAddStudentSearch] = useState<string>('');
+  const [selectedStudentForManual, setSelectedStudentForManual] = useState<Student | null>(null);
+  const [manualAddMode, setManualAddMode] = useState<PresensiMode>('harian');
+  const [manualAddStatus, setManualAddStatus] = useState<'Hadir' | 'Terlambat'>('Hadir');
+  const [manualAddEkstra, setManualAddEkstra] = useState<string>(EKSTRA_LIST[0]);
+  const [manualAddTime, setManualAddTime] = useState<string>(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  });
+  const [manualAddDate, setManualAddDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [manualAddNotes, setManualAddNotes] = useState<string>('');
+  const [savingManual, setSavingManual] = useState<boolean>(false);
+
+  // Edit Status Modal State
+  const [editingRecord, setEditingRecord] = useState<QRScanRecord | null>(null);
+  const [savingEdit, setSavingEdit] = useState<boolean>(false);
+
+  // Print Report Modal State
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
 
   // Card Generator
   const [selectedCardClass, setSelectedCardClass] = useState<string>('');
@@ -250,69 +291,253 @@ export default function PresensiQR() {
   const scannerContainerId = 'qr-reader-viewfinder';
   const manualInputRef = useRef<HTMLInputElement>(null);
 
-  // Helper to get start and end ISO timestamps for today
+  // Helper UUID check
+  const isValidUUID = (str?: string) => {
+    if (!str) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+  };
+
+  // Helper to check if a timestamp is from today (local timezone aware)
+  const isDateToday = (timestampStr: string) => {
+    try {
+      const d = new Date(timestampStr);
+      const now = new Date();
+      return (
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate()
+      );
+    } catch (e) {
+      return false;
+    }
+  };
+
+  // Helper to get start and end ISO timestamps for today (covering wide 36-hour UTC range for WIB)
   const getTodayBounds = () => {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const past36Hours = new Date(now.getTime() - 36 * 60 * 60 * 1000);
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    return { startISO: start.toISOString(), endISO: end.toISOString(), todayStr };
+    return { 
+      startISO: start.toISOString(), 
+      endISO: end.toISOString(), 
+      past36HoursISO: past36Hours.toISOString(),
+      todayStr 
+    };
   };
 
-  // Fetch today's scan logs from Supabase across all teachers/devices
-  const fetchTodayLogs = async (showLoading = false) => {
+  // Broadcast channel reference
+  const broadcastChannelRef = useRef<any>(null);
+
+  // Fetch Database Scan Logs from Supabase across all teachers/devices
+  const fetchDatabaseLogs = async (showLoading = false) => {
     if (showLoading) setLoadingLogs(true);
     try {
-      const { startISO, endISO } = getTodayBounds();
-      const { data, error } = await supabase
-        .from('qr_presensi_logs')
-        .select('*')
-        .gte('scanned_at', startISO)
-        .lte('scanned_at', endISO)
-        .order('scanned_at', { ascending: false });
+      const combinedRecords: QRScanRecord[] = [];
 
-      if (!error && data) {
-        const remoteRecords: QRScanRecord[] = data.map((item: any) => ({
-          id: item.id || `${item.student_id}-${item.scanned_at}`,
-          nisn: item.nisn || '-',
-          studentName: item.student_name || '-',
-          kelas: item.kelas || '-',
-          timestamp: item.scanned_at,
-          mode: item.mode || 'harian',
-          status: item.status || 'Hadir',
-          subject: item.subject || undefined,
-        }));
+      let queryLogs = supabase.from('qr_presensi_logs').select('*');
+      let queryNotes = supabase.from('journal_notes').select('*').eq('category', 'qr_presensi_log');
 
-        setScanHistory(prev => {
-          const map = new Map<string, QRScanRecord>();
-          // Add remote records first (they are authoritative from DB)
-          remoteRecords.forEach(r => {
-            const key = `${r.nisn}_${r.mode}_${r.subject || ''}_${r.timestamp.substring(0, 16)}`;
-            map.set(key, r);
+      if (logDateMode === 'today') {
+        const { past36HoursISO } = getTodayBounds();
+        queryLogs = queryLogs.gte('scanned_at', past36HoursISO);
+        queryNotes = queryNotes.gte('created_at', past36HoursISO);
+      } else if (logDateMode === 'date') {
+        const startISO = `${logSelectedDate}T00:00:00.000Z`;
+        const endISO = `${logSelectedDate}T23:59:59.999Z`;
+        const dateStart = new Date(new Date(startISO).getTime() - 14 * 3600 * 1000).toISOString();
+        const dateEnd = new Date(new Date(endISO).getTime() + 14 * 3600 * 1000).toISOString();
+        queryLogs = queryLogs.gte('scanned_at', dateStart).lte('scanned_at', dateEnd);
+        queryNotes = queryNotes.gte('created_at', dateStart).lte('created_at', dateEnd);
+      } else if (logDateMode === 'month') {
+        const [yr, mo] = logSelectedMonth.split('-').map(Number);
+        const startMonth = new Date(yr, mo - 1, 1, 0, 0, 0).toISOString();
+        const endMonth = new Date(yr, mo, 0, 23, 59, 59).toISOString();
+        queryLogs = queryLogs.gte('scanned_at', startMonth).lte('scanned_at', endMonth);
+        queryNotes = queryNotes.gte('created_at', startMonth).lte('created_at', endMonth);
+      } else {
+        queryLogs = queryLogs.limit(1000);
+        queryNotes = queryNotes.limit(1000);
+      }
+
+      queryLogs = queryLogs.order('scanned_at', { ascending: false });
+      queryNotes = queryNotes.order('created_at', { ascending: false });
+
+      // 1. Query qr_presensi_logs table
+      try {
+        const { data, error } = await queryLogs;
+        if (!error && data && data.length > 0) {
+          data.forEach((item: any) => {
+            const itemTime = item.scanned_at || item.created_at;
+            let matchesDate = true;
+            if (logDateMode === 'today') {
+              matchesDate = isDateToday(itemTime);
+            } else if (logDateMode === 'date') {
+              const localDateStr = new Date(itemTime).toLocaleDateString('en-CA');
+              matchesDate = localDateStr === logSelectedDate;
+            } else if (logDateMode === 'month') {
+              const localMonthStr = new Date(itemTime).toLocaleDateString('en-CA').substring(0, 7);
+              matchesDate = localMonthStr === logSelectedMonth;
+            }
+
+            if (matchesDate) {
+              combinedRecords.push({
+                id: item.id || `${item.student_id}-${itemTime}`,
+                nisn: item.nisn || '-',
+                studentName: item.student_name || '-',
+                kelas: item.kelas || '-',
+                timestamp: itemTime,
+                mode: item.mode || 'harian',
+                status: item.status || 'Hadir',
+                subject: item.subject || undefined,
+                notes: item.notes || undefined,
+              });
+            }
           });
-          // Preserve any local records not yet present in remote response
-          prev.forEach(p => {
-            const key = `${p.nisn}_${p.mode}_${p.subject || ''}_${p.timestamp.substring(0, 16)}`;
+        }
+      } catch (errDb) {
+        console.warn('Query qr_presensi_logs warning:', errDb);
+      }
+
+      // 2. Query journal_notes fallback (where category = 'qr_presensi_log')
+      try {
+        const { data: jNotes, error: jNotesErr } = await queryNotes;
+        if (!jNotesErr && jNotes && jNotes.length > 0) {
+          jNotes.forEach((jn: any) => {
+            const itemTime = jn.created_at;
+            let matchesDate = true;
+            if (logDateMode === 'today') {
+              matchesDate = isDateToday(itemTime);
+            } else if (logDateMode === 'date') {
+              const localDateStr = new Date(itemTime).toLocaleDateString('en-CA');
+              matchesDate = localDateStr === logSelectedDate;
+            } else if (logDateMode === 'month') {
+              const localMonthStr = new Date(itemTime).toLocaleDateString('en-CA').substring(0, 7);
+              matchesDate = localMonthStr === logSelectedMonth;
+            }
+
+            if (matchesDate) {
+              try {
+                if (jn.note && jn.note.startsWith('{')) {
+                  const parsed = JSON.parse(jn.note);
+                  combinedRecords.push({
+                    id: parsed.id || jn.id,
+                    nisn: parsed.nisn || '-',
+                    studentName: parsed.studentName || jn.student_name || '-',
+                    kelas: parsed.kelas || '-',
+                    timestamp: parsed.timestamp || jn.created_at,
+                    mode: parsed.mode || (jn.follow_up as PresensiMode) || 'harian',
+                    status: parsed.status || 'Hadir',
+                    subject: parsed.subject || undefined,
+                    notes: parsed.notes || undefined,
+                  });
+                }
+              } catch (e) {}
+            }
+          });
+        }
+      } catch (errJn) {
+        console.warn('Query journal_notes backup warning:', errJn);
+      }
+
+      // 3. Query shared app_settings backup if today mode
+      if (logDateMode === 'today') {
+        try {
+          const { data: settingData } = await supabase
+            .from('app_settings')
+            .select('value')
+            .eq('key', 'today_qr_scans_sync')
+            .single();
+
+          if (settingData && settingData.value) {
+            const parsed = JSON.parse(settingData.value);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((item: any) => {
+                if (item.timestamp && isDateToday(item.timestamp)) {
+                  combinedRecords.push(item);
+                }
+              });
+            }
+          }
+        } catch (errSetting) {}
+      }
+
+      // 4. Merge & deduplicate
+      const map = new Map<string, QRScanRecord>();
+      combinedRecords.forEach(r => {
+        const key = `${r.nisn.trim()}_${r.mode}_${r.subject || ''}_${r.timestamp.substring(0, 16)}`;
+        map.set(key, r);
+      });
+
+      // Preserve local items for today if in today mode
+      if (logDateMode === 'today') {
+        scanHistory.forEach(p => {
+          if (isDateToday(p.timestamp)) {
+            const key = `${p.nisn.trim()}_${p.mode}_${p.subject || ''}_${p.timestamp.substring(0, 16)}`;
             if (!map.has(key)) {
               map.set(key, p);
             }
-          });
-          return Array.from(map.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          }
         });
       }
+
+      const sorted = Array.from(map.values()).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      setDatabaseLogs(sorted);
+      if (logDateMode === 'today') {
+        setScanHistory(sorted);
+      }
     } catch (err) {
-      console.warn('Failed to fetch today presensi logs:', err);
+      console.warn('Failed to fetch presensi logs:', err);
     } finally {
       if (showLoading) setLoadingLogs(false);
     }
   };
 
-  // Realtime Supabase Subscription & 10s Background Polling
+  // Realtime Supabase Subscription & Broadcast Channel
   useEffect(() => {
-    fetchTodayLogs(true);
+    fetchDatabaseLogs(true);
 
     const channel = supabase
-      .channel('qr_presensi_logs_realtime_stream')
+      .channel('simpanla_qr_presensi_live_room', {
+        config: {
+          broadcast: { self: true },
+        },
+      })
+      .on('broadcast', { event: 'NEW_SCAN' }, ({ payload }) => {
+        if (!payload) return;
+        setIsRealtimeActive(true);
+        const updateList = (prev: QRScanRecord[]) => {
+          const key = `${payload.nisn.trim()}_${payload.mode}_${payload.subject || ''}_${payload.timestamp.substring(0, 16)}`;
+          const exists = prev.some(item => 
+            item.id === payload.id || 
+            `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key
+          );
+          if (exists) {
+            return prev.map(item => item.id === payload.id ? payload : item);
+          }
+          return [payload, ...prev];
+        };
+
+        if (payload.timestamp && isDateToday(payload.timestamp)) {
+          setScanHistory(prev => updateList(prev));
+        }
+        setDatabaseLogs(prev => updateList(prev));
+      })
+      .on('broadcast', { event: 'UPDATE_SCAN' }, ({ payload }) => {
+        if (!payload?.id) return;
+        setScanHistory(prev => prev.map(item => item.id === payload.id ? { ...item, ...payload } : item));
+        setDatabaseLogs(prev => prev.map(item => item.id === payload.id ? { ...item, ...payload } : item));
+      })
+      .on('broadcast', { event: 'DELETE_SCAN' }, ({ payload }) => {
+        if (payload?.id) {
+          setScanHistory(prev => prev.filter(item => item.id !== payload.id));
+          setDatabaseLogs(prev => prev.filter(item => item.id !== payload.id));
+        }
+      })
       .on(
         'postgres_changes',
         {
@@ -322,50 +547,98 @@ export default function PresensiQR() {
         },
         (payload) => {
           setIsRealtimeActive(true);
-          if (payload.eventType === 'INSERT') {
+          if (payload.eventType === 'INSERT' && payload.new) {
             const newRow = payload.new;
-            if (!newRow) return;
+            const newRecord: QRScanRecord = {
+              id: newRow.id || `${Date.now()}`,
+              nisn: newRow.nisn || '-',
+              studentName: newRow.student_name || '-',
+              kelas: newRow.kelas || '-',
+              timestamp: newRow.scanned_at || newRow.created_at,
+              mode: newRow.mode || 'harian',
+              status: newRow.status || 'Hadir',
+              subject: newRow.subject || undefined,
+            };
 
-            const { todayStr } = getTodayBounds();
-            if (newRow.scanned_at && newRow.scanned_at.startsWith(todayStr)) {
-              const newRecord: QRScanRecord = {
-                id: newRow.id || `${Date.now()}`,
-                nisn: newRow.nisn || '-',
-                studentName: newRow.student_name || '-',
-                kelas: newRow.kelas || '-',
-                timestamp: newRow.scanned_at,
-                mode: newRow.mode || 'harian',
-                status: newRow.status || 'Hadir',
-                subject: newRow.subject || undefined,
-              };
-
+            if (newRow.scanned_at && isDateToday(newRow.scanned_at)) {
               setScanHistory(prev => {
-                const key = `${newRecord.nisn}_${newRecord.mode}_${newRecord.subject || ''}_${newRecord.timestamp.substring(0, 16)}`;
-                const alreadyExists = prev.some(item => 
-                  item.id === newRecord.id || 
-                  `${item.nisn}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key
-                );
-                if (alreadyExists) {
-                  return prev.map(item => item.id === newRecord.id ? newRecord : item);
-                }
+                const key = `${newRecord.nisn.trim()}_${newRecord.mode}_${newRecord.subject || ''}_${newRecord.timestamp.substring(0, 16)}`;
+                const exists = prev.some(item => item.id === newRecord.id || `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key);
+                if (exists) return prev.map(item => item.id === newRecord.id ? newRecord : item);
                 return [newRecord, ...prev];
               });
             }
-          } else if (payload.eventType === 'DELETE') {
-            const deletedId = payload.old?.id;
-            if (deletedId) {
-              setScanHistory(prev => prev.filter(item => item.id !== deletedId));
-            }
-          } else if (payload.eventType === 'UPDATE') {
+
+            setDatabaseLogs(prev => {
+              const key = `${newRecord.nisn.trim()}_${newRecord.mode}_${newRecord.subject || ''}_${newRecord.timestamp.substring(0, 16)}`;
+              const exists = prev.some(item => item.id === newRecord.id || `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key);
+              if (exists) return prev.map(item => item.id === newRecord.id ? newRecord : item);
+              return [newRecord, ...prev];
+            });
+          } else if (payload.eventType === 'DELETE' && payload.old?.id) {
+            const deletedId = payload.old.id;
+            setScanHistory(prev => prev.filter(item => item.id !== deletedId));
+            setDatabaseLogs(prev => prev.filter(item => item.id !== deletedId));
+          } else if (payload.eventType === 'UPDATE' && payload.new?.id) {
             const updatedRow = payload.new;
-            if (updatedRow && updatedRow.id) {
-              setScanHistory(prev => prev.map(item => item.id === updatedRow.id ? {
-                ...item,
-                status: updatedRow.status || item.status,
-                mode: updatedRow.mode || item.mode,
-                subject: updatedRow.subject || item.subject,
-              } : item));
+            const updateFn = (prev: QRScanRecord[]) => prev.map(item => item.id === updatedRow.id ? {
+              ...item,
+              status: updatedRow.status || item.status,
+              mode: updatedRow.mode || item.mode,
+              subject: updatedRow.subject || item.subject,
+            } : item);
+            setScanHistory(updateFn);
+            setDatabaseLogs(updateFn);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'journal_notes',
+          filter: 'category=eq.qr_presensi_log',
+        },
+        (payload) => {
+          setIsRealtimeActive(true);
+          if (payload.eventType === 'INSERT' && payload.new) {
+            const jn = payload.new;
+            if (jn.note && jn.note.startsWith('{')) {
+              try {
+                const parsed = JSON.parse(jn.note);
+                const rec: QRScanRecord = {
+                  id: parsed.id || jn.id,
+                  nisn: parsed.nisn || '-',
+                  studentName: parsed.studentName || jn.student_name || '-',
+                  kelas: parsed.kelas || '-',
+                  timestamp: parsed.timestamp || jn.created_at,
+                  mode: parsed.mode || (jn.follow_up as PresensiMode) || 'harian',
+                  status: parsed.status || 'Hadir',
+                  subject: parsed.subject || undefined,
+                };
+                if (jn.created_at && isDateToday(jn.created_at)) {
+                  setScanHistory(prev => {
+                    const key = `${rec.nisn.trim()}_${rec.mode}_${rec.subject || ''}_${rec.timestamp.substring(0, 16)}`;
+                    if (prev.some(item => item.id === rec.id || `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key)) {
+                      return prev.map(item => item.id === rec.id ? rec : item);
+                    }
+                    return [rec, ...prev];
+                  });
+                }
+                setDatabaseLogs(prev => {
+                  const key = `${rec.nisn.trim()}_${rec.mode}_${rec.subject || ''}_${rec.timestamp.substring(0, 16)}`;
+                  if (prev.some(item => item.id === rec.id || `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key)) {
+                    return prev.map(item => item.id === rec.id ? rec : item);
+                  }
+                  return [rec, ...prev];
+                });
+              } catch (e) {}
             }
+          } else if (payload.eventType === 'DELETE' && payload.old?.id) {
+            const deletedId = payload.old.id;
+            setScanHistory(prev => prev.filter(item => item.id !== deletedId));
+            setDatabaseLogs(prev => prev.filter(item => item.id !== deletedId));
           }
         }
       )
@@ -375,16 +648,18 @@ export default function PresensiQR() {
         }
       });
 
-    // Fallback polling every 10 seconds so even if websocket drops, data stays live
+    broadcastChannelRef.current = channel;
+
+    // Background Polling every 5 seconds as continuous live sync guarantee
     const interval = setInterval(() => {
-      fetchTodayLogs(false);
-    }, 10000);
+      fetchDatabaseLogs(false);
+    }, 5000);
 
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
-  }, []);
+  }, [logDateMode, logSelectedDate, logSelectedMonth]);
 
   // Safety fallback for non-admins trying to open admin tabs
   useEffect(() => {
@@ -491,9 +766,11 @@ export default function PresensiQR() {
         .order('kelas', { ascending: true })
         .order('name', { ascending: true });
 
-      if (error && (error.code === '42703' || error.message?.includes('academic_year'))) {
+      if (error || !data || data.length === 0) {
         const res = await supabase.from('students').select('*').order('kelas', { ascending: true }).order('name', { ascending: true });
-        data = res.data;
+        if (res.data && res.data.length > 0) {
+          data = res.data;
+        }
       }
 
       const loadedStudents = data || [];
@@ -901,7 +1178,7 @@ export default function PresensiQR() {
   }, []);
 
   // Process Scanned NISN / Raw Code
-  const handleScanSuccess = (rawValue: string) => {
+  const handleScanSuccess = async (rawValue: string) => {
     if (!rawValue) return;
 
     // Check 1-second cooldown delay between consecutive scans
@@ -922,9 +1199,11 @@ export default function PresensiQR() {
       return;
     }
 
-    let cleanCode = rawValue.trim();
+    let cleanCode = rawValue.replace(/[\r\n\t]/g, '').trim();
     if (cleanCode.startsWith('NISN:')) {
-      cleanCode = cleanCode.replace('NISN:', '').trim();
+      cleanCode = cleanCode.replace(/^NISN:\s*/i, '').trim();
+    } else if (cleanCode.startsWith('NIS:')) {
+      cleanCode = cleanCode.replace(/^NIS:\s*/i, '').trim();
     } else if (cleanCode.includes('{')) {
       try {
         const obj = JSON.parse(cleanCode);
@@ -932,9 +1211,33 @@ export default function PresensiQR() {
       } catch (e) {}
     }
 
-    const matchedStudent = students.find(
-      s => (s.nisn && s.nisn.trim() === cleanCode) || (s.nis && s.nis.trim() === cleanCode)
+    const cleanDigits = cleanCode.replace(/\D/g, '');
+
+    // 1. Match from in-memory students list
+    let matchedStudent = students.find(
+      s => (s.nisn && s.nisn.trim() === cleanCode) || 
+           (s.nis && s.nis.trim() === cleanCode) ||
+           (cleanDigits.length >= 4 && s.nisn && s.nisn.replace(/\D/g, '') === cleanDigits)
     );
+
+    // 2. Direct online DB lookup fallback if not found in local cache
+    if (!matchedStudent) {
+      try {
+        let query = supabase.from('students').select('*');
+        if (cleanDigits.length >= 4) {
+          query = query.or(`nisn.eq.${cleanCode},nis.eq.${cleanCode},nisn.ilike.%${cleanDigits}%`);
+        } else {
+          query = query.or(`nisn.eq.${cleanCode},nis.eq.${cleanCode}`);
+        }
+        const { data: dbRes } = await query.limit(1);
+        if (dbRes && dbRes.length > 0) {
+          matchedStudent = dbRes[0];
+          setStudents(prev => [matchedStudent!, ...prev.filter(s => s.id !== matchedStudent!.id)]);
+        }
+      } catch (errDb) {
+        console.warn('Direct online student lookup warning:', errDb);
+      }
+    }
 
     const now = new Date();
     const timeString = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -953,9 +1256,9 @@ export default function PresensiQR() {
 
     // Check duplicate scan
     const existingIndex = scanHistory.findIndex(
-      item => item.nisn === matchedStudent.nisn && item.mode === presensiMode && (
-        presensiMode === 'ekstra' ? item.subject === selectedEkstra : true
-      )
+      item => (item.nisn === matchedStudent!.nisn || (cleanDigits.length >= 4 && item.nisn.replace(/\D/g, '') === cleanDigits)) && 
+              item.mode === presensiMode && 
+              (presensiMode === 'ekstra' ? item.subject === selectedEkstra : true)
     );
 
     const isDuplicate = existingIndex !== -1;
@@ -976,7 +1279,7 @@ export default function PresensiQR() {
     const activeSubject = presensiMode === 'ekstra' ? selectedEkstra : undefined;
 
     const newRecord: QRScanRecord = {
-      id: `${Date.now()}-${matchedStudent.id}`,
+      id: `${Date.now()}-${matchedStudent.id || cleanDigits}`,
       nisn: matchedStudent.nisn || matchedStudent.nis || cleanCode,
       studentName: matchedStudent.name,
       kelas: matchedStudent.kelas,
@@ -994,17 +1297,39 @@ export default function PresensiQR() {
       isDuplicate: false,
     });
 
-    syncToSupabase(matchedStudent, status, presensiMode, activeSubject);
+    // Broadcast scan immediately to all open clients/admin screens
+    try {
+      if (broadcastChannelRef.current) {
+        broadcastChannelRef.current.send({
+          type: 'broadcast',
+          event: 'NEW_SCAN',
+          payload: newRecord,
+        });
+      }
+    } catch (bcErr) {
+      console.warn('Broadcast send error:', bcErr);
+    }
+
+    syncToSupabase(newRecord, matchedStudent, status, presensiMode, activeSubject);
   };
 
-  // Sync to database
-  const syncToSupabase = async (student: Student, status: 'Hadir' | 'Terlambat', mode: string, subject?: string) => {
+  // Sync to database and shared cloud settings
+  const syncToSupabase = async (
+    record: QRScanRecord,
+    student: Student,
+    status: 'Hadir' | 'Terlambat',
+    mode: string,
+    subject?: string
+  ) => {
+    const nowIso = record.timestamp || new Date().toISOString();
+    const studentUuid = isValidUUID(student.id) ? student.id : null;
+
+    // 1. Insert into qr_presensi_logs table
     try {
-      const nowIso = new Date().toISOString();
       const { data, error } = await supabase.from('qr_presensi_logs').insert([{
-        student_id: student.id,
+        student_id: studentUuid,
         student_name: student.name,
-        nisn: student.nisn,
+        nisn: student.nisn || student.nis || record.nisn,
         kelas: student.kelas,
         mode: mode,
         status: status,
@@ -1014,15 +1339,62 @@ export default function PresensiQR() {
       }]).select();
 
       if (!error && data && data[0]) {
-        // Update local item with real DB ID
         setScanHistory(prev => prev.map(item => 
-          (item.nisn === (student.nisn || student.nis) && item.mode === mode && item.timestamp.substring(0, 16) === nowIso.substring(0, 16))
+          (item.id === record.id || (item.nisn === record.nisn && item.mode === mode && item.timestamp.substring(0, 16) === nowIso.substring(0, 16)))
             ? { ...item, id: data[0].id }
             : item
         ));
       }
     } catch (e) {
-      console.warn('Could not sync to cloud, stored locally:', e);
+      console.warn('Primary qr_presensi_logs sync failed, will sync via backup journal_notes and app_settings:', e);
+    }
+
+    // 2. Insert into journal_notes fallback (where category = 'qr_presensi_log') - 100% accessible to all teachers & admins
+    try {
+      await supabase.from('journal_notes').insert([{
+        student_id: studentUuid,
+        student_name: student.name,
+        type: 'kedisiplinan',
+        category: 'qr_presensi_log',
+        note: JSON.stringify(record),
+        follow_up: mode,
+        academic_year: academicYear || '2025/2026',
+        created_at: nowIso,
+      }]);
+    } catch (jnErr) {
+      console.warn('Failed to insert into journal_notes backup:', jnErr);
+    }
+
+    // 3. Backup & sync to app_settings key 'today_qr_scans_sync'
+    try {
+      const { data: existingData } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'today_qr_scans_sync')
+        .single();
+
+      let currentSyncList: QRScanRecord[] = [];
+      if (existingData && existingData.value) {
+        try {
+          const parsed = JSON.parse(existingData.value);
+          if (Array.isArray(parsed)) {
+            currentSyncList = parsed.filter(item => isDateToday(item.timestamp));
+          }
+        } catch (parseErr) {}
+      }
+
+      const deduplicated = currentSyncList.filter(
+        item => !(item.nisn === record.nisn && item.mode === record.mode && (item.subject || '') === (record.subject || ''))
+      );
+      deduplicated.unshift(record);
+
+      await supabase.from('app_settings').upsert({
+        key: 'today_qr_scans_sync',
+        value: JSON.stringify(deduplicated.slice(0, 500)),
+        description: 'Realtime backup of today scan presensi records'
+      }, { onConflict: 'key' });
+    } catch (settingErr) {
+      // setting upsert may be restricted for non-admins, but journal_notes and broadcast already succeeded!
     }
   };
 
@@ -1039,14 +1411,184 @@ export default function PresensiQR() {
 
   // Delete item from history
   const handleDeleteHistory = async (id: string) => {
-    const confirmed = await showConfirm('Hapus catatan presensi ini dari daftar scan hari ini?');
+    const targetItem = scanHistory.find(item => item.id === id) || databaseLogs.find(item => item.id === id);
+    const confirmed = await showConfirm('Hapus catatan presensi ini dari database dan daftar scan?');
     if (confirmed) {
       setScanHistory(prev => prev.filter(item => item.id !== id));
+      setDatabaseLogs(prev => prev.filter(item => item.id !== id));
+      
+      // Broadcast deletion
+      try {
+        if (broadcastChannelRef.current) {
+          broadcastChannelRef.current.send({
+            type: 'broadcast',
+            event: 'DELETE_SCAN',
+            payload: { id },
+          });
+        }
+      } catch (e) {}
+
+      // Delete from qr_presensi_logs
       try {
         await supabase.from('qr_presensi_logs').delete().eq('id', id);
-      } catch (err) {
-        console.warn('Failed to delete row from supabase:', err);
+      } catch (err) {}
+
+      // Delete from journal_notes backup
+      try {
+        if (targetItem) {
+          await supabase.from('journal_notes')
+            .delete()
+            .eq('category', 'qr_presensi_log')
+            .or(`student_name.eq.${targetItem.studentName},note.ilike.%${targetItem.nisn}%`);
+        }
+      } catch (jnErr) {}
+
+      // Update app_settings backup
+      try {
+        const { data: existingData } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'today_qr_scans_sync')
+          .single();
+
+        if (existingData && existingData.value) {
+          const parsed = JSON.parse(existingData.value);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter((item: any) => item.id !== id);
+            await supabase.from('app_settings').upsert({
+              key: 'today_qr_scans_sync',
+              value: JSON.stringify(filtered),
+              description: 'Realtime backup of today scan presensi records'
+            }, { onConflict: 'key' });
+          }
+        }
+      } catch (e) {}
+    }
+  };
+
+  // Toggle status inline (Hadir <-> Terlambat)
+  const handleToggleStatus = async (record: QRScanRecord) => {
+    const newStatus: 'Hadir' | 'Terlambat' = record.status === 'Hadir' ? 'Terlambat' : 'Hadir';
+    const updated: QRScanRecord = { ...record, status: newStatus };
+
+    // Optimistic state updates
+    setDatabaseLogs(prev => prev.map(item => item.id === record.id ? updated : item));
+    setScanHistory(prev => prev.map(item => item.id === record.id ? updated : item));
+
+    // Broadcast update
+    try {
+      if (broadcastChannelRef.current) {
+        broadcastChannelRef.current.send({
+          type: 'broadcast',
+          event: 'UPDATE_SCAN',
+          payload: updated,
+        });
       }
+    } catch (e) {}
+
+    // Update in qr_presensi_logs
+    try {
+      await supabase.from('qr_presensi_logs').update({ status: newStatus }).eq('id', record.id);
+    } catch (e) {}
+
+    // Update in journal_notes
+    try {
+      await supabase.from('journal_notes').update({
+        note: JSON.stringify(updated)
+      }).eq('category', 'qr_presensi_log').or(`student_name.eq.${record.studentName},note.ilike.%${record.nisn}%`);
+    } catch (e) {}
+  };
+
+  // Save manual attendance creation
+  const handleSaveManualAttendance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudentForManual) {
+      showAlert('Silakan pilih data siswa terlebih dahulu.');
+      return;
+    }
+
+    setSavingManual(true);
+    try {
+      const timestamp = `${manualAddDate}T${manualAddTime}:00.000Z`;
+      const activeSubject = manualAddMode === 'ekstra' ? manualAddEkstra : undefined;
+      const newRecord: QRScanRecord = {
+        id: `${Date.now()}-${selectedStudentForManual.id || selectedStudentForManual.nisn}`,
+        nisn: selectedStudentForManual.nisn || selectedStudentForManual.nis || '-',
+        studentName: selectedStudentForManual.name,
+        kelas: selectedStudentForManual.kelas,
+        timestamp: timestamp,
+        mode: manualAddMode,
+        status: manualAddStatus,
+        subject: activeSubject,
+        notes: manualAddNotes.trim() || undefined,
+      };
+
+      // Broadcast
+      try {
+        if (broadcastChannelRef.current) {
+          broadcastChannelRef.current.send({
+            type: 'broadcast',
+            event: 'NEW_SCAN',
+            payload: newRecord,
+          });
+        }
+      } catch (e) {}
+
+      // Insert to states
+      setDatabaseLogs(prev => [newRecord, ...prev]);
+      if (isDateToday(timestamp)) {
+        setScanHistory(prev => [newRecord, ...prev]);
+      }
+
+      // Sync to DB
+      await syncToSupabase(newRecord, selectedStudentForManual, manualAddStatus, manualAddMode, activeSubject);
+
+      setShowManualAddModal(false);
+      setSelectedStudentForManual(null);
+      setManualAddStudentSearch('');
+      setManualAddNotes('');
+      showAlert(`Presensi siswa "${selectedStudentForManual.name}" berhasil disimpan ke database!`, 'Berhasil');
+    } catch (err: any) {
+      showAlert(`Gagal menyimpan presensi manual: ${err.message || err}`, 'Gagal');
+    } finally {
+      setSavingManual(false);
+    }
+  };
+
+  // Save edit record
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRecord) return;
+    setSavingEdit(true);
+    try {
+      const updated = { ...editingRecord };
+      setDatabaseLogs(prev => prev.map(item => item.id === updated.id ? updated : item));
+      setScanHistory(prev => prev.map(item => item.id === updated.id ? updated : item));
+
+      try {
+        if (broadcastChannelRef.current) {
+          broadcastChannelRef.current.send({
+            type: 'broadcast',
+            event: 'UPDATE_SCAN',
+            payload: updated,
+          });
+        }
+      } catch (e) {}
+
+      // Update DB
+      await supabase.from('qr_presensi_logs').update({
+        status: updated.status,
+        mode: updated.mode,
+        subject: updated.subject || null,
+        notes: updated.notes || null,
+      }).eq('id', updated.id);
+
+      setEditingRecord(null);
+      showAlert('Catatan presensi berhasil diperbarui.', 'Berhasil');
+    } catch (err: any) {
+      showAlert(`Gagal memperbarui: ${err.message || err}`, 'Gagal');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -1055,61 +1597,100 @@ export default function PresensiQR() {
     const confirmed = await showConfirm('Apakah Anda yakin ingin menghapus SELURUH riwayat scan presensi hari ini? Tindakan ini akan menghapus log hari ini baik di server maupun perangkat ini.');
     if (confirmed) {
       setScanHistory([]);
+      setDatabaseLogs(prev => prev.filter(item => !isDateToday(item.timestamp)));
       setLastScannedStudent(null);
       try {
-        const { startISO, endISO } = getTodayBounds();
+        const { past36HoursISO } = getTodayBounds();
         await supabase
           .from('qr_presensi_logs')
           .delete()
-          .gte('scanned_at', startISO)
-          .lte('scanned_at', endISO);
+          .gte('scanned_at', past36HoursISO);
       } catch (err) {
         console.warn('Failed to clear remote logs for today:', err);
       }
+
+      try {
+        const { past36HoursISO } = getTodayBounds();
+        await supabase
+          .from('journal_notes')
+          .delete()
+          .eq('category', 'qr_presensi_log')
+          .gte('created_at', past36HoursISO);
+      } catch (err) {}
+
+      try {
+        await supabase.from('app_settings').upsert({
+          key: 'today_qr_scans_sync',
+          value: JSON.stringify([]),
+          description: 'Realtime backup of today scan presensi records'
+        }, { onConflict: 'key' });
+      } catch (e) {}
     }
   };
 
-  // Filtered History
-  const filteredHistory = scanHistory.filter(item => {
-    const matchSearch = item.studentName.toLowerCase().includes(historySearch.toLowerCase()) || 
-                        item.nisn.includes(historySearch) ||
-                        item.kelas.toLowerCase().includes(historySearch.toLowerCase());
+  // Filtered Database Logs
+  const activeLogDataset = logDateMode === 'today' ? scanHistory : databaseLogs;
+  const filteredDatabaseLogs = activeLogDataset.filter(item => {
+    const cleanSearch = historySearch.trim().toLowerCase();
+    const digitsSearch = cleanSearch.replace(/\D/g, '');
+    const itemDigits = (item.nisn || '').replace(/\D/g, '');
+
+    const matchSearch = !cleanSearch || 
+      item.studentName.toLowerCase().includes(cleanSearch) || 
+      item.nisn.toLowerCase().includes(cleanSearch) ||
+      (digitsSearch.length >= 3 && itemDigits.includes(digitsSearch)) ||
+      item.kelas.toLowerCase().includes(cleanSearch);
     const matchClass = !historyClassFilter || item.kelas === historyClassFilter;
-    return matchSearch && matchClass;
+    const matchMode = !logModeFilter || item.mode === logModeFilter;
+    const matchEkstra = !logEkstraFilter || item.subject === logEkstraFilter;
+    const matchStatus = !logStatusFilter || item.status === logStatusFilter;
+
+    return matchSearch && matchClass && matchMode && matchEkstra && matchStatus;
   });
 
-  // Export history to CSV (Admin Only)
+  // Filtered History for Mini Feed
+  const filteredHistory = filteredDatabaseLogs;
+
+  // Export history / filtered logs to CSV
   const exportToCSV = () => {
-    if (!isAdmin) {
-      showAlert('Fitur download/ekspor hasil presensi QR hanya tersedia untuk Admin.');
+    if (filteredDatabaseLogs.length === 0) {
+      showAlert('Belum ada data scan yang cocok dengan filter untuk diekspor.');
       return;
     }
 
-    if (scanHistory.length === 0) {
-      showAlert('Belum ada data scan untuk diekspor.');
-      return;
-    }
-
-    const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Waktu Scan', 'Kegiatan Presensi', 'Status'];
-    const rows = scanHistory.map((item, idx) => [
-      idx + 1,
-      `'${item.nisn}`,
-      `"${item.studentName}"`,
-      item.kelas,
-      new Date(item.timestamp).toLocaleString('id-ID'),
-      item.mode === 'harian' ? 'Scan Masuk' : item.mode === 'dhuha' ? 'Sholat Dhuha' : item.mode === 'dzuhur' ? 'Sholat Dzuhur' : `Ekstra: ${item.subject || '-'}`,
-      item.status,
-    ]);
+    const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Tanggal Scan', 'Waktu Scan', 'Kegiatan Presensi', 'Status', 'Catatan'];
+    const rows = filteredDatabaseLogs.map((item, idx) => {
+      const dateObj = new Date(item.timestamp);
+      return [
+        idx + 1,
+        `'${item.nisn}`,
+        `"${item.studentName}"`,
+        item.kelas,
+        dateObj.toLocaleDateString('id-ID'),
+        dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        item.mode === 'harian' ? 'Scan Masuk' : item.mode === 'dhuha' ? 'Sholat Dhuha' : item.mode === 'dzuhur' ? 'Sholat Dzuhur' : `Ekstra: ${item.subject || '-'}`,
+        item.status,
+        `"${item.notes || '-'}"`,
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Presensi_QR_${new Date().toISOString().split('T')[0]}.csv`);
+    const dateLabel = logDateMode === 'today' ? 'Hari_Ini' : logDateMode === 'date' ? logSelectedDate : logDateMode === 'month' ? logSelectedMonth : 'Semua';
+    link.setAttribute('download', `Hasil_Scan_Presensi_${dateLabel}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  // Filter students for manual attendance popup
+  const searchMatchedStudents = students.filter(s => {
+    if (!manualAddStudentSearch.trim()) return false;
+    const term = manualAddStudentSearch.toLowerCase().trim();
+    return s.name.toLowerCase().includes(term) || (s.nisn && s.nisn.includes(term)) || s.kelas.toLowerCase().includes(term);
+  }).slice(0, 10);
 
   // Filtered Students for Card Printing
   const studentsForCards = students.filter(s => {
@@ -1118,10 +1699,11 @@ export default function PresensiQR() {
     return matchClass && matchSearch;
   });
 
-  // Calculate statistics
-  const totalScanned = scanHistory.length;
-  const totalHadir = scanHistory.filter(i => i.status === 'Hadir').length;
-  const totalTerlambat = scanHistory.filter(i => i.status === 'Terlambat').length;
+  // Calculate statistics from active log dataset
+  const totalScanned = activeLogDataset.length;
+  const totalHadir = activeLogDataset.filter(i => i.status === 'Hadir').length;
+  const totalTerlambat = activeLogDataset.filter(i => i.status === 'Terlambat').length;
+  const uniqueStudentsCount = new Set(activeLogDataset.map(i => i.nisn)).size;
 
   const getModeLabel = (mode: PresensiMode, subject?: string) => {
     if (mode === 'harian') return 'Scan Masuk';
@@ -2081,157 +2663,442 @@ export default function PresensiQR() {
           </div>
         )}
 
-        {/* TAB 2: HISTORY & LOGS */}
+        {/* TAB 2: KELOLA HASIL SCAN & DATABASE PRESENSI */}
         {activeTab === 'history' && (
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm space-y-6">
-            
-            {/* Action Bar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-lg font-black text-slate-800 dark:text-white">Daftar Scan Presensi Hari Ini</h3>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>Live Realtime Sync</span>
-                  </span>
+          <div className="space-y-6 animate-fade-in">
+            {/* Main Container */}
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 md:p-8 border border-slate-100 dark:border-slate-700 shadow-sm space-y-6">
+              
+              {/* Header & Live Sync Status */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100 dark:border-slate-700">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                    <h3 className="text-xl font-black text-slate-900 dark:text-white">
+                      Kelola Hasil Scan Presensi
+                    </h3>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-xs">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span>Realtime Database Sync Aktif</span>
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl">
+                    Semua data scan presensi tersimpan otomatis di database server dan disinkronkan secara realtime antar semua akun guru, admin, dan perangkat pemindai.
+                  </p>
                 </div>
-                <p className="text-xs text-slate-500">
-                  Total <strong>{scanHistory.length}</strong> data presensi recorded pada {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} (Sinkron otomatis dari seluruh guru & perangkat pemindai)
-                </p>
-              </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Refresh Data Button */}
-                <button
-                  type="button"
-                  onClick={() => fetchTodayLogs(true)}
-                  disabled={loadingLogs}
-                  className="px-3.5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-600 shadow-xs disabled:opacity-60"
-                  title="Tarik & perbarui data scan hari ini dari database server"
-                >
-                  <RefreshCw size={14} className={loadingLogs ? 'animate-spin text-purple-600' : ''} />
-                  <span>{loadingLogs ? 'Memuat Data...' : 'Refresh Data'}</span>
-                </button>
-
-                {/* Download CSV button ONLY shown for Admin */}
-                {isAdmin && (
+                {/* Top Action Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
                   <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedStudentForManual(null);
+                      setManualAddStudentSearch('');
+                      setShowManualAddModal(true);
+                    }}
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                  >
+                    <PlusCircle size={15} />
+                    <span>+ Presensi Manual</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => fetchDatabaseLogs(true)}
+                    disabled={loadingLogs}
+                    className="px-3.5 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-600 shadow-xs disabled:opacity-60"
+                    title="Muat ulang sinkronisasi data dari database server"
+                  >
+                    <RefreshCw size={14} className={loadingLogs ? 'animate-spin text-purple-600' : ''} />
+                    <span>{loadingLogs ? 'Menyinkronkan...' : 'Refresh'}</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={exportToCSV}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
+                    className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                    title="Unduh data hasil scan yang terfilter dalam format Excel CSV"
                   >
                     <Download size={14} />
                     <span>Ekspor CSV</span>
                   </button>
-                )}
 
-                {isAdmin && scanHistory.length > 0 && (
                   <button
-                    onClick={handleClearHistory}
-                    className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 border border-rose-200 dark:border-rose-800"
+                    type="button"
+                    onClick={() => setIsPrintModalOpen(true)}
+                    className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                    title="Cetak format laporan resmi presensi"
                   >
-                    <Trash2 size={14} />
-                    <span>Reset Log Hari Ini</span>
+                    <Printer size={14} />
+                    <span>Cetak Laporan</span>
                   </button>
-                )}
-              </div>
-            </div>
 
-            {/* Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100 dark:border-slate-700">
-              <div className="relative sm:col-span-2">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Cari nama siswa atau NISN..."
-                  value={historySearch}
-                  onChange={(e) => setHistorySearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-800 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <select
-                  value={historyClassFilter}
-                  onChange={(e) => setHistoryClassFilter(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white"
-                >
-                  <option value="">Semua Kelas</option>
-                  {classes.map(c => (
-                    <option key={c} value={c}>Kelas {c}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Table */}
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase text-[10px]">
-                  <tr>
-                    <th className="px-4 py-3">No</th>
-                    <th className="px-4 py-3">Waktu Scan</th>
-                    <th className="px-4 py-3">NISN</th>
-                    <th className="px-4 py-3">Nama Siswa</th>
-                    <th className="px-4 py-3">Kelas</th>
-                    <th className="px-4 py-3">Kegiatan Presensi</th>
-                    <th className="px-4 py-3">Status</th>
-                    {isAdmin && <th className="px-4 py-3 text-center">Aksi</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {loadingLogs && scanHistory.length === 0 ? (
-                    <tr>
-                      <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-slate-400 italic">
-                        <RefreshCw size={20} className="animate-spin text-purple-600 mx-auto mb-2" />
-                        <span>Menghubungkan & mengambil data presensi realtime dari server...</span>
-                      </td>
-                    </tr>
-                  ) : filteredHistory.length === 0 ? (
-                    <tr>
-                      <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-slate-400 italic">
-                        Tidak ada catatan scan presensi yang cocok.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredHistory.map((item, index) => (
-                      <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
-                        <td className="px-4 py-3 font-bold text-slate-500">{index + 1}</td>
-                        <td className="px-4 py-3 font-mono font-medium text-slate-600 dark:text-slate-300">
-                          {new Date(item.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </td>
-                        <td className="px-4 py-3 font-mono font-bold text-purple-700 dark:text-purple-300">{item.nisn}</td>
-                        <td className="px-4 py-3 font-extrabold text-slate-900 dark:text-white">{item.studentName}</td>
-                        <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-300">Kelas {item.kelas}</td>
-                        <td className="px-4 py-3 font-medium text-slate-600 dark:text-slate-300">
-                          {getModeLabel(item.mode, item.subject)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black ${
-                            item.status === 'Terlambat'
-                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
-                              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                          }`}>
-                            {item.status}
-                          </span>
-                        </td>
-                        {isAdmin && (
-                          <td className="px-4 py-3 text-center">
-                            <button
-                              onClick={() => handleDeleteHistory(item.id)}
-                              className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors"
-                              title="Hapus"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))
+                  {isAdmin && logDateMode === 'today' && scanHistory.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearHistory}
+                      className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 border border-rose-200 dark:border-rose-800"
+                    >
+                      <Trash2 size={14} />
+                      <span>Reset Hari Ini</span>
+                    </button>
                   )}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              </div>
 
+              {/* KPI Metric Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-4 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/50">
+                  <div className="flex items-center justify-between text-purple-700 dark:text-purple-300 text-xs font-bold mb-1">
+                    <span>Total Scan Terfilter</span>
+                    <Clock size={16} className="text-purple-600" />
+                  </div>
+                  <div className="text-2xl font-black text-purple-900 dark:text-purple-100">
+                    {filteredDatabaseLogs.length}
+                  </div>
+                  <div className="text-[10px] text-purple-600/80 dark:text-purple-400 mt-0.5">
+                    Dari total {activeLogDataset.length} data
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50">
+                  <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300 text-xs font-bold mb-1">
+                    <span>Hadir Tepat Waktu</span>
+                    <CheckCircle2 size={16} className="text-emerald-600" />
+                  </div>
+                  <div className="text-2xl font-black text-emerald-900 dark:text-emerald-100">
+                    {filteredDatabaseLogs.filter(i => i.status === 'Hadir').length}
+                  </div>
+                  <div className="text-[10px] text-emerald-600/80 dark:text-emerald-400 mt-0.5">
+                    {filteredDatabaseLogs.length > 0 
+                      ? `${Math.round((filteredDatabaseLogs.filter(i => i.status === 'Hadir').length / filteredDatabaseLogs.length) * 100)}% dari total scan`
+                      : '0%'}
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-rose-50/60 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50">
+                  <div className="flex items-center justify-between text-rose-700 dark:text-rose-300 text-xs font-bold mb-1">
+                    <span>Terlambat</span>
+                    <AlertCircle size={16} className="text-rose-600" />
+                  </div>
+                  <div className="text-2xl font-black text-rose-900 dark:text-rose-100">
+                    {filteredDatabaseLogs.filter(i => i.status === 'Terlambat').length}
+                  </div>
+                  <div className="text-[10px] text-rose-600/80 dark:text-rose-400 mt-0.5">
+                    {filteredDatabaseLogs.length > 0 
+                      ? `${Math.round((filteredDatabaseLogs.filter(i => i.status === 'Terlambat').length / filteredDatabaseLogs.length) * 100)}% dari total scan`
+                      : '0%'}
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between text-slate-700 dark:text-slate-300 text-xs font-bold mb-1">
+                    <span>Siswa Unik</span>
+                    <Users size={16} className="text-slate-600 dark:text-slate-400" />
+                  </div>
+                  <div className="text-2xl font-black text-slate-900 dark:text-white">
+                    {uniqueStudentsCount}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    Jumlah siswa berbeda
+                  </div>
+                </div>
+              </div>
+
+              {/* Time Period Filter Switcher Tabs */}
+              <div className="space-y-3 pt-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-900/80 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setLogDateMode('today')}
+                      className={`px-3.5 py-1.5 rounded-xl transition-all ${
+                        logDateMode === 'today'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                      }`}
+                    >
+                      Hari Ini
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLogDateMode('date')}
+                      className={`px-3.5 py-1.5 rounded-xl transition-all ${
+                        logDateMode === 'date'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                      }`}
+                    >
+                      Pilih Tanggal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLogDateMode('month')}
+                      className={`px-3.5 py-1.5 rounded-xl transition-all ${
+                        logDateMode === 'month'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                      }`}
+                    >
+                      Pilih Bulan
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLogDateMode('all')}
+                      className={`px-3.5 py-1.5 rounded-xl transition-all ${
+                        logDateMode === 'all'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                      }`}
+                    >
+                      Semua Data Database
+                    </button>
+                  </div>
+
+                  {/* Date or Month Picker Inputs */}
+                  {logDateMode === 'date' && (
+                    <div className="flex items-center gap-2 animate-fade-in">
+                      <Calendar size={15} className="text-purple-600" />
+                      <input
+                        type="date"
+                        value={logSelectedDate}
+                        onChange={(e) => setLogSelectedDate(e.target.value)}
+                        className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white"
+                      />
+                    </div>
+                  )}
+
+                  {logDateMode === 'month' && (
+                    <div className="flex items-center gap-2 animate-fade-in">
+                      <Calendar size={15} className="text-purple-600" />
+                      <input
+                        type="month"
+                        value={logSelectedMonth}
+                        onChange={(e) => setLogSelectedMonth(e.target.value)}
+                        className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Multi-Criteria Filters Bar */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 pt-2">
+                  {/* Search Input */}
+                  <div className="relative lg:col-span-2">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Cari Nama Siswa atau NISN..."
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                    {historySearch && (
+                      <button
+                        type="button"
+                        onClick={() => setHistorySearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Mode Filter */}
+                  <div>
+                    <select
+                      value={logModeFilter}
+                      onChange={(e) => {
+                        setLogModeFilter(e.target.value);
+                        if (e.target.value !== 'ekstra') setLogEkstraFilter('');
+                      }}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="">Semua Kegiatan</option>
+                      <option value="harian">Scan Masuk (Gerbang)</option>
+                      <option value="dhuha">Sholat Dhuha</option>
+                      <option value="dzuhur">Sholat Dzuhur</option>
+                      <option value="ekstra">Ekstrakurikuler</option>
+                    </select>
+                  </div>
+
+                  {/* Ekstra Sub Filter (if ekstra selected) OR Class Filter */}
+                  {logModeFilter === 'ekstra' ? (
+                    <div>
+                      <select
+                        value={logEkstraFilter}
+                        onChange={(e) => setLogEkstraFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option value="">Semua Cabang Ekstra</option>
+                        {EKSTRA_LIST.map(ek => (
+                          <option key={ek} value={ek}>{ek}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <select
+                        value={historyClassFilter}
+                        onChange={(e) => setHistoryClassFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option value="">Semua Kelas</option>
+                        {classes.map(c => (
+                          <option key={c} value={c}>Kelas {c}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Status Filter */}
+                  <div>
+                    <select
+                      value={logStatusFilter}
+                      onChange={(e) => setLogStatusFilter(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="">Semua Status</option>
+                      <option value="Hadir">Hadir</option>
+                      <option value="Terlambat">Terlambat</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Data Table */}
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="px-4 py-3 text-center w-12">No</th>
+                      <th className="px-4 py-3">Waktu & Tanggal</th>
+                      <th className="px-4 py-3">NISN</th>
+                      <th className="px-4 py-3">Nama Siswa</th>
+                      <th className="px-4 py-3">Kelas</th>
+                      <th className="px-4 py-3">Kegiatan Presensi</th>
+                      <th className="px-4 py-3 text-center">Status</th>
+                      <th className="px-4 py-3">Catatan</th>
+                      <th className="px-4 py-3 text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {loadingLogs && filteredDatabaseLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="px-4 py-10 text-center text-slate-400 italic">
+                          <RefreshCw size={22} className="animate-spin text-purple-600 mx-auto mb-2" />
+                          <span>Menyinkronkan data presensi dari database server...</span>
+                        </td>
+                      </tr>
+                    ) : filteredDatabaseLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
+                          <Clock size={32} className="mx-auto mb-2 opacity-40" />
+                          <p className="font-bold text-sm text-slate-600 dark:text-slate-300">Tidak ada data presensi yang sesuai filter</p>
+                          <p className="text-xs text-slate-400 mt-1">
+                            {historySearch || historyClassFilter || logModeFilter || logStatusFilter
+                              ? 'Coba ubah atau bersihkan kriteria filter di atas.'
+                              : 'Belum ada catatan presensi yang terekam pada periode ini.'}
+                          </p>
+                          {(historySearch || historyClassFilter || logModeFilter || logStatusFilter) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setHistorySearch('');
+                                setHistoryClassFilter('');
+                                setLogModeFilter('');
+                                setLogEkstraFilter('');
+                                setLogStatusFilter('');
+                              }}
+                              className="mt-3 px-3 py-1.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded-xl text-xs font-bold hover:bg-purple-200 inline-flex items-center gap-1"
+                            >
+                              <X size={12} />
+                              <span>Reset Semua Filter</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredDatabaseLogs.map((item, index) => {
+                        const dateObj = new Date(item.timestamp);
+                        const dateStr = dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+                        const timeStr = dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        return (
+                          <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors">
+                            <td className="px-4 py-3 font-bold text-slate-400 text-center">{index + 1}</td>
+                            <td className="px-4 py-3">
+                              <div className="font-mono font-bold text-slate-800 dark:text-slate-200">{timeStr}</div>
+                              <div className="text-[10px] text-slate-400">{dateStr}</div>
+                            </td>
+                            <td className="px-4 py-3 font-mono font-bold text-purple-700 dark:text-purple-300">{item.nisn}</td>
+                            <td className="px-4 py-3 font-extrabold text-slate-900 dark:text-white">
+                              {item.studentName}
+                            </td>
+                            <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-300">
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 font-bold">
+                                {item.kelas}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${
+                                item.mode === 'harian'
+                                  ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                                  : item.mode === 'dhuha'
+                                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                  : item.mode === 'dzuhur'
+                                  ? 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800'
+                                  : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              }`}>
+                                {getModeLabel(item.mode, item.subject)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleStatus(item)}
+                                title="Klik untuk mengubah status (Hadir <-> Terlambat)"
+                                className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all hover:scale-105 active:scale-95 ${
+                                  item.status === 'Terlambat'
+                                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                                }`}
+                              >
+                                {item.status}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3 text-slate-500 text-[11px] max-w-[150px] truncate">
+                              {item.notes || '-'}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingRecord(item)}
+                                  className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-950/50 hover:text-purple-600 rounded-lg transition-colors"
+                                  title="Edit Status / Catatan"
+                                >
+                                  <Edit3 size={14} />
+                                </button>
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteHistory(item.id)}
+                                    className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors"
+                                    title="Hapus dari Database"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
           </div>
         )}
 
@@ -2860,6 +3727,511 @@ export default function PresensiQR() {
               )}
             </div>
 
+          </div>
+        )}
+
+        {/* MODAL 1: TAMBAH PRESENSI MANUAL */}
+        {showManualAddModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-slate-100 dark:border-slate-700 space-y-5 max-h-[90vh] overflow-y-auto">
+              
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-600 flex items-center justify-center font-bold">
+                    <PlusCircle size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
+                      Input Presensi Manual
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Tambahkan presensi siswa langsung ke database server
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowManualAddModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveManualAttendance} className="space-y-4 text-xs">
+                
+                {/* Search & Select Student */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    Pilih Siswa <span className="text-rose-500">*</span>
+                  </label>
+                  
+                  {selectedStudentForManual ? (
+                    <div className="p-3 bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="font-extrabold text-slate-900 dark:text-white text-sm">
+                          {selectedStudentForManual.name}
+                        </div>
+                        <div className="text-purple-700 dark:text-purple-300 text-xs font-bold mt-0.5">
+                          Kelas {selectedStudentForManual.kelas} • NISN: {selectedStudentForManual.nisn || selectedStudentForManual.nis || '-'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentForManual(null)}
+                        className="px-2.5 py-1 bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded-lg text-[11px] font-bold hover:bg-purple-300"
+                      >
+                        Ganti Siswa
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Ketik nama siswa atau NISN..."
+                          value={manualAddStudentSearch}
+                          onChange={(e) => setManualAddStudentSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+
+                      {manualAddStudentSearch.trim() && (
+                        <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800">
+                          {searchMatchedStudents.length === 0 ? (
+                            <div className="p-3 text-center text-slate-400 italic text-xs">
+                              Tidak ada siswa yang cocok dengan "{manualAddStudentSearch}"
+                            </div>
+                          ) : (
+                            searchMatchedStudents.map(st => (
+                              <button
+                                key={st.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedStudentForManual(st);
+                                  setManualAddStudentSearch('');
+                                }}
+                                className="w-full text-left p-2.5 hover:bg-purple-50 dark:hover:bg-purple-950/50 flex items-center justify-between text-xs transition-colors"
+                              >
+                                <div>
+                                  <div className="font-extrabold text-slate-800 dark:text-slate-100">{st.name}</div>
+                                  <div className="text-[10px] text-slate-500">Kelas {st.kelas} • NISN: {st.nisn || st.nis || '-'}</div>
+                                </div>
+                                <span className="text-purple-600 font-bold text-[11px]">+ Pilih</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Tanggal & Waktu */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="font-bold text-slate-700 dark:text-slate-300">Tanggal</label>
+                    <input
+                      type="date"
+                      value={manualAddDate}
+                      onChange={(e) => setManualAddDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-slate-700 dark:text-slate-300">Waktu</label>
+                    <input
+                      type="time"
+                      value={manualAddTime}
+                      onChange={(e) => setManualAddTime(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Kegiatan Presensi */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">Kegiatan Presensi</label>
+                  <select
+                    value={manualAddMode}
+                    onChange={(e) => setManualAddMode(e.target.value as PresensiMode)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white"
+                  >
+                    <option value="harian">Scan Masuk Gerbang (Presensi Harian)</option>
+                    <option value="dhuha">Sholat Dhuha</option>
+                    <option value="dzuhur">Sholat Dzuhur</option>
+                    <option value="ekstra">Ekstrakurikuler</option>
+                  </select>
+                </div>
+
+                {manualAddMode === 'ekstra' && (
+                  <div className="space-y-1 animate-fade-in">
+                    <label className="font-bold text-slate-700 dark:text-slate-300">Cabang Ekstrakurikuler</label>
+                    <select
+                      value={manualAddEkstra}
+                      onChange={(e) => setManualAddEkstra(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white"
+                    >
+                      {EKSTRA_LIST.map(ek => (
+                        <option key={ek} value={ek}>{ek}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Status Kehadiran */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">Status Kehadiran</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setManualAddStatus('Hadir')}
+                      className={`py-2 px-3 rounded-xl font-black text-xs transition-all border ${
+                        manualAddStatus === 'Hadir'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      ✓ Hadir (Tepat Waktu)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setManualAddStatus('Terlambat')}
+                      className={`py-2 px-3 rounded-xl font-black text-xs transition-all border ${
+                        manualAddStatus === 'Terlambat'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                          : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      ⚠ Terlambat
+                    </button>
+                  </div>
+                </div>
+
+                {/* Catatan */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">Catatan / Keterangan (Opsional)</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Izin terlambat dari orang tua, Kartu tertinggal, dll."
+                    value={manualAddNotes}
+                    onChange={(e) => setManualAddNotes(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {/* Form Buttons */}
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setShowManualAddModal(false)}
+                    className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingManual || !selectedStudentForManual}
+                    className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-md"
+                  >
+                    {savingManual ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={14} />
+                        <span>Simpan ke Database</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+              </form>
+
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 2: EDIT CATATAN PRESENSI */}
+        {editingRecord && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-slate-100 dark:border-slate-700 space-y-5">
+              
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-600 flex items-center justify-center font-bold">
+                    <Edit3 size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
+                      Edit Data Presensi
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Perbarui status dan detail catatan presensi
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingRecord(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+                
+                {/* Student Info Readonly Banner */}
+                <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <div className="font-black text-slate-900 dark:text-white text-sm">
+                    {editingRecord.studentName}
+                  </div>
+                  <div className="text-purple-700 dark:text-purple-300 text-xs font-bold mt-0.5">
+                    Kelas {editingRecord.kelas} • NISN: {editingRecord.nisn}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-1 font-mono">
+                    Waktu: {new Date(editingRecord.timestamp).toLocaleString('id-ID')}
+                  </div>
+                </div>
+
+                {/* Status Toggle */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">Status Kehadiran</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingRecord(prev => prev ? { ...prev, status: 'Hadir' } : null)}
+                      className={`py-2 px-3 rounded-xl font-black text-xs transition-all border ${
+                        editingRecord.status === 'Hadir'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      ✓ Hadir
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingRecord(prev => prev ? { ...prev, status: 'Terlambat' } : null)}
+                      className={`py-2 px-3 rounded-xl font-black text-xs transition-all border ${
+                        editingRecord.status === 'Terlambat'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                          : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      ⚠ Terlambat
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mode Kegiatan */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">Kegiatan</label>
+                  <select
+                    value={editingRecord.mode}
+                    onChange={(e) => setEditingRecord(prev => prev ? { ...prev, mode: e.target.value as PresensiMode } : null)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white"
+                  >
+                    <option value="harian">Scan Masuk Gerbang (Presensi Harian)</option>
+                    <option value="dhuha">Sholat Dhuha</option>
+                    <option value="dzuhur">Sholat Dzuhur</option>
+                    <option value="ekstra">Ekstrakurikuler</option>
+                  </select>
+                </div>
+
+                {editingRecord.mode === 'ekstra' && (
+                  <div className="space-y-1 animate-fade-in">
+                    <label className="font-bold text-slate-700 dark:text-slate-300">Cabang Ekstra</label>
+                    <select
+                      value={editingRecord.subject || EKSTRA_LIST[0]}
+                      onChange={(e) => setEditingRecord(prev => prev ? { ...prev, subject: e.target.value } : null)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white"
+                    >
+                      {EKSTRA_LIST.map(ek => (
+                        <option key={ek} value={ek}>{ek}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Notes */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">Catatan / Keterangan</label>
+                  <input
+                    type="text"
+                    value={editingRecord.notes || ''}
+                    onChange={(e) => setEditingRecord(prev => prev ? { ...prev, notes: e.target.value } : null)}
+                    placeholder="Keterangan..."
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setEditingRecord(null)}
+                    className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEdit}
+                    className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold transition-all flex items-center gap-1.5 shadow-md disabled:opacity-50"
+                  >
+                    {savingEdit ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={14} />
+                        <span>Simpan Perubahan</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+              </form>
+
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 3: CETAK LAPORAN RESMI (OFFICIAL PRINT PREVIEW) */}
+        {isPrintModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fade-in overflow-y-auto">
+            <div className="bg-white text-slate-900 rounded-3xl p-6 md:p-8 max-w-4xl w-full shadow-2xl space-y-6 my-8 max-h-[92vh] overflow-y-auto">
+              
+              {/* Header Action Bar */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200 print:hidden">
+                <div className="flex items-center gap-2">
+                  <Printer size={20} className="text-purple-600" />
+                  <h3 className="font-extrabold text-slate-900 text-base">
+                    Pratinjau Cetak Laporan Presensi Resmi
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md"
+                  >
+                    <Printer size={14} />
+                    <span>Cetak Sekarang (Print / PDF)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsPrintModalOpen(false)}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+
+              {/* Printable Document Sheet */}
+              <div className="printable-area p-6 space-y-6 border border-slate-200 rounded-2xl bg-white">
+                
+                {/* Official Kop Surat Header */}
+                <div className="text-center pb-4 border-b-2 border-slate-900 space-y-1">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">PEMERINTAH KOTA PASURUAN</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">DINAS PENDIDIKAN DAN KEBUDAYAAN</h4>
+                  <h2 className="text-lg font-black uppercase text-slate-900">UPT SMP NEGERI 8 PASURUAN</h2>
+                  <p className="text-[10px] text-slate-500">
+                    Jl. Ir. H. Juanda No. 8, Kota Pasuruan, Jawa Timur | Telp: (0343) 424108 | Web: smpn8pasuruan.sch.id
+                  </p>
+                </div>
+
+                {/* Report Title & Metadata */}
+                <div className="space-y-2">
+                  <h3 className="text-center text-sm font-black uppercase tracking-wide text-slate-900 underline decoration-slate-400">
+                    LAPORAN REKAPITULASI SCAN PRESENSI DIGITAL SISWA
+                  </h3>
+                  
+                  <div className="grid grid-cols-2 gap-4 text-xs pt-2">
+                    <div>
+                      <div><strong>Periode:</strong> {logDateMode === 'today' ? 'Hari Ini' : logDateMode === 'date' ? logSelectedDate : logDateMode === 'month' ? logSelectedMonth : 'Semua Periode Database'}</div>
+                      <div><strong>Jenis Presensi:</strong> {logModeFilter ? getModeLabel(logModeFilter as PresensiMode, logEkstraFilter) : 'Semua Kegiatan'}</div>
+                    </div>
+                    <div className="text-right">
+                      <div><strong>Total Siswa Tercatat:</strong> {filteredDatabaseLogs.length} Orang</div>
+                      <div><strong>Hadir Tepat Waktu:</strong> {filteredDatabaseLogs.filter(i => i.status === 'Hadir').length} | <strong>Terlambat:</strong> {filteredDatabaseLogs.filter(i => i.status === 'Terlambat').length}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table of Records */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border border-slate-300">
+                    <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300">
+                      <tr>
+                        <th className="p-2 border-r border-slate-300 text-center w-10">No</th>
+                        <th className="p-2 border-r border-slate-300">Waktu & Tanggal</th>
+                        <th className="p-2 border-r border-slate-300">NISN</th>
+                        <th className="p-2 border-r border-slate-300">Nama Siswa</th>
+                        <th className="p-2 border-r border-slate-300 text-center">Kelas</th>
+                        <th className="p-2 border-r border-slate-300">Kegiatan</th>
+                        <th className="p-2 border-r border-slate-300 text-center">Status</th>
+                        <th className="p-2">Catatan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {filteredDatabaseLogs.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="p-4 text-center text-slate-400 italic">
+                            Tidak ada data presensi pada kriteria ini.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredDatabaseLogs.map((item, idx) => (
+                          <tr key={item.id}>
+                            <td className="p-2 border-r border-slate-200 text-center font-medium">{idx + 1}</td>
+                            <td className="p-2 border-r border-slate-200 font-mono text-[11px]">
+                              {new Date(item.timestamp).toLocaleString('id-ID')}
+                            </td>
+                            <td className="p-2 border-r border-slate-200 font-mono font-bold text-purple-800">{item.nisn}</td>
+                            <td className="p-2 border-r border-slate-200 font-bold">{item.studentName}</td>
+                            <td className="p-2 border-r border-slate-200 text-center font-bold">{item.kelas}</td>
+                            <td className="p-2 border-r border-slate-200 text-[11px]">{getModeLabel(item.mode, item.subject)}</td>
+                            <td className="p-2 border-r border-slate-200 text-center">
+                              <span className={`font-bold ${item.status === 'Terlambat' ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                {item.status}
+                              </span>
+                            </td>
+                            <td className="p-2 text-[11px] text-slate-600">{item.notes || '-'}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Official Signatures Footer */}
+                <div className="grid grid-cols-2 gap-8 pt-8 text-xs text-center">
+                  <div>
+                    <p className="text-slate-500 mb-16">Mengetahui,<br />Guru Piket / Pembina Kegiatan</p>
+                    <p className="font-black text-slate-900 underline">( _____________________________ )</p>
+                    <p className="text-[10px] text-slate-500">NIP. .....................................................</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500 mb-16">Pasuruan, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}<br />Kepala UPT SMPN 8 Pasuruan</p>
+                    <p className="font-black text-slate-900 underline">( _____________________________ )</p>
+                    <p className="text-[10px] text-slate-500">NIP. .....................................................</p>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
           </div>
         )}
 
