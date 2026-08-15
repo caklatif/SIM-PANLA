@@ -88,6 +88,48 @@ export default function PresensiQR() {
   const [presensiMode, setPresensiMode] = useState<PresensiMode>('harian');
   const [selectedEkstra, setSelectedEkstra] = useState<string>(allowedEkstraForUser[0] || '');
 
+  // Synchronized Ref for Zero-Stale-Closure across Camera Scans, Barcode Gun, and Listeners
+  const presensiModeRef = useRef<PresensiMode>(presensiMode);
+  const selectedEkstraRef = useRef<string>(selectedEkstra);
+
+  useEffect(() => {
+    presensiModeRef.current = presensiMode;
+  }, [presensiMode]);
+
+  useEffect(() => {
+    selectedEkstraRef.current = selectedEkstra;
+  }, [selectedEkstra]);
+
+  // Visual Activity Badge Helper for Teacher Monitoring
+  const getActivityBadge = (mode: PresensiMode | string, subject?: string) => {
+    if (mode === 'harian') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shrink-0">
+          <span>🛡️ Scan Masuk</span>
+        </span>
+      );
+    } else if (mode === 'dhuha') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
+          <span>☀️ Sholat Dhuha</span>
+        </span>
+      );
+    } else if (mode === 'dzuhur') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800 shrink-0">
+          <span>🕌 Sholat Dzuhur</span>
+        </span>
+      );
+    } else if (mode === 'ekstra') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+          <span>🏆 Ekstra: {subject || 'Umum'}</span>
+        </span>
+      );
+    }
+    return null;
+  };
+
   // Rekap Laporan Ekstra State
   const [rekapSelectedEkstra, setRekapSelectedEkstra] = useState<string>(() => {
     return allowedEkstraForUser[0] || 'Tahfidz';
@@ -221,6 +263,8 @@ export default function PresensiQR() {
     status: 'Hadir' | 'Terlambat';
     recordTime: string;
     isDuplicate: boolean;
+    mode?: PresensiMode | string;
+    subject?: string;
   } | null>(null);
 
   // Scan History
@@ -1178,19 +1222,29 @@ export default function PresensiQR() {
 
   // Restart Camera Automatically on Activity Selection / Mode Switch
   const restartCameraForActivity = async (targetMode: PresensiMode, targetEkstra?: string) => {
-    setIsRestartingCamera(true);
-    const activeEkstra = targetEkstra !== undefined ? targetEkstra : selectedEkstra;
+    // 1. Synchronously update ref values so any scanner callback or input immediately uses the new target mode
+    presensiModeRef.current = targetMode;
+    if (targetEkstra !== undefined) {
+      selectedEkstraRef.current = targetEkstra;
+    }
+    setPresensiMode(targetMode);
+    if (targetEkstra !== undefined) {
+      setSelectedEkstra(targetEkstra);
+    }
+
+    const activeEkstra = targetEkstra !== undefined ? targetEkstra : selectedEkstraRef.current;
     const activityLabel = getModeLabel(targetMode, activeEkstra);
+    setIsRestartingCamera(true);
     setModeRestartNotice(`Mengalihkan kamera ke Presensi ${activityLabel}...`);
 
     try {
-      // 1. Matikan kamera aktif terlebih dahulu
+      // 2. Matikan kamera aktif terlebih dahulu
       await stopCamera();
 
-      // 2. Beri jeda singkat agar hardware kamera dan media stream browser ter-reset sempurna
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // 3. Beri jeda 350ms agar hardware kamera dan media stream browser ter-reset sempurna
+      await new Promise(resolve => setTimeout(resolve, 350));
 
-      // 3. Hidupkan kembali kamera secara otomatis dan siap scan
+      // 4. Hidupkan kembali kamera secara otomatis dan siap scan
       if (canScan) {
         await startCamera();
         setModeRestartNotice(`✓ Kamera siap memindai: ${activityLabel}`);
@@ -1219,16 +1273,11 @@ export default function PresensiQR() {
       return;
     }
 
-    setPresensiMode(newMode);
-    await restartCameraForActivity(newMode, selectedEkstra);
+    await restartCameraForActivity(newMode, selectedEkstraRef.current);
   };
 
   // Handler for specific Ekstrakurikuler Selection (PRAMUKA, PASKIB, PMR, dll)
   const handleSelectEkstra = async (ekstraName: string) => {
-    setSelectedEkstra(ekstraName);
-    if (presensiMode !== 'ekstra') {
-      setPresensiMode('ekstra');
-    }
     await restartCameraForActivity('ekstra', ekstraName);
   };
 
@@ -1254,7 +1303,10 @@ export default function PresensiQR() {
       setScanCooldown(false);
     }, 1000);
 
-    if (presensiMode === 'ekstra' && allowedEkstraForUser.length === 0) {
+    const currentMode = presensiModeRef.current;
+    const currentEkstra = selectedEkstraRef.current;
+
+    if (currentMode === 'ekstra' && allowedEkstraForUser.length === 0 && !isAdmin) {
       playBeep('error');
       showAlert('Pilihan Ekstrakurikuler hanya tersedia untuk Guru yang telah ditunjuk sebagai Pembina Ekstrakurikuler di Dashboard Admin.', 'Akses Ekstra Dibatasi');
       return;
@@ -1306,7 +1358,7 @@ export default function PresensiQR() {
 
     const currentHour = now.getHours();
     const currentMin = now.getMinutes();
-    const isLate = presensiMode === 'harian' && (currentHour > 7 || (currentHour === 7 && currentMin > 15));
+    const isLate = currentMode === 'harian' && (currentHour > 7 || (currentHour === 7 && currentMin > 15));
     const status: 'Hadir' | 'Terlambat' = isLate ? 'Terlambat' : 'Hadir';
 
     if (!matchedStudent) {
@@ -1316,28 +1368,32 @@ export default function PresensiQR() {
     }
 
     // Check duplicate scan
+    const activeSubject = currentMode === 'ekstra' ? currentEkstra : undefined;
+
     const existingIndex = scanHistory.findIndex(
       item => (item.nisn === matchedStudent!.nisn || (cleanDigits.length >= 4 && item.nisn.replace(/\D/g, '') === cleanDigits)) && 
-              item.mode === presensiMode && 
-              (presensiMode === 'ekstra' ? item.subject === selectedEkstra : true)
+              item.mode === currentMode && 
+              (currentMode === 'ekstra' ? item.subject === currentEkstra : true)
     );
 
     const isDuplicate = existingIndex !== -1;
 
     if (isDuplicate) {
       playBeep('warning');
+      const dupItem = scanHistory[existingIndex];
       setLastScannedStudent({
         student: matchedStudent,
-        status: scanHistory[existingIndex].status,
-        recordTime: scanHistory[existingIndex].timestamp.split('T')[1]?.substring(0, 8) || timeString,
+        status: dupItem.status,
+        recordTime: dupItem.timestamp.split('T')[1]?.substring(0, 8) || timeString,
         isDuplicate: true,
+        mode: dupItem.mode,
+        subject: dupItem.subject,
       });
       return;
     }
 
     // Record new scan
     playBeep('success');
-    const activeSubject = presensiMode === 'ekstra' ? selectedEkstra : undefined;
 
     const newRecord: QRScanRecord = {
       id: `${Date.now()}-${matchedStudent.id || cleanDigits}`,
@@ -1345,7 +1401,7 @@ export default function PresensiQR() {
       studentName: matchedStudent.name,
       kelas: matchedStudent.kelas,
       timestamp: fullTimestamp,
-      mode: presensiMode,
+      mode: currentMode,
       status: status,
       subject: activeSubject,
     };
@@ -1356,6 +1412,8 @@ export default function PresensiQR() {
       status: status,
       recordTime: timeString,
       isDuplicate: false,
+      mode: currentMode,
+      subject: activeSubject,
     });
 
     // Broadcast scan immediately to all open clients/admin screens
@@ -1371,7 +1429,7 @@ export default function PresensiQR() {
       console.warn('Broadcast send error:', bcErr);
     }
 
-    syncToSupabase(newRecord, matchedStudent, status, presensiMode, activeSubject);
+    syncToSupabase(newRecord, matchedStudent, status, currentMode, activeSubject);
   };
 
   // Sync to database and shared cloud settings
@@ -2195,7 +2253,7 @@ export default function PresensiQR() {
                                   {lastScannedStudent.student.name.charAt(0)}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
                                       lastScannedStudent.isDuplicate
                                         ? 'bg-amber-500 text-white'
@@ -2205,7 +2263,7 @@ export default function PresensiQR() {
                                     }`}>
                                       {lastScannedStudent.isDuplicate ? 'Sudah Di-Scan' : lastScannedStudent.status}
                                     </span>
-                                    <span className="text-[10px] text-slate-400 capitalize">{getModeLabel(presensiMode, selectedEkstra)}</span>
+                                    {getActivityBadge(lastScannedStudent.mode || presensiMode, lastScannedStudent.subject || selectedEkstra)}
                                   </div>
                                   <h4 className="font-black text-white text-sm truncate mt-0.5">
                                     {lastScannedStudent.student.name}
@@ -2295,8 +2353,11 @@ export default function PresensiQR() {
                                   {item.studentName.charAt(0)}
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="font-extrabold text-white truncate">{item.studentName}</div>
-                                  <div className="text-[11px] text-slate-400">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-extrabold text-white truncate">{item.studentName}</span>
+                                    {getActivityBadge(item.mode, item.subject)}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 mt-0.5">
                                     Kelas {item.kelas} • <span className="font-mono text-slate-500">{item.nisn}</span>
                                   </div>
                                 </div>
@@ -2689,7 +2750,10 @@ export default function PresensiQR() {
 
                         <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
                           <div>Waktu: <span className="font-bold text-slate-900 dark:text-white">{lastScannedStudent.recordTime}</span></div>
-                          <div className="capitalize">Kegiatan: <span className="font-bold text-purple-700 dark:text-purple-300">{getModeLabel(presensiMode, selectedEkstra)}</span></div>
+                          <div className="flex items-center gap-1.5">
+                            <span>Kegiatan:</span>
+                            {getActivityBadge(lastScannedStudent.mode || presensiMode, lastScannedStudent.subject || selectedEkstra)}
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -2727,11 +2791,14 @@ export default function PresensiQR() {
                             key={item.id}
                             className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs"
                           >
-                            <div className="flex items-center gap-2.5">
-                              <div className={`w-2 h-2 rounded-full ${item.status === 'Terlambat' ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
-                              <div>
-                                <div className="font-extrabold text-slate-800 dark:text-slate-100">{item.studentName}</div>
-                                <div className="text-[10px] text-slate-500">Kelas {item.kelas} • NISN: {item.nisn}</div>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className={`w-2 h-2 rounded-full shrink-0 ${item.status === 'Terlambat' ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-extrabold text-slate-800 dark:text-slate-100">{item.studentName}</span>
+                                  {getActivityBadge(item.mode, item.subject)}
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-0.5">Kelas {item.kelas} • NISN: {item.nisn}</div>
                               </div>
                             </div>
 
