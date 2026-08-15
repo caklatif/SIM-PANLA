@@ -134,6 +134,8 @@ export default function PresensiQR() {
   // Scanner state
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isRestartingCamera, setIsRestartingCamera] = useState<boolean>(false);
+  const [modeRestartNotice, setModeRestartNotice] = useState<string | null>(null);
   const [manualInput, setManualInput] = useState<string>('');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isMirrored, setIsMirrored] = useState<boolean>(() => {
@@ -1160,15 +1162,74 @@ export default function PresensiQR() {
 
   // Stop Camera
   const stopCamera = async () => {
-    if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+    if (html5QrCodeRef.current) {
       try {
-        await html5QrCodeRef.current.stop();
+        if (html5QrCodeRef.current.isScanning) {
+          await html5QrCodeRef.current.stop();
+        }
         html5QrCodeRef.current.clear();
       } catch (e) {
         console.warn('Error stopping camera:', e);
       }
+      html5QrCodeRef.current = null;
     }
     setIsScanning(false);
+  };
+
+  // Restart Camera Automatically on Activity Selection / Mode Switch
+  const restartCameraForActivity = async (targetMode: PresensiMode, targetEkstra?: string) => {
+    setIsRestartingCamera(true);
+    const activeEkstra = targetEkstra !== undefined ? targetEkstra : selectedEkstra;
+    const activityLabel = getModeLabel(targetMode, activeEkstra);
+    setModeRestartNotice(`Mengalihkan kamera ke Presensi ${activityLabel}...`);
+
+    try {
+      // 1. Matikan kamera aktif terlebih dahulu
+      await stopCamera();
+
+      // 2. Beri jeda singkat agar hardware kamera dan media stream browser ter-reset sempurna
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // 3. Hidupkan kembali kamera secara otomatis dan siap scan
+      if (canScan) {
+        await startCamera();
+        setModeRestartNotice(`✓ Kamera siap memindai: ${activityLabel}`);
+        if (soundEnabled) {
+          playBeep('success', true);
+        }
+        setTimeout(() => {
+          setModeRestartNotice(null);
+          setIsRestartingCamera(false);
+        }, 2200);
+      } else {
+        setIsRestartingCamera(false);
+        setModeRestartNotice(null);
+      }
+    } catch (err) {
+      console.error('Error restarting camera for activity:', err);
+      setIsRestartingCamera(false);
+      setModeRestartNotice(null);
+    }
+  };
+
+  // Handler for Activity Mode Selection (Scan Masuk / Dhuha / Dzuhur / Ekstra)
+  const handleSelectMode = async (newMode: PresensiMode) => {
+    if (newMode === 'ekstra' && allowedEkstraForUser.length === 0 && !isAdmin) {
+      showAlert('Pilihan Ekstrakurikuler hanya tersedia untuk Guru yang telah ditunjuk sebagai Pembina Ekstrakurikuler di Dashboard Admin.', 'Akses Ekstra Dibatasi');
+      return;
+    }
+
+    setPresensiMode(newMode);
+    await restartCameraForActivity(newMode, selectedEkstra);
+  };
+
+  // Handler for specific Ekstrakurikuler Selection (PRAMUKA, PASKIB, PMR, dll)
+  const handleSelectEkstra = async (ekstraName: string) => {
+    setSelectedEkstra(ekstraName);
+    if (presensiMode !== 'ekstra') {
+      setPresensiMode('ekstra');
+    }
+    await restartCameraForActivity('ekstra', ekstraName);
   };
 
   useEffect(() => {
@@ -1879,7 +1940,7 @@ export default function PresensiQR() {
                       {/* Mode Selector in Fullscreen */}
                       <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-2xl border border-slate-800">
                         <button
-                          onClick={() => setPresensiMode('harian')}
+                          onClick={() => handleSelectMode('harian')}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                             presensiMode === 'harian'
                               ? 'bg-purple-600 text-white shadow-md shadow-purple-600/40'
@@ -1891,7 +1952,7 @@ export default function PresensiQR() {
                         </button>
 
                         <button
-                          onClick={() => setPresensiMode('dhuha')}
+                          onClick={() => handleSelectMode('dhuha')}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                             presensiMode === 'dhuha'
                               ? 'bg-amber-500 text-white shadow-md shadow-amber-500/40'
@@ -1903,7 +1964,7 @@ export default function PresensiQR() {
                         </button>
 
                         <button
-                          onClick={() => setPresensiMode('dzuhur')}
+                          onClick={() => handleSelectMode('dzuhur')}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                             presensiMode === 'dzuhur'
                               ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/40'
@@ -1915,7 +1976,7 @@ export default function PresensiQR() {
                         </button>
 
                         <button
-                          onClick={() => setPresensiMode('ekstra')}
+                          onClick={() => handleSelectMode('ekstra')}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                             presensiMode === 'ekstra'
                               ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/40'
@@ -1931,7 +1992,7 @@ export default function PresensiQR() {
                       {presensiMode === 'ekstra' && allowedEkstraForUser.length > 0 && (
                         <select
                           value={selectedEkstra}
-                          onChange={(e) => setSelectedEkstra(e.target.value)}
+                          onChange={(e) => handleSelectEkstra(e.target.value)}
                           className="px-3 py-1.5 bg-emerald-950/80 border border-emerald-700/80 text-emerald-300 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500"
                         >
                           {allowedEkstraForUser.map(e => (
@@ -2044,6 +2105,24 @@ export default function PresensiQR() {
                           }
                         `}</style>
                         <div id={scannerContainerId} className="w-full h-full"></div>
+
+                        {/* Mode Switch & Camera Restart Live HUD Notice */}
+                        {modeRestartNotice && (
+                          <div className="absolute top-4 inset-x-4 md:inset-x-12 z-30 flex items-center justify-center animate-fade-in pointer-events-none">
+                            <div className={`px-4 py-2 rounded-2xl shadow-2xl font-black text-xs md:text-sm flex items-center gap-2.5 backdrop-blur-md border ${
+                              isRestartingCamera
+                                ? 'bg-purple-950/90 text-purple-200 border-purple-400/60 animate-pulse'
+                                : 'bg-emerald-950/90 text-emerald-200 border-emerald-400/60'
+                            }`}>
+                              {isRestartingCamera ? (
+                                <RefreshCw size={16} className="animate-spin text-purple-400" />
+                              ) : (
+                                <CheckCircle2 size={16} className="text-emerald-400" />
+                              )}
+                              <span>{modeRestartNotice}</span>
+                            </div>
+                          </div>
+                        )}
 
                         {/* HUD Corner Reticle Overlay */}
                         {isScanning && (
@@ -2268,7 +2347,7 @@ export default function PresensiQR() {
                     {/* Activity Buttons Grid (4 Modes: Harian, Dhuha, Dzuhur, Ekstra) */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <button
-                        onClick={() => setPresensiMode('harian')}
+                        onClick={() => handleSelectMode('harian')}
                         className={`p-3 rounded-2xl border text-left transition-all ${
                           presensiMode === 'harian'
                             ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-500 dark:border-purple-600 text-purple-900 dark:text-purple-200 shadow-sm ring-2 ring-purple-500/20'
@@ -2283,7 +2362,7 @@ export default function PresensiQR() {
                       </button>
 
                       <button
-                        onClick={() => setPresensiMode('dhuha')}
+                        onClick={() => handleSelectMode('dhuha')}
                         className={`p-3 rounded-2xl border text-left transition-all ${
                           presensiMode === 'dhuha'
                             ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500 dark:border-amber-600 text-amber-900 dark:text-amber-200 shadow-sm ring-2 ring-amber-500/20'
@@ -2298,7 +2377,7 @@ export default function PresensiQR() {
                       </button>
 
                       <button
-                        onClick={() => setPresensiMode('dzuhur')}
+                        onClick={() => handleSelectMode('dzuhur')}
                         className={`p-3 rounded-2xl border text-left transition-all ${
                           presensiMode === 'dzuhur'
                             ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-500 dark:border-cyan-600 text-cyan-900 dark:text-cyan-200 shadow-sm ring-2 ring-cyan-500/20'
@@ -2313,7 +2392,7 @@ export default function PresensiQR() {
                       </button>
 
                       <button
-                        onClick={() => setPresensiMode('ekstra')}
+                        onClick={() => handleSelectMode('ekstra')}
                         className={`p-3 rounded-2xl border text-left transition-all ${
                           presensiMode === 'ekstra'
                             ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 dark:border-emerald-600 text-emerald-900 dark:text-emerald-200 shadow-sm ring-2 ring-emerald-500/20'
@@ -2348,7 +2427,7 @@ export default function PresensiQR() {
                             {allowedEkstraForUser.map((ekstra) => (
                               <button
                                 key={ekstra}
-                                onClick={() => setSelectedEkstra(ekstra)}
+                                onClick={() => handleSelectEkstra(ekstra)}
                                 className={`px-3 py-2 rounded-xl text-xs font-bold transition-all text-center border ${
                                   selectedEkstra === ekstra
                                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
@@ -2482,6 +2561,24 @@ export default function PresensiQR() {
                         }
                       `}</style>
                       <div id={scannerContainerId} className="w-full h-full"></div>
+
+                      {/* Mode Switch & Camera Restart Live HUD Notice */}
+                      {modeRestartNotice && (
+                        <div className="absolute top-3 inset-x-3 z-30 flex items-center justify-center animate-fade-in pointer-events-none">
+                          <div className={`px-3.5 py-1.5 rounded-xl shadow-xl font-black text-xs flex items-center gap-2 backdrop-blur-md border ${
+                            isRestartingCamera
+                              ? 'bg-purple-950/90 text-purple-200 border-purple-400/60 animate-pulse'
+                              : 'bg-emerald-950/90 text-emerald-200 border-emerald-400/60'
+                          }`}>
+                            {isRestartingCamera ? (
+                              <RefreshCw size={14} className="animate-spin text-purple-400" />
+                            ) : (
+                              <CheckCircle2 size={14} className="text-emerald-400" />
+                            )}
+                            <span>{modeRestartNotice}</span>
+                          </div>
+                        </div>
+                      )}
 
                       {scanCooldown && isScanning && (
                         <div className="absolute top-3 inset-x-3 bg-amber-500/90 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-lg backdrop-blur-xs text-center flex items-center justify-center gap-1.5 animate-pulse z-20">
