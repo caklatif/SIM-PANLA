@@ -1161,11 +1161,15 @@ export default function PresensiQR() {
       html5QrCodeRef.current = html5QrCode;
 
       const config = {
-        fps: 15,
+        fps: 20,
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-          const qrboxSize = Math.floor(minEdge * 0.75);
-          return { width: Math.max(220, qrboxSize), height: Math.max(220, qrboxSize) };
+          // Perlebar area scan (94% lebar dan 90% tinggi) agar bidang bidik luas dan border samping sangat tipis
+          const boxWidth = Math.floor(viewfinderWidth * 0.94);
+          const boxHeight = Math.floor(viewfinderHeight * 0.90);
+          return {
+            width: Math.max(260, boxWidth),
+            height: Math.max(220, boxHeight),
+          };
         },
       };
 
@@ -2156,6 +2160,18 @@ export default function PresensiQR() {
                             width: 100% !important;
                             height: 100% !important;
                           }
+                          /* Buat bayangan hitam samping sangat tipis dan transparan */
+                          #${scannerContainerId} #qr-shaded-region {
+                            border-color: rgba(168, 85, 247, 0.45) !important;
+                            opacity: 0.25 !important;
+                          }
+                          #${scannerContainerId}__scan_region svg path {
+                            fill: rgba(0, 0, 0, 0.2) !important;
+                          }
+                          #${scannerContainerId}__scan_region svg rect {
+                            stroke: rgba(168, 85, 247, 0.6) !important;
+                            stroke-width: 2px !important;
+                          }
                           #${scannerContainerId}__dashboard_section_csr,
                           #${scannerContainerId}__header_message,
                           #${scannerContainerId} img[alt="Info icon"] {
@@ -2614,6 +2630,18 @@ export default function PresensiQR() {
                           justify-content: center !important;
                           width: 100% !important;
                           height: 100% !important;
+                        }
+                        /* Buat bayangan hitam samping sangat tipis dan transparan */
+                        #${scannerContainerId} #qr-shaded-region {
+                          border-color: rgba(168, 85, 247, 0.45) !important;
+                          opacity: 0.25 !important;
+                        }
+                        #${scannerContainerId}__scan_region svg path {
+                          fill: rgba(0, 0, 0, 0.2) !important;
+                        }
+                        #${scannerContainerId}__scan_region svg rect {
+                          stroke: rgba(168, 85, 247, 0.6) !important;
+                          stroke-width: 2px !important;
                         }
                         #${scannerContainerId}__dashboard_section_csr,
                         #${scannerContainerId}__header_message,
