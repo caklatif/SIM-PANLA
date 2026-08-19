@@ -2,30 +2,40 @@
   "name": "SIM-PANLA | UPT SMP Negeri 8 Pasuruan",
   "short_name": "SIM-PANLA",
   "description": "Sistem Informasi Manajemen Presensi dan Jurnal UPT SMP Negeri 8 Pasuruan",
-  "theme_color": "#9333ea",
-  "background_color": "#F9F7FF",
-  "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
-  "orientation": "portrait",
-  "scope": "/",
   "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F9F7FF",
+  "theme_color": "#9333ea",
+  "lang": "en",
+  "scope": "/",
+  "display_override": [
+    "standalone",
+    "minimal-ui",
+    "fullscreen",
+    "window-controls-overlay",
+    "browser"
+  ],
+  "orientation": "portrait",
   "id": "/",
-  "categories": ["education", "productivity"],
+  "categories": [
+    "education",
+    "productivity"
+  ],
   "icons": [
     {
-      "src": "/pwa-192x192.png",
+      "src": "/launchericon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/pwa-maskable-512x512.png",
+      "src": "/launchericon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/pwa-512x512.png",
+      "src": "/launchericon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
@@ -54,7 +64,7 @@
       "sizes": "750x1334",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Tampilan Mobile Presensi & Jurnal Guru"
+      "label": "Tampilan Mobile Presensi &amp; Jurnal Guru"
     }
   ]
 }
