@@ -13,7 +13,22 @@ export default defineConfig({
       devOptions: {
         enabled: false
       },
-      includeAssets: ['favicon.ico', 'icon.png', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png', 'screenshot-desktop.png', 'screenshot-mobile.png', 'registerSW.js', 'sw.js'],
+      includeAssets: [
+        'favicon.ico', 
+        'icon.png', 
+        'apple-touch-icon-180x180.png', 
+        'launchericon-48x48.png',
+        'launchericon-72x72.png',
+        'launchericon-96x96.png',
+        'launchericon-144x144.png',
+        'launchericon-192x192.png',
+        'launchericon-512x512.png',
+        'pwa-192x192.png', 
+        'pwa-512x512.png', 
+        'pwa-maskable-512x512.png', 
+        'registerSW.js', 
+        'sw.js'
+      ],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallback: '/index.html',
@@ -34,6 +49,42 @@ export default defineConfig({
         id: '/',
         categories: ['education', 'productivity'],
         icons: [
+          {
+            src: '/launchericon-48x48.png',
+            sizes: '48x48',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/launchericon-72x72.png',
+            sizes: '72x72',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/launchericon-96x96.png',
+            sizes: '96x96',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/launchericon-144x144.png',
+            sizes: '144x144',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/launchericon-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/launchericon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any'
+          },
           {
             src: '/pwa-192x192.png',
             sizes: '192x192',
@@ -61,22 +112,6 @@ export default defineConfig({
             src: '/icon.png',
             sizes: '512x512',
             type: 'image/png'
-          }
-        ],
-        screenshots: [
-          {
-            src: '/screenshot-desktop.png',
-            sizes: '1280x720',
-            type: 'image/png',
-            form_factor: 'wide',
-            label: 'Tampilan Desktop Dashboard SIM-PANLA'
-          },
-          {
-            src: '/screenshot-mobile.png',
-            sizes: '750x1334',
-            type: 'image/png',
-            form_factor: 'narrow',
-            label: 'Tampilan Mobile Presensi & Jurnal Guru'
           }
         ]
       }
