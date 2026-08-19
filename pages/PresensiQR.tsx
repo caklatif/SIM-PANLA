@@ -10,7 +10,8 @@ import {
   Sparkles, GraduationCap, Sun, Check, ArrowRight, ShieldCheck, X,
   Trophy, Lock, UserCheck, ShieldAlert, UserCog, Save, CheckSquare, Square,
   FlipHorizontal, Calendar, FileText, Filter, Maximize2, Minimize2,
-  Edit3, PlusCircle, ChevronDown, CheckCircle, ExternalLink, FileSpreadsheet
+  Edit3, PlusCircle, ChevronDown, CheckCircle, ExternalLink, FileSpreadsheet,
+  ArrowUp, ArrowDown, Hash, Type, Sliders, Timer
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { showAlert, showConfirm } from '../utils/alert';
@@ -53,6 +54,21 @@ export const EKSTRA_LIST = [
 export default function PresensiQR() {
   const { academicYear, profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
+  const isOperator = profile?.role === 'operator';
+  const isAdminOrOperator = isAdmin || isOperator;
+
+  // Batas Jam Keterlambatan Presensi Harian (Dikelola oleh Admin & Operator)
+  const [lateTimeLimit, setLateTimeLimit] = useState<string>(() => {
+    return localStorage.getItem('simpanla_late_time_limit') || '07:15';
+  });
+  const lateTimeLimitRef = useRef<string>(lateTimeLimit);
+  const [showLateTimeModal, setShowLateTimeModal] = useState<boolean>(false);
+  const [tempLateTime, setTempLateTime] = useState<string>(lateTimeLimit);
+  const [isSavingLateTime, setIsSavingLateTime] = useState<boolean>(false);
+
+  useEffect(() => {
+    lateTimeLimitRef.current = lateTimeLimit;
+  }, [lateTimeLimit]);
 
   // Pembina Ekstra Authorization State
   const [pembinaEkstraList, setPembinaEkstraList] = useState<PembinaEkstraItem[]>(() => {
@@ -376,41 +392,37 @@ export default function PresensiQR() {
   // Broadcast channel reference
   const broadcastChannelRef = useRef<any>(null);
 
-  // Fetch Database Scan Logs from Supabase across all teachers/devices
+  // Fetch Database Scan Logs from Supabase across all teachers/devices (Optimized Lean Query)
   const fetchDatabaseLogs = async (showLoading = false) => {
     if (showLoading) setLoadingLogs(true);
     try {
       const combinedRecords: QRScanRecord[] = [];
 
-      let queryLogs = supabase.from('qr_presensi_logs').select('*');
-      let queryNotes = supabase.from('journal_notes').select('*').eq('category', 'qr_presensi_log');
+      let queryLogs = supabase
+        .from('qr_presensi_logs')
+        .select('id, student_id, student_name, nisn, kelas, mode, status, subject, scanned_at, notes, academic_year');
 
       if (logDateMode === 'today') {
         const { past36HoursISO } = getTodayBounds();
         queryLogs = queryLogs.gte('scanned_at', past36HoursISO);
-        queryNotes = queryNotes.gte('created_at', past36HoursISO);
       } else if (logDateMode === 'date') {
         const startISO = `${logSelectedDate}T00:00:00.000Z`;
         const endISO = `${logSelectedDate}T23:59:59.999Z`;
         const dateStart = new Date(new Date(startISO).getTime() - 14 * 3600 * 1000).toISOString();
         const dateEnd = new Date(new Date(endISO).getTime() + 14 * 3600 * 1000).toISOString();
         queryLogs = queryLogs.gte('scanned_at', dateStart).lte('scanned_at', dateEnd);
-        queryNotes = queryNotes.gte('created_at', dateStart).lte('created_at', dateEnd);
       } else if (logDateMode === 'month') {
         const [yr, mo] = logSelectedMonth.split('-').map(Number);
         const startMonth = new Date(yr, mo - 1, 1, 0, 0, 0).toISOString();
         const endMonth = new Date(yr, mo, 0, 23, 59, 59).toISOString();
         queryLogs = queryLogs.gte('scanned_at', startMonth).lte('scanned_at', endMonth);
-        queryNotes = queryNotes.gte('created_at', startMonth).lte('created_at', endMonth);
       } else {
-        queryLogs = queryLogs.limit(1000);
-        queryNotes = queryNotes.limit(1000);
+        queryLogs = queryLogs.limit(500);
       }
 
       queryLogs = queryLogs.order('scanned_at', { ascending: false });
-      queryNotes = queryNotes.order('created_at', { ascending: false });
 
-      // 1. Query qr_presensi_logs table
+      // 1. Primary Query: qr_presensi_logs table
       try {
         const { data, error } = await queryLogs;
         if (!error && data && data.length > 0) {
@@ -441,75 +453,14 @@ export default function PresensiQR() {
               });
             }
           });
+        } else if (error) {
+          console.warn('Query qr_presensi_logs info:', error.message);
         }
       } catch (errDb) {
-        console.warn('Query qr_presensi_logs warning:', errDb);
+        console.warn('Query qr_presensi_logs error:', errDb);
       }
 
-      // 2. Query journal_notes fallback (where category = 'qr_presensi_log')
-      try {
-        const { data: jNotes, error: jNotesErr } = await queryNotes;
-        if (!jNotesErr && jNotes && jNotes.length > 0) {
-          jNotes.forEach((jn: any) => {
-            const itemTime = jn.created_at;
-            let matchesDate = true;
-            if (logDateMode === 'today') {
-              matchesDate = isDateToday(itemTime);
-            } else if (logDateMode === 'date') {
-              const localDateStr = new Date(itemTime).toLocaleDateString('en-CA');
-              matchesDate = localDateStr === logSelectedDate;
-            } else if (logDateMode === 'month') {
-              const localMonthStr = new Date(itemTime).toLocaleDateString('en-CA').substring(0, 7);
-              matchesDate = localMonthStr === logSelectedMonth;
-            }
-
-            if (matchesDate) {
-              try {
-                if (jn.note && jn.note.startsWith('{')) {
-                  const parsed = JSON.parse(jn.note);
-                  combinedRecords.push({
-                    id: parsed.id || jn.id,
-                    nisn: parsed.nisn || '-',
-                    studentName: parsed.studentName || jn.student_name || '-',
-                    kelas: parsed.kelas || '-',
-                    timestamp: parsed.timestamp || jn.created_at,
-                    mode: parsed.mode || (jn.follow_up as PresensiMode) || 'harian',
-                    status: parsed.status || 'Hadir',
-                    subject: parsed.subject || undefined,
-                    notes: parsed.notes || undefined,
-                  });
-                }
-              } catch (e) {}
-            }
-          });
-        }
-      } catch (errJn) {
-        console.warn('Query journal_notes backup warning:', errJn);
-      }
-
-      // 3. Query shared app_settings backup if today mode
-      if (logDateMode === 'today') {
-        try {
-          const { data: settingData } = await supabase
-            .from('app_settings')
-            .select('value')
-            .eq('key', 'today_qr_scans_sync')
-            .single();
-
-          if (settingData && settingData.value) {
-            const parsed = JSON.parse(settingData.value);
-            if (Array.isArray(parsed)) {
-              parsed.forEach((item: any) => {
-                if (item.timestamp && isDateToday(item.timestamp)) {
-                  combinedRecords.push(item);
-                }
-              });
-            }
-          }
-        } catch (errSetting) {}
-      }
-
-      // 4. Merge & deduplicate
+      // 2. Merge & deduplicate
       const map = new Map<string, QRScanRecord>();
       combinedRecords.forEach(r => {
         const key = `${r.nisn.trim()}_${r.mode}_${r.subject || ''}_${r.timestamp.substring(0, 16)}`;
@@ -543,7 +494,7 @@ export default function PresensiQR() {
     }
   };
 
-  // Realtime Supabase Subscription & Broadcast Channel
+  // Realtime Supabase Subscription & Broadcast Channel (Zero Polling - Push Driven)
   useEffect(() => {
     fetchDatabaseLogs(true);
 
@@ -638,56 +589,15 @@ export default function PresensiQR() {
           }
         }
       )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'journal_notes',
-          filter: 'category=eq.qr_presensi_log',
-        },
-        (payload) => {
-          setIsRealtimeActive(true);
-          if (payload.eventType === 'INSERT' && payload.new) {
-            const jn = payload.new;
-            if (jn.note && jn.note.startsWith('{')) {
-              try {
-                const parsed = JSON.parse(jn.note);
-                const rec: QRScanRecord = {
-                  id: parsed.id || jn.id,
-                  nisn: parsed.nisn || '-',
-                  studentName: parsed.studentName || jn.student_name || '-',
-                  kelas: parsed.kelas || '-',
-                  timestamp: parsed.timestamp || jn.created_at,
-                  mode: parsed.mode || (jn.follow_up as PresensiMode) || 'harian',
-                  status: parsed.status || 'Hadir',
-                  subject: parsed.subject || undefined,
-                };
-                if (jn.created_at && isDateToday(jn.created_at)) {
-                  setScanHistory(prev => {
-                    const key = `${rec.nisn.trim()}_${rec.mode}_${rec.subject || ''}_${rec.timestamp.substring(0, 16)}`;
-                    if (prev.some(item => item.id === rec.id || `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key)) {
-                      return prev.map(item => item.id === rec.id ? rec : item);
-                    }
-                    return [rec, ...prev];
-                  });
-                }
-                setDatabaseLogs(prev => {
-                  const key = `${rec.nisn.trim()}_${rec.mode}_${rec.subject || ''}_${rec.timestamp.substring(0, 16)}`;
-                  if (prev.some(item => item.id === rec.id || `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key)) {
-                    return prev.map(item => item.id === rec.id ? rec : item);
-                  }
-                  return [rec, ...prev];
-                });
-              } catch (e) {}
-            }
-          } else if (payload.eventType === 'DELETE' && payload.old?.id) {
-            const deletedId = payload.old.id;
-            setScanHistory(prev => prev.filter(item => item.id !== deletedId));
-            setDatabaseLogs(prev => prev.filter(item => item.id !== deletedId));
-          }
+      .on('broadcast', { event: 'late_time_updated' }, (payload: any) => {
+        if (payload?.payload?.lateTimeLimit) {
+          const newLimit = payload.payload.lateTimeLimit;
+          setLateTimeLimit(newLimit);
+          lateTimeLimitRef.current = newLimit;
+          setTempLateTime(newLimit);
+          localStorage.setItem('simpanla_late_time_limit', newLimit);
         }
-      )
+      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           setIsRealtimeActive(true);
@@ -696,14 +606,8 @@ export default function PresensiQR() {
 
     broadcastChannelRef.current = channel;
 
-    // Background Polling every 5 seconds as continuous live sync guarantee
-    const interval = setInterval(() => {
-      fetchDatabaseLogs(false);
-    }, 5000);
-
     return () => {
       supabase.removeChannel(channel);
-      clearInterval(interval);
     };
   }, [logDateMode, logSelectedDate, logSelectedMonth]);
 
@@ -714,10 +618,118 @@ export default function PresensiQR() {
     }
   }, [activeTab, isAdmin]);
 
-  // Load Pembina Ekstra configuration from Supabase or localStorage
+  // Load Pembina Ekstra configuration & Late Time Limit from Supabase or localStorage
   useEffect(() => {
     loadPembinaConfig();
+    loadLateTimeLimit();
   }, []);
+
+  const loadLateTimeLimit = async () => {
+    try {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'late_time_limit')
+        .maybeSingle();
+
+      if (data && data.value) {
+        setLateTimeLimit(data.value);
+        lateTimeLimitRef.current = data.value;
+        setTempLateTime(data.value);
+        localStorage.setItem('simpanla_late_time_limit', data.value);
+      }
+    } catch (e) {
+      console.warn('Failed to load late_time_limit setting:', e);
+    }
+  };
+
+  // Helper to adjust late time minutes up or down
+  const handleAdjustLateMinutes = (deltaMinutes: number) => {
+    let [h, m] = (tempLateTime || '07:15').split(':').map(Number);
+    if (isNaN(h)) h = 7;
+    if (isNaN(m)) m = 15;
+    let totalMinutes = h * 60 + m + deltaMinutes;
+    if (totalMinutes < 0) totalMinutes = 0;
+    if (totalMinutes > 23 * 60 + 59) totalMinutes = 23 * 60 + 59;
+    const newH = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+    const newM = String(totalMinutes % 60).padStart(2, '0');
+    setTempLateTime(`${newH}:${newM}`);
+  };
+
+  // Helper to set late hour directly (0-23)
+  const handleSetLateHour = (hourVal: string | number) => {
+    let num = typeof hourVal === 'string' ? parseInt(hourVal, 10) : hourVal;
+    if (isNaN(num)) num = 0;
+    if (num < 0) num = 0;
+    if (num > 23) num = 23;
+    const parts = (tempLateTime || '07:15').split(':');
+    const currentM = parts[1] || '15';
+    const newH = String(num).padStart(2, '0');
+    setTempLateTime(`${newH}:${currentM}`);
+  };
+
+  // Helper to set late minute directly (0-59)
+  const handleSetLateMinute = (minuteVal: string | number) => {
+    let num = typeof minuteVal === 'string' ? parseInt(minuteVal, 10) : minuteVal;
+    if (isNaN(num)) num = 0;
+    if (num < 0) num = 0;
+    if (num > 59) num = 59;
+    const parts = (tempLateTime || '07:15').split(':');
+    const currentH = parts[0] || '07';
+    const newM = String(num).padStart(2, '0');
+    setTempLateTime(`${currentH}:${newM}`);
+  };
+
+  const handleSaveLateTimeLimit = async (newTime?: string) => {
+    let raw = (newTime || tempLateTime || '').trim();
+
+    // Auto-normalize formats: e.g. "7:15", "7.15", "0715", "7:5"
+    if (raw.includes(':') || raw.includes('.')) {
+      const parts = raw.replace('.', ':').split(':');
+      const normH = String(parseInt(parts[0] || '0', 10)).padStart(2, '0');
+      const normM = String(parseInt(parts[1] || '0', 10)).padStart(2, '0');
+      raw = `${normH}:${normM}`;
+    } else if (/^\d{3,4}$/.test(raw)) {
+      const h = raw.length === 3 ? raw.substring(0, 1) : raw.substring(0, 2);
+      const m = raw.substring(raw.length - 2);
+      const normH = String(parseInt(h, 10)).padStart(2, '0');
+      const normM = String(parseInt(m, 10)).padStart(2, '0');
+      raw = `${normH}:${normM}`;
+    }
+
+    if (!raw.match(/^([01]\d|2[0-3]):[0-5]\d$/)) {
+      showAlert('Format jam tidak valid. Harap gunakan format JJ:MM (contoh: 07:15)', 'Format Jam Salah');
+      return;
+    }
+
+    setIsSavingLateTime(true);
+    try {
+      setLateTimeLimit(raw);
+      lateTimeLimitRef.current = raw;
+      setTempLateTime(raw);
+      localStorage.setItem('simpanla_late_time_limit', raw);
+
+      await supabase.from('app_settings').upsert({
+        key: 'late_time_limit',
+        value: raw
+      });
+
+      if (broadcastChannelRef.current) {
+        broadcastChannelRef.current.send({
+          type: 'broadcast',
+          event: 'late_time_updated',
+          payload: { lateTimeLimit: raw }
+        });
+      }
+
+      showAlert(`Batas jam keterlambatan berhasil diubah ke ${raw} WIB.\nSiswa yang scan setelah jam ini otomatis berstatus Terlambat.`, 'Pengaturan Disimpan');
+      setShowLateTimeModal(false);
+    } catch (err: any) {
+      showAlert('Gagal menyimpan: ' + (err.message || err), 'Gagal');
+    } finally {
+      setIsSavingLateTime(false);
+    }
+  };
 
   const loadPembinaConfig = async () => {
     try {
@@ -807,13 +819,17 @@ export default function PresensiQR() {
       const year = academicYear || '2025/2026';
       let { data, error } = await supabase
         .from('students')
-        .select('*')
+        .select('id, name, nisn, nis, kelas, gender, academic_year')
         .eq('academic_year', year)
         .order('kelas', { ascending: true })
         .order('name', { ascending: true });
 
       if (error || !data || data.length === 0) {
-        const res = await supabase.from('students').select('*').order('kelas', { ascending: true }).order('name', { ascending: true });
+        const res = await supabase
+          .from('students')
+          .select('id, name, nisn, nis, kelas, gender, academic_year')
+          .order('kelas', { ascending: true })
+          .order('name', { ascending: true });
         if (res.data && res.data.length > 0) {
           data = res.data;
         }
@@ -841,11 +857,11 @@ export default function PresensiQR() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, full_name, nip, role')
         .order('full_name', { ascending: true });
 
       if (!error && data) {
-        setTeachers(data);
+        setTeachers(data as Profile[]);
       }
     } catch (e) {
       console.error('Error fetching teachers:', e);
@@ -1362,7 +1378,8 @@ export default function PresensiQR() {
 
     const currentHour = now.getHours();
     const currentMin = now.getMinutes();
-    const isLate = currentMode === 'harian' && (currentHour > 7 || (currentHour === 7 && currentMin > 15));
+    const [limitHour = 7, limitMin = 15] = (lateTimeLimitRef.current || '07:15').split(':').map(Number);
+    const isLate = currentMode === 'harian' && (currentHour > limitHour || (currentHour === limitHour && currentMin > limitMin));
     const status: 'Hadir' | 'Terlambat' = isLate ? 'Terlambat' : 'Hadir';
 
     if (!matchedStudent) {
@@ -1436,7 +1453,7 @@ export default function PresensiQR() {
     syncToSupabase(newRecord, matchedStudent, status, currentMode, activeSubject);
   };
 
-  // Sync to database and shared cloud settings
+  // Sync to database (Optimized Single Write)
   const syncToSupabase = async (
     record: QRScanRecord,
     student: Student,
@@ -1447,7 +1464,7 @@ export default function PresensiQR() {
     const nowIso = record.timestamp || new Date().toISOString();
     const studentUuid = isValidUUID(student.id) ? student.id : null;
 
-    // 1. Insert into qr_presensi_logs table
+    // 1. Direct Insert into qr_presensi_logs table
     try {
       const { data, error } = await supabase.from('qr_presensi_logs').insert([{
         student_id: studentUuid,
@@ -1459,7 +1476,7 @@ export default function PresensiQR() {
         subject: subject || null,
         scanned_at: nowIso,
         academic_year: academicYear || '2025/2026'
-      }]).select();
+      }]).select('id');
 
       if (!error && data && data[0]) {
         setScanHistory(prev => prev.map(item => 
@@ -1467,57 +1484,22 @@ export default function PresensiQR() {
             ? { ...item, id: data[0].id }
             : item
         ));
+      } else if (error) {
+        // Fallback to journal_notes if qr_presensi_logs encounters an error
+        console.warn('qr_presensi_logs insert fallback:', error.message);
+        await supabase.from('journal_notes').insert([{
+          student_id: studentUuid,
+          student_name: student.name,
+          type: 'kedisiplinan',
+          category: 'qr_presensi_log',
+          note: JSON.stringify(record),
+          follow_up: mode,
+          academic_year: academicYear || '2025/2026',
+          created_at: nowIso,
+        }]);
       }
     } catch (e) {
-      console.warn('Primary qr_presensi_logs sync failed, will sync via backup journal_notes and app_settings:', e);
-    }
-
-    // 2. Insert into journal_notes fallback (where category = 'qr_presensi_log') - 100% accessible to all teachers & admins
-    try {
-      await supabase.from('journal_notes').insert([{
-        student_id: studentUuid,
-        student_name: student.name,
-        type: 'kedisiplinan',
-        category: 'qr_presensi_log',
-        note: JSON.stringify(record),
-        follow_up: mode,
-        academic_year: academicYear || '2025/2026',
-        created_at: nowIso,
-      }]);
-    } catch (jnErr) {
-      console.warn('Failed to insert into journal_notes backup:', jnErr);
-    }
-
-    // 3. Backup & sync to app_settings key 'today_qr_scans_sync'
-    try {
-      const { data: existingData } = await supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'today_qr_scans_sync')
-        .single();
-
-      let currentSyncList: QRScanRecord[] = [];
-      if (existingData && existingData.value) {
-        try {
-          const parsed = JSON.parse(existingData.value);
-          if (Array.isArray(parsed)) {
-            currentSyncList = parsed.filter(item => isDateToday(item.timestamp));
-          }
-        } catch (parseErr) {}
-      }
-
-      const deduplicated = currentSyncList.filter(
-        item => !(item.nisn === record.nisn && item.mode === record.mode && (item.subject || '') === (record.subject || ''))
-      );
-      deduplicated.unshift(record);
-
-      await supabase.from('app_settings').upsert({
-        key: 'today_qr_scans_sync',
-        value: JSON.stringify(deduplicated.slice(0, 500)),
-        description: 'Realtime backup of today scan presensi records'
-      }, { onConflict: 'key' });
-    } catch (settingErr) {
-      // setting upsert may be restricted for non-admins, but journal_notes and broadcast already succeeded!
+      console.warn('syncToSupabase error:', e);
     }
   };
 
@@ -1973,6 +1955,21 @@ export default function PresensiQR() {
               >
                 <Printer size={16} />
                 <span>Cetak Kartu QR NISN</span>
+              </button>
+            )}
+
+            {/* Pengaturan Jam Keterlambatan - KHUSUS ADMIN & OPERATOR */}
+            {isAdminOrOperator && (
+              <button
+                onClick={() => {
+                  setTempLateTime(lateTimeLimit);
+                  setShowLateTimeModal(true);
+                }}
+                className="px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/40 shadow-sm ml-auto active:scale-95"
+                title="Atur Batas Jam Masuk & Keterlambatan Siswa"
+              >
+                <Clock size={16} className="text-amber-400" />
+                <span>Atur Jam Terlambat ({lateTimeLimit} WIB)</span>
               </button>
             )}
           </div>
@@ -2483,6 +2480,30 @@ export default function PresensiQR() {
                         <div className="text-[10px] text-slate-500 dark:text-slate-400">Presensi Kegiatan Ekstra</div>
                       </button>
                     </div>
+
+                    {/* Sub-Info for Scan Masuk (Batas Keterlambatan) */}
+                    {presensiMode === 'harian' && (
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2 text-xs animate-fade-in">
+                        <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                          <Clock size={15} className="text-amber-500 shrink-0" />
+                          <span>Batas Masuk Tepat Waktu: <strong className="text-amber-600 dark:text-amber-400 font-black">{lateTimeLimit} WIB</strong></span>
+                          <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">(Scan setelah ini = Terlambat)</span>
+                        </div>
+                        {isAdminOrOperator && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTempLateTime(lateTimeLimit);
+                              setShowLateTimeModal(true);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800 text-[11px] transition-all flex items-center gap-1 active:scale-95"
+                          >
+                            <Clock size={12} />
+                            <span>Ubah Jam Terlambat</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {/* Sub-Selection for Ekstrakurikuler Mode (Updated 10 Ekstra List) */}
                     {presensiMode === 'ekstra' && (
@@ -4425,6 +4446,288 @@ export default function PresensiQR() {
 
             </div>
           </div>
+        )}
+
+        {/* MODAL PENGATURAN JAM KETERLAMBATAN (KHUSUS ADMIN / OPERATOR) */}
+        {showLateTimeModal && createPortal(
+          <div className="fixed inset-0 z-[999999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden animate-scale-up">
+              
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white p-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner">
+                    <Clock size={20} className="text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black tracking-tight text-white">
+                      Pengaturan Jam Keterlambatan
+                    </h3>
+                    <p className="text-[11px] text-amber-100 font-medium">
+                      Khusus Akses Administrator & Operator Sekolah
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLateTimeModal(false)}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-6 text-slate-800 dark:text-slate-200">
+                {/* 1. KOTAK INPUT JAM & MENIT MANUAL */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Sliders size={14} className="text-amber-500" />
+                      <span>Ketik Jam & Menit Manual (24 Jam):</span>
+                    </label>
+                    <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800">
+                      Format: JJ : MM WIB
+                    </span>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-amber-50 via-amber-50/70 to-orange-50 dark:from-amber-950/40 dark:via-slate-800/80 dark:to-orange-950/30 p-5 rounded-2xl border-2 border-amber-300/80 dark:border-amber-700/60 shadow-inner">
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
+                      
+                      {/* KOLOM JAM */}
+                      <div className="flex flex-col items-center">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                          JAM (00 - 23)
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const [h] = (tempLateTime || '07:15').split(':').map(Number);
+                              handleSetLateHour((h - 1 + 24) % 24);
+                            }}
+                            className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
+                            title="Kurangi 1 Jam"
+                          >
+                            <ArrowDown size={14} />
+                          </button>
+
+                          <input
+                            type="number"
+                            min="0"
+                            max="23"
+                            value={(tempLateTime || '07:15').split(':')[0] || '07'}
+                            onChange={(e) => handleSetLateHour(e.target.value)}
+                            className="w-20 text-center bg-white dark:bg-slate-800 border-2 border-amber-400 dark:border-amber-500 rounded-2xl py-3 text-3xl font-mono font-black text-slate-900 dark:text-white focus:ring-4 focus:ring-amber-500/20 focus:border-amber-600 outline-none shadow-md"
+                            placeholder="07"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const [h] = (tempLateTime || '07:15').split(':').map(Number);
+                              handleSetLateHour((h + 1) % 24);
+                            }}
+                            className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
+                            title="Tambah 1 Jam"
+                          >
+                            <ArrowUp size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* PEMISAH TITIK DUA */}
+                      <div className="text-4xl font-black font-mono text-amber-500 dark:text-amber-400 select-none hidden sm:block pt-5">
+                        :
+                      </div>
+
+                      {/* KOLOM MENIT */}
+                      <div className="flex flex-col items-center">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                          MENIT (00 - 59)
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const [, m] = (tempLateTime || '07:15').split(':').map(Number);
+                              handleSetLateMinute((m - 1 + 60) % 60);
+                            }}
+                            className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
+                            title="Kurangi 1 Menit"
+                          >
+                            <ArrowDown size={14} />
+                          </button>
+
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={(tempLateTime || '07:15').split(':')[1] || '15'}
+                            onChange={(e) => handleSetLateMinute(e.target.value)}
+                            className="w-20 text-center bg-white dark:bg-slate-800 border-2 border-amber-400 dark:border-amber-500 rounded-2xl py-3 text-3xl font-mono font-black text-slate-900 dark:text-white focus:ring-4 focus:ring-amber-500/20 focus:border-amber-600 outline-none shadow-md"
+                            placeholder="15"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const [, m] = (tempLateTime || '07:15').split(':').map(Number);
+                              handleSetLateMinute((m + 1) % 60);
+                            }}
+                            className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
+                            title="Tambah 1 Menit"
+                          >
+                            <ArrowUp size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* BADGE WIB */}
+                      <div className="flex flex-col items-center justify-center pt-2 sm:pt-4">
+                        <span className="text-base font-black px-3 py-1.5 rounded-xl bg-amber-500 text-white shadow-md shadow-amber-500/20">
+                          WIB
+                        </span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1">
+                          Zona Waktu Sekolah
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Quick Adjust Buttons */}
+                    <div className="mt-4 pt-3 border-t border-amber-200/60 dark:border-slate-700/80 flex flex-wrap items-center justify-center gap-1.5">
+                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mr-1">
+                        Geser Cepat:
+                      </span>
+                      {[
+                        { label: '-15m', delta: -15 },
+                        { label: '-10m', delta: -10 },
+                        { label: '-5m', delta: -5 },
+                        { label: '-1m', delta: -1 },
+                        { label: '+1m', delta: 1 },
+                        { label: '+5m', delta: 5 },
+                        { label: '+10m', delta: 10 },
+                        { label: '+15m', delta: 15 },
+                      ].map((adj) => (
+                        <button
+                          key={adj.label}
+                          type="button"
+                          onClick={() => handleAdjustLateMinutes(adj.delta)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-black bg-white dark:bg-slate-700 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-slate-600 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 active:scale-95 transition-all shadow-xs"
+                        >
+                          {adj.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. INPUT TEKS LANGSUNG */}
+                <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                      <Type size={14} className="text-blue-500" />
+                      <span>Atau Ketik Langsung Jam (Contoh: 07:15 / 07:20):</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={tempLateTime}
+                        onChange={(e) => setTempLateTime(e.target.value)}
+                        placeholder="07:15"
+                        maxLength={5}
+                        className="w-28 text-center bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm font-mono font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                      <span className="text-xs font-bold text-slate-500">WIB</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. QUICK PRESETS */}
+                <div>
+                  <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-2 flex items-center gap-1.5">
+                    <Clock size={13} className="text-amber-500" />
+                    <span>Pilihan Jam Masuk Standar Sekolah:</span>
+                  </span>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {['06:30', '06:45', '07:00', '07:10', '07:15', '07:20', '07:30', '07:45', '08:00'].map((preset) => (
+                      <button
+                        type="button"
+                        key={preset}
+                        onClick={() => setTempLateTime(preset)}
+                        className={`py-2 px-2.5 rounded-xl text-xs font-black transition-all border ${
+                          tempLateTime === preset
+                            ? 'bg-amber-500 text-white border-amber-600 shadow-md shadow-amber-500/30 ring-2 ring-amber-400/40'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-950/50 hover:border-amber-300'
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4. ATURAN SIMULASI & PRATINJAU */}
+                <div className="bg-slate-50 dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5 text-xs">
+                  <div className="font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                    <CheckCircle size={15} className="text-emerald-500" />
+                    <span>Aturan Status Otomatis Presensi Siswa:</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300">
+                      <div className="font-bold flex items-center gap-1 mb-1">
+                        <CheckCircle2 size={13} className="text-emerald-600" />
+                        <span>Hadir Tepat Waktu</span>
+                      </div>
+                      <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
+                        Scan sebelum / tepat pukul <strong>{tempLateTime || '07:15'} WIB</strong>
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300">
+                      <div className="font-bold flex items-center gap-1 mb-1">
+                        <AlertCircle size={13} className="text-rose-600" />
+                        <span>Terlambat</span>
+                      </div>
+                      <p className="text-[10px] text-rose-700 dark:text-rose-400">
+                        Scan lewat dari pukul <strong>{tempLateTime || '07:15'} WIB</strong>
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-200 dark:border-slate-700">
+                    * Pengaturan ini berlaku seketika di seluruh kamera scanner, barcode scanner gun, dan dashboard operator secara tersinkronisasi.
+                  </p>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLateTimeModal(false)}
+                  disabled={isSavingLateTime}
+                  className="px-4 py-2.5 rounded-xl font-bold text-xs bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveLateTimeLimit(tempLateTime)}
+                  disabled={isSavingLateTime}
+                  className="px-5 py-2.5 rounded-xl font-extrabold text-xs bg-amber-600 hover:bg-amber-500 text-white transition-all shadow-lg shadow-amber-600/30 flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                >
+                  {isSavingLateTime ? (
+                    <RefreshCw size={14} className="animate-spin" />
+                  ) : (
+                    <Save size={14} />
+                  )}
+                  <span>Simpan Batas Jam Masuk</span>
+                </button>
+              </div>
+
+            </div>
+          </div>,
+          document.body
         )}
 
       </div>

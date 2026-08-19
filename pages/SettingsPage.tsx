@@ -11,7 +11,8 @@ const SettingsPage: React.FC = () => {
     academic_year: '',
     semester: 'Ganjil',
     headmaster: '',
-    headmaster_nip: ''
+    headmaster_nip: '',
+    late_time_limit: '07:15'
   });
   const [nonEffectiveDays, setNonEffectiveDays] = useState<NonEffectiveDay[]>([]);
   const [availableYears, setAvailableYears] = useState<string[]>(['2025/2026']);
@@ -282,6 +283,102 @@ const SettingsPage: React.FC = () => {
                                     value={settings['headmaster_nip'] || '-'}
                                     placeholder="NIP otomatis..."
                                 />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* PENGATURAN JAM PRESENSI & KETERLAMBATAN */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                    <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                        <Clock size={18} className="text-amber-500"/> Pengaturan Jam Keterlambatan (Presensi QR)
+                    </h3>
+                    <p className="text-xs text-gray-500 mb-4">
+                        Tentukan batas waktu siswa scan masuk pagi. Siswa yang memindai kartu setelah jam ini otomatis berstatus <strong>Terlambat</strong>.
+                    </p>
+
+                    <div className="space-y-4">
+                        <div className="bg-amber-50/80 p-4 rounded-xl border border-amber-200/70 space-y-3">
+                            <label className="block text-xs font-bold text-amber-900">Ketik Jam & Menit Manual (Batas Masuk Tepat Waktu)</label>
+                            
+                            <div className="flex flex-wrap items-center gap-3">
+                                {/* Jam Input */}
+                                <div className="flex items-center gap-1">
+                                    <input 
+                                        type="number"
+                                        min="0"
+                                        max="23"
+                                        placeholder="07"
+                                        className="w-16 text-center bg-white border-2 border-amber-300 rounded-xl py-2 text-xl font-mono font-black text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm"
+                                        value={(settings['late_time_limit'] || '07:15').split(':')[0] || '07'}
+                                        onChange={e => {
+                                            let val = parseInt(e.target.value || '0', 10);
+                                            if (isNaN(val)) val = 0;
+                                            if (val < 0) val = 0;
+                                            if (val > 23) val = 23;
+                                            const normH = String(val).padStart(2, '0');
+                                            const m = (settings['late_time_limit'] || '07:15').split(':')[1] || '15';
+                                            setSettings(prev => ({ ...prev, late_time_limit: `${normH}:${m}` }));
+                                        }}
+                                    />
+                                    <span className="text-xl font-bold font-mono text-amber-600">:</span>
+                                    {/* Menit Input */}
+                                    <input 
+                                        type="number"
+                                        min="0"
+                                        max="59"
+                                        placeholder="15"
+                                        className="w-16 text-center bg-white border-2 border-amber-300 rounded-xl py-2 text-xl font-mono font-black text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm"
+                                        value={(settings['late_time_limit'] || '07:15').split(':')[1] || '15'}
+                                        onChange={e => {
+                                            let val = parseInt(e.target.value || '0', 10);
+                                            if (isNaN(val)) val = 0;
+                                            if (val < 0) val = 0;
+                                            if (val > 59) val = 59;
+                                            const normM = String(val).padStart(2, '0');
+                                            const h = (settings['late_time_limit'] || '07:15').split(':')[0] || '07';
+                                            setSettings(prev => ({ ...prev, late_time_limit: `${h}:${normM}` }));
+                                        }}
+                                    />
+                                </div>
+
+                                <div className="text-xs text-amber-800 font-bold">
+                                    WIB <span className="text-slate-500 text-[10px] block font-normal">(Format 24 Jam)</span>
+                                </div>
+                            </div>
+
+                            {/* Preset Buttons */}
+                            <div className="pt-2 border-t border-amber-200/60">
+                                <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block mb-1.5">Pilihan Cepat Waktu Masuk:</span>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {['06:30', '06:45', '07:00', '07:10', '07:15', '07:20', '07:30', '07:45', '08:00'].map(timePreset => (
+                                        <button
+                                            type="button"
+                                            key={timePreset}
+                                            onClick={() => setSettings(prev => ({ ...prev, late_time_limit: timePreset }))}
+                                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
+                                                (settings['late_time_limit'] || '07:15') === timePreset
+                                                    ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
+                                                    : 'bg-white text-slate-700 border-amber-200 hover:bg-amber-100'
+                                            }`}
+                                        >
+                                            {timePreset}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1 text-slate-600">
+                            <div className="font-bold text-slate-700 flex items-center gap-1.5">
+                                <Info size={14} className="text-blue-500"/>
+                                <span>Simulasi Status Presensi:</span>
+                            </div>
+                            <div className="pl-5 text-[11px]">
+                                • Scan $\le$ <strong>{settings['late_time_limit'] || '07:15'}</strong>: <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">Hadir Tepat Waktu</span>
+                            </div>
+                            <div className="pl-5 text-[11px]">
+                                • Scan &gt; <strong>{settings['late_time_limit'] || '07:15'}</strong>: <span className="text-rose-700 font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">Terlambat</span>
                             </div>
                         </div>
                     </div>
