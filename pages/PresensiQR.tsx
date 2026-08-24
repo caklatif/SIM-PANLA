@@ -11,7 +11,7 @@ import {
   Trophy, Lock, UserCheck, ShieldAlert, UserCog, Save, CheckSquare, Square,
   FlipHorizontal, Calendar, FileText, Filter, Maximize2, Minimize2,
   Edit3, PlusCircle, ChevronDown, CheckCircle, ExternalLink, FileSpreadsheet,
-  ArrowUp, ArrowDown, Hash, Type, Sliders, Timer
+  ArrowUp, ArrowDown, Hash, Type, Sliders, Timer, Database, UserMinus
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { showAlert, showConfirm } from '../utils/alert';
@@ -319,6 +319,11 @@ export default function PresensiQR() {
   // Filter history
   const [historySearch, setHistorySearch] = useState<string>('');
   const [historyClassFilter, setHistoryClassFilter] = useState<string>('');
+
+  // Unscanned Modal State
+  const [showUnscannedModal, setShowUnscannedModal] = useState<boolean>(false);
+  const [unscannedClassFilter, setUnscannedClassFilter] = useState<string>('');
+
 
   // Manual Add Modal State
   const [showManualAddModal, setShowManualAddModal] = useState<boolean>(false);
@@ -1810,6 +1815,16 @@ export default function PresensiQR() {
   const totalTerlambat = activeLogDataset.filter(i => i.status === 'Terlambat').length;
   const uniqueStudentsCount = new Set(activeLogDataset.map(i => i.nisn)).size;
 
+  // Computed Unscanned Students
+  const unscannedStudents = React.useMemo(() => {
+    const scannedNisns = new Set(filteredDatabaseLogs.map(log => log.nisn));
+    let unscanned = students.filter(student => !scannedNisns.has(student.nisn));
+    if (unscannedClassFilter) {
+      unscanned = unscanned.filter(student => student.kelas === unscannedClassFilter);
+    }
+    return unscanned;
+  }, [students, filteredDatabaseLogs, unscannedClassFilter]);
+
   const getModeLabel = (mode: PresensiMode, subject?: string) => {
     if (mode === 'harian') return 'Scan Masuk';
     if (mode === 'dhuha') return 'Sholat Dhuha';
@@ -1902,8 +1917,8 @@ export default function PresensiQR() {
                   : 'bg-white/5 hover:bg-white/10 text-slate-300'
               }`}
             >
-              <Clock size={16} />
-              <span>Log Presensi Today ({scanHistory.length})</span>
+              <Database size={16} />
+              <span>Kelola Hasil Scan ({scanHistory.length})</span>
             </button>
 
             {/* Rekap Laporan Ekstrakurikuler */}
@@ -2923,6 +2938,16 @@ export default function PresensiQR() {
                   >
                     <RefreshCw size={14} className={loadingLogs ? 'animate-spin text-purple-600' : ''} />
                     <span>{loadingLogs ? 'Menyinkronkan...' : 'Refresh'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowUnscannedModal(true)}
+                    className="px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                    title="Lihat daftar siswa yang belum melakukan presensi"
+                  >
+                    <UserMinus size={14} />
+                    <span>Rekap Belum Scan</span>
                   </button>
 
                   <button
@@ -4730,6 +4755,117 @@ export default function PresensiQR() {
           document.body
         )}
 
+        {/* UNSCANNED MODAL */}
+        {showUnscannedModal && createPortal(
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-100 dark:border-slate-700 flex flex-col max-h-[90vh]">
+              {/* Modal Header */}
+              <div className="p-4 md:p-6 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-amber-50 dark:bg-amber-950/20 rounded-t-3xl">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center border border-amber-200 dark:border-amber-800">
+                    <UserMinus size={18} className="text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-amber-900 dark:text-amber-300">
+                      Rekap Siswa Belum Scan
+                    </h3>
+                    <p className="text-xs font-bold text-amber-700/70 dark:text-amber-500/70">
+                      Daftar siswa yang belum melakukan presensi 
+                      {logDateMode === 'today' ? ' hari ini' : ' pada tanggal / periode yang dipilih'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowUnscannedModal(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-sm border border-slate-200 dark:border-slate-700"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-4 md:p-6 flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-900">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+                  <div className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                    Total: <span className="text-amber-600 dark:text-amber-400 font-black text-lg">{unscannedStudents.length}</span> Siswa Belum Scan
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <select
+                      value={unscannedClassFilter}
+                      onChange={(e) => setUnscannedClassFilter(e.target.value)}
+                      className="w-full sm:w-48 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="">Semua Kelas</option>
+                      {classes.map(c => (
+                        <option key={c} value={c}>Kelas {c}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner bg-white dark:bg-slate-800">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase text-[10px]">
+                      <tr>
+                        <th className="px-4 py-3 text-center w-12">No</th>
+                        <th className="px-4 py-3">Nama Siswa</th>
+                        <th className="px-4 py-3">NISN</th>
+                        <th className="px-4 py-3 text-center">Kelas</th>
+                        <th className="px-4 py-3 text-center">Aksi Cepat</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {unscannedStudents.length > 0 ? (
+                        unscannedStudents.map((student, idx) => (
+                          <tr key={student.id} className="hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors">
+                            <td className="px-4 py-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                            <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-200">{student.name}</td>
+                            <td className="px-4 py-3 font-mono text-slate-500">{student.nisn}</td>
+                            <td className="px-4 py-3 text-center">
+                              <span className="inline-flex items-center justify-center px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded font-bold border border-slate-200 dark:border-slate-700">
+                                {student.kelas}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                onClick={() => {
+                                  setShowUnscannedModal(false);
+                                  setSelectedStudentForManual(student);
+                                  setManualAddStudentSearch(student.name);
+                                  setShowManualAddModal(true);
+                                }}
+                                className="px-2.5 py-1.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded-lg text-[10px] font-bold hover:bg-purple-200 dark:hover:bg-purple-800/60 transition-colors inline-flex items-center gap-1"
+                              >
+                                <PlusCircle size={12} /> Input Presensi
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-10 text-center text-slate-400 italic">
+                            Semua siswa {unscannedClassFilter ? `di Kelas ${unscannedClassFilter}` : ''} sudah melakukan presensi.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 rounded-b-3xl flex justify-end">
+                <button
+                  onClick={() => setShowUnscannedModal(false)}
+                  className="px-5 py-2.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600 transition-all"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       </div>
     </Layout>
   );
