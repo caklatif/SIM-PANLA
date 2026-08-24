@@ -408,19 +408,19 @@ export default function PresensiQR() {
         .select('id, student_id, student_name, nisn, kelas, mode, status, subject, scanned_at, notes, academic_year');
 
       if (logDateMode === 'today') {
-        const { past36HoursISO } = getTodayBounds();
-        queryLogs = queryLogs.gte('scanned_at', past36HoursISO);
+        const today = new Date();
+        const startOfLocalToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
+        queryLogs = queryLogs.gte('scanned_at', startOfLocalToday.toISOString());
       } else if (logDateMode === 'date') {
-        const startISO = `${logSelectedDate}T00:00:00.000Z`;
-        const endISO = `${logSelectedDate}T23:59:59.999Z`;
-        const dateStart = new Date(new Date(startISO).getTime() - 14 * 3600 * 1000).toISOString();
-        const dateEnd = new Date(new Date(endISO).getTime() + 14 * 3600 * 1000).toISOString();
-        queryLogs = queryLogs.gte('scanned_at', dateStart).lte('scanned_at', dateEnd);
+        const [yr, mo, da] = logSelectedDate.split('-').map(Number);
+        const startOfLocalDay = new Date(yr, mo - 1, da, 0, 0, 0);
+        const endOfLocalDay = new Date(yr, mo - 1, da, 23, 59, 59, 999);
+        queryLogs = queryLogs.gte('scanned_at', startOfLocalDay.toISOString()).lte('scanned_at', endOfLocalDay.toISOString());
       } else if (logDateMode === 'month') {
         const [yr, mo] = logSelectedMonth.split('-').map(Number);
-        const startMonth = new Date(yr, mo - 1, 1, 0, 0, 0).toISOString();
-        const endMonth = new Date(yr, mo, 0, 23, 59, 59).toISOString();
-        queryLogs = queryLogs.gte('scanned_at', startMonth).lte('scanned_at', endMonth);
+        const startMonth = new Date(yr, mo - 1, 1, 0, 0, 0);
+        const endMonth = new Date(yr, mo, 0, 23, 59, 59, 999);
+        queryLogs = queryLogs.gte('scanned_at', startMonth.toISOString()).lte('scanned_at', endMonth.toISOString());
       } else {
         queryLogs = queryLogs.limit(500);
       }
@@ -472,17 +472,26 @@ export default function PresensiQR() {
         map.set(key, r);
       });
 
-      // Preserve local items for today if in today mode
-      if (logDateMode === 'today') {
-        scanHistory.forEach(p => {
-          if (isDateToday(p.timestamp)) {
-            const key = `${p.nisn.trim()}_${p.mode}_${p.subject || ''}_${p.timestamp.substring(0, 16)}`;
-            if (!map.has(key)) {
-              map.set(key, p);
-            }
+      // Preserve local items that match the current date filter
+      scanHistory.forEach(p => {
+        let matchesDate = true;
+        if (logDateMode === 'today') {
+          matchesDate = isDateToday(p.timestamp);
+        } else if (logDateMode === 'date') {
+          const localDateStr = new Date(p.timestamp).toLocaleDateString('en-CA');
+          matchesDate = localDateStr === logSelectedDate;
+        } else if (logDateMode === 'month') {
+          const localMonthStr = new Date(p.timestamp).toLocaleDateString('en-CA').substring(0, 7);
+          matchesDate = localMonthStr === logSelectedMonth;
+        }
+
+        if (matchesDate) {
+          const key = `${p.nisn.trim()}_${p.mode}_${p.subject || ''}_${p.timestamp.substring(0, 16)}`;
+          if (!map.has(key)) {
+            map.set(key, p);
           }
-        });
-      }
+        }
+      });
 
       const sorted = Array.from(map.values()).sort(
         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
@@ -1762,6 +1771,41 @@ export default function PresensiQR() {
   const filteredHistory = filteredDatabaseLogs;
 
   // Export history / filtered logs to CSV
+  const exportUnscannedToCSV = () => {
+    if (unscannedStudents.length === 0) {
+      showAlert('Semua siswa sudah melakukan presensi, tidak ada data untuk diekspor.');
+      return;
+    }
+
+    const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Keterangan'];
+    const rows = unscannedStudents.map((item, idx) => {
+      return [
+        idx + 1,
+        `'${item.nisn}`,
+        `"${item.name}"`,
+        item.kelas,
+        'Belum Presensi'
+      ];
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(e => e.join(','))
+    ].join('\n');
+
+    const dateLabel = logDateMode === 'today' ? 'Hari_Ini' : logDateMode === 'date' ? logSelectedDate : logDateMode === 'month' ? logSelectedMonth : 'Semua';
+    const classLabel = unscannedClassFilter ? `Kelas_${unscannedClassFilter}` : 'Semua_Kelas';
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Rekap_Siswa_Belum_Scan_${classLabel}_${dateLabel}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const exportToCSV = () => {
     if (filteredDatabaseLogs.length === 0) {
       showAlert('Belum ada data scan yang cocok dengan filter untuk diekspor.');
@@ -4784,8 +4828,8 @@ export default function PresensiQR() {
               </div>
 
               {/* Modal Body */}
-              <div className="p-4 md:p-6 flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-900">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+              <div className="p-4 md:p-6 flex-1 overflow-y-auto custom-scrollbar bg-white dark:bg-slate-900">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-700">
                   <div className="text-xs font-bold text-slate-600 dark:text-slate-400">
                     Total: <span className="text-amber-600 dark:text-amber-400 font-black text-lg">{unscannedStudents.length}</span> Siswa Belum Scan
                   </div>
@@ -4793,7 +4837,7 @@ export default function PresensiQR() {
                     <select
                       value={unscannedClassFilter}
                       onChange={(e) => setUnscannedClassFilter(e.target.value)}
-                      className="w-full sm:w-48 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                      className="w-full sm:w-48 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
                     >
                       <option value="">Semua Kelas</option>
                       {classes.map(c => (
@@ -4803,47 +4847,31 @@ export default function PresensiQR() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner bg-white dark:bg-slate-800">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase text-[10px]">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold uppercase text-[10px] border-y border-slate-200 dark:border-slate-700">
                       <tr>
-                        <th className="px-4 py-3 text-center w-12">No</th>
-                        <th className="px-4 py-3">Nama Siswa</th>
-                        <th className="px-4 py-3">NISN</th>
-                        <th className="px-4 py-3 text-center">Kelas</th>
-                        <th className="px-4 py-3 text-center">Aksi Cepat</th>
+                        <th className="px-4 py-2.5 text-center w-12 border-r border-slate-200 dark:border-slate-700">No</th>
+                        <th className="px-4 py-2.5 border-r border-slate-200 dark:border-slate-700">Nama Siswa</th>
+                        <th className="px-4 py-2.5 border-r border-slate-200 dark:border-slate-700">NISN</th>
+                        <th className="px-4 py-2.5 text-center">Kelas</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {unscannedStudents.length > 0 ? (
                         unscannedStudents.map((student, idx) => (
-                          <tr key={student.id} className="hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors">
-                            <td className="px-4 py-3 text-center font-bold text-slate-400">{idx + 1}</td>
-                            <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-200">{student.name}</td>
-                            <td className="px-4 py-3 font-mono text-slate-500">{student.nisn}</td>
-                            <td className="px-4 py-3 text-center">
-                              <span className="inline-flex items-center justify-center px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded font-bold border border-slate-200 dark:border-slate-700">
-                                {student.kelas}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <button
-                                onClick={() => {
-                                  setShowUnscannedModal(false);
-                                  setSelectedStudentForManual(student);
-                                  setManualAddStudentSearch(student.name);
-                                  setShowManualAddModal(true);
-                                }}
-                                className="px-2.5 py-1.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded-lg text-[10px] font-bold hover:bg-purple-200 dark:hover:bg-purple-800/60 transition-colors inline-flex items-center gap-1"
-                              >
-                                <PlusCircle size={12} /> Input Presensi
-                              </button>
+                          <tr key={student.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                            <td className="px-4 py-2 text-center font-bold text-slate-400 border-r border-slate-100 dark:border-slate-800">{idx + 1}</td>
+                            <td className="px-4 py-2 font-bold text-slate-700 dark:text-slate-300 border-r border-slate-100 dark:border-slate-800">{student.name}</td>
+                            <td className="px-4 py-2 font-mono text-slate-500 border-r border-slate-100 dark:border-slate-800">{student.nisn}</td>
+                            <td className="px-4 py-2 text-center font-bold text-slate-600 dark:text-slate-400">
+                              {student.kelas}
                             </td>
                           </tr>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={5} className="px-4 py-10 text-center text-slate-400 italic">
+                          <td colSpan={4} className="px-4 py-10 text-center text-slate-400 italic">
                             Semua siswa {unscannedClassFilter ? `di Kelas ${unscannedClassFilter}` : ''} sudah melakukan presensi.
                           </td>
                         </tr>
@@ -4854,10 +4882,24 @@ export default function PresensiQR() {
               </div>
 
               {/* Modal Footer */}
-              <div className="p-4 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 rounded-b-3xl flex justify-end">
+              <div className="p-4 bg-slate-50 dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 rounded-b-3xl flex justify-end gap-2">
+                <button
+                  onClick={exportUnscannedToCSV}
+                  className="px-4 py-2 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center gap-2 shadow-sm"
+                >
+                  <Download size={14} />
+                  <span>Unduh CSV</span>
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-900 text-white transition-all flex items-center gap-2 shadow-sm"
+                >
+                  <Printer size={14} />
+                  <span>Cetak (Print)</span>
+                </button>
                 <button
                   onClick={() => setShowUnscannedModal(false)}
-                  className="px-5 py-2.5 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600 transition-all"
+                  className="px-5 py-2 rounded-xl font-bold text-xs bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all shadow-sm"
                 >
                   Tutup
                 </button>

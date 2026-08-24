@@ -90,6 +90,7 @@ create table if not exists public.attendance_logs (
   status text check (status in ('S', 'I', 'A', 'D')),
   teacher_name text,
   subject text,
+  notes text,
   created_at timestamptz default now()
 );
 
@@ -353,6 +354,7 @@ CREATE TABLE IF NOT EXISTS public.qr_presensi_logs (
   mode text DEFAULT 'harian',
   status text DEFAULT 'Hadir',
   subject text,
+  notes text,
   scanned_at timestamptz DEFAULT now(),
   academic_year text DEFAULT '2025/2026',
   created_at timestamptz DEFAULT now()
