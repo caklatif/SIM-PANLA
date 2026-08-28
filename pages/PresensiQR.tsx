@@ -1034,41 +1034,51 @@ export default function PresensiQR() {
       const ctx = initAudio();
       if (!ctx) return;
 
+      const playOsc = () => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        // Tambahkan offset 20ms agar di Android tidak terdengar glitch saat context baru resume
+        const now = ctx.currentTime + 0.02;
+
+        if (type === "success") {
+          // Suara nyaring seperti lonceng (Clear Bell/Chime)
+          osc.type = "sine";
+          // Frekuensi tinggi dan jernih (Nada G6)
+          osc.frequency.setValueAtTime(1567.98, now); 
+          
+          // Envelope lonceng: Pukulan keras di awal, bergema perlahan di akhir
+          gain.gain.setValueAtTime(0, now);
+          gain.gain.linearRampToValueAtTime(1.0, now + 0.02); // Attack (pukulan lonceng)
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.8); // Decay (gema lonceng)
+          
+          osc.start(now);
+          osc.stop(now + 0.8);
+        } else if (type === "warning") {
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(523.25, now);
+          osc.frequency.setValueAtTime(392.0, now + 0.1);
+          gain.gain.setValueAtTime(0.8, now); // Dikeraskan
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
+          osc.start(now);
+          osc.stop(now + 0.28);
+        } else {
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(300, now);
+          osc.frequency.setValueAtTime(180, now + 0.12);
+          gain.gain.setValueAtTime(0.9, now); // Dikeraskan
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+          osc.start(now);
+          osc.stop(now + 0.35);
+        }
+      };
+
       if (ctx.state === "suspended") {
-        ctx.resume();
-      }
-
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      const now = ctx.currentTime;
-
-      if (type === "success") {
-        // Nada keras, nyaring & tajam (seperti barcode scanner profesional)
-        osc.type = "square";
-        osc.frequency.setValueAtTime(2500, now); // 2.5kHz sangat sensitif bagi telinga manusia
-        gain.gain.setValueAtTime(0.8, now); // Volume ditingkatkan
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15); // Durasi pendek dan responsif
-        osc.start(now);
-        osc.stop(now + 0.15);
-      } else if (type === "warning") {
-        osc.type = "triangle";
-        osc.frequency.setValueAtTime(523.25, now);
-        osc.frequency.setValueAtTime(392.0, now + 0.1);
-        gain.gain.setValueAtTime(0.8, now); // Dikeraskan
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
-        osc.start(now);
-        osc.stop(now + 0.28);
+        ctx.resume().then(playOsc).catch(playOsc);
       } else {
-        osc.type = "sawtooth";
-        osc.frequency.setValueAtTime(300, now);
-        osc.frequency.setValueAtTime(180, now + 0.12);
-        gain.gain.setValueAtTime(0.9, now); // Dikeraskan
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
-        osc.start(now);
-        osc.stop(now + 0.35);
+        playOsc();
       }
     } catch (e) {
       console.warn("Audio feedback error:", e);
