@@ -1009,19 +1009,18 @@ export default function PresensiQR() {
       const now = ctx.currentTime;
 
       if (type === "success") {
-        // High-pitched cheerful double chime (A5 to E6)
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(880, now);
-        osc.frequency.setValueAtTime(1318.51, now + 0.08);
-        gain.gain.setValueAtTime(0.5, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+        // Nada keras, nyaring & tajam (seperti barcode scanner profesional)
+        osc.type = "square";
+        osc.frequency.setValueAtTime(2500, now); // 2.5kHz sangat sensitif bagi telinga manusia
+        gain.gain.setValueAtTime(0.8, now); // Volume ditingkatkan
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15); // Durasi pendek dan responsif
         osc.start(now);
-        osc.stop(now + 0.22);
+        osc.stop(now + 0.15);
       } else if (type === "warning") {
         osc.type = "triangle";
         osc.frequency.setValueAtTime(523.25, now);
         osc.frequency.setValueAtTime(392.0, now + 0.1);
-        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.setValueAtTime(0.8, now); // Dikeraskan
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
         osc.start(now);
         osc.stop(now + 0.28);
@@ -1029,7 +1028,7 @@ export default function PresensiQR() {
         osc.type = "sawtooth";
         osc.frequency.setValueAtTime(300, now);
         osc.frequency.setValueAtTime(180, now + 0.12);
-        gain.gain.setValueAtTime(0.5, now);
+        gain.gain.setValueAtTime(0.9, now); // Dikeraskan
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
         osc.start(now);
         osc.stop(now + 0.35);
