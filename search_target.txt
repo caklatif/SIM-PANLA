@@ -1,0 +1,50 @@
+                            <p className="text-xs font-bold text-slate-400">Belum ada riwayat scan hari ini</p>
+                            <p className="text-[11px] mt-1 text-slate-500">Data siswa yang discan akan otomatis muncul di sini secara realtime.</p>
+                          </div>
+                        ) : (
+                          scanHistory.map((item, idx) => (
+                            <div
+                              key={item.id}
+                              className={`p-3 rounded-2xl border flex items-center justify-between text-xs transition-all ${
+                                idx === 0 
+                                  ? 'bg-slate-800/90 border-purple-500/50 shadow-md ring-1 ring-purple-500/30' 
+                                  : 'bg-slate-900/60 border-slate-800/80 hover:bg-slate-800/50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className={`w-8 h-8 rounded-xl font-bold flex items-center justify-center shrink-0 text-xs text-white ${
+                                  item.status === 'Terlambat' ? 'bg-rose-600' : 'bg-emerald-600'
+                                }`}>
+                                  {item.studentName.charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-extrabold text-white truncate">{item.studentName}</span>
+                                    {getActivityBadge(item.mode, item.subject)}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 mt-0.5">
+                                    Kelas {item.kelas} • <span className="font-mono text-slate-500">{item.nisn}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0 ml-2">
+                                <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold ${
+                                  item.status === 'Terlambat' 
+                                    ? 'bg-rose-950/80 text-rose-300 border border-rose-800' 
+                                    : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800'
+                                }`}>
+                                  {item.status}
+                                </span>
+                                <div className="text-[10px] font-mono text-slate-400 mt-1">
+                                  {new Date(item.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+

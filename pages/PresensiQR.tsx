@@ -1,22 +1,64 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { Layout } from '../components/Layout';
-import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../services/supabase';
-import { Student, Profile } from '../types';
-import { 
-  Scan, Camera, Keyboard, CheckCircle2, AlertCircle, Clock, Users, 
-  Search, Printer, Download, Trash2, RefreshCw, Volume2, VolumeX, 
-  Sparkles, GraduationCap, Sun, Check, ArrowRight, ShieldCheck, X,
-  Trophy, Lock, UserCheck, ShieldAlert, UserCog, Save, CheckSquare, Square,
-  FlipHorizontal, Calendar, FileText, Filter, Maximize2, Minimize2,
-  Edit3, PlusCircle, ChevronDown, CheckCircle, ExternalLink, FileSpreadsheet,
-  ArrowUp, ArrowDown, Hash, Type, Sliders, Timer, Database, UserMinus
-} from 'lucide-react';
-import { Html5Qrcode } from 'html5-qrcode';
-import { showAlert, showConfirm } from '../utils/alert';
+import React, { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
+import { Layout } from "../components/Layout";
+import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../services/supabase";
+import { Student, Profile } from "../types";
+import {
+  Scan,
+  Camera,
+  Keyboard,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  Users,
+  Search,
+  Printer,
+  Download,
+  Trash2,
+  RefreshCw,
+  Volume2,
+  VolumeX,
+  Sparkles,
+  GraduationCap,
+  Sun,
+  Check,
+  ArrowRight,
+  ShieldCheck,
+  X,
+  Trophy,
+  Lock,
+  UserCheck,
+  ShieldAlert,
+  UserCog,
+  Save,
+  CheckSquare,
+  Square,
+  FlipHorizontal,
+  Calendar,
+  FileText,
+  Filter,
+  Maximize2,
+  Minimize2,
+  Edit3,
+  PlusCircle,
+  ChevronDown,
+  CheckCircle,
+  ExternalLink,
+  FileSpreadsheet,
+  ArrowUp,
+  ArrowDown,
+  Hash,
+  Type,
+  Sliders,
+  Timer,
+  Database,
+  UserMinus,
+} from "lucide-react";
+import { Html5Qrcode } from "html5-qrcode";
+import { showAlert, showConfirm } from "../utils/alert";
 
-export type PresensiMode = 'harian' | 'dhuha' | 'dzuhur' | 'ekstra';
+export type PresensiMode = "harian" | "dhuha" | "dzuhur" | "ekstra";
 
 export interface QRScanRecord {
   id: string;
@@ -25,7 +67,7 @@ export interface QRScanRecord {
   kelas: string;
   timestamp: string;
   mode: PresensiMode;
-  status: 'Hadir' | 'Terlambat';
+  status: "Hadir" | "Terlambat";
   subject?: string;
   notes?: string;
 }
@@ -39,27 +81,27 @@ export interface PembinaEkstraItem {
 }
 
 export const EKSTRA_LIST = [
-  'PRAMUKA',
-  'PASKIB',
-  'PMR',
-  'Tari',
-  'Karate',
-  'Tahfidz',
-  'Bola Voli',
-  'Sepak Bola',
-  'Bola Basket',
-  'Paduan Suara'
+  "PRAMUKA",
+  "PASKIB",
+  "PMR",
+  "Tari",
+  "Karate",
+  "Tahfidz",
+  "Bola Voli",
+  "Sepak Bola",
+  "Bola Basket",
+  "Paduan Suara",
 ];
 
 export default function PresensiQR() {
   const { academicYear, profile } = useAuth();
-  const isAdmin = profile?.role === 'admin';
-  const isOperator = profile?.role === 'operator';
+  const isAdmin = profile?.role === "admin";
+  const isOperator = profile?.role === "operator";
   const isAdminOrOperator = isAdmin || isOperator;
 
   // Batas Jam Keterlambatan Presensi Harian (Dikelola oleh Admin & Operator)
   const [lateTimeLimit, setLateTimeLimit] = useState<string>(() => {
-    return localStorage.getItem('simpanla_late_time_limit') || '07:15';
+    return localStorage.getItem("simpanla_late_time_limit") || "07:15";
   });
   const lateTimeLimitRef = useRef<string>(lateTimeLimit);
   const [showLateTimeModal, setShowLateTimeModal] = useState<boolean>(false);
@@ -71,9 +113,11 @@ export default function PresensiQR() {
   }, [lateTimeLimit]);
 
   // Pembina Ekstra Authorization State
-  const [pembinaEkstraList, setPembinaEkstraList] = useState<PembinaEkstraItem[]>(() => {
+  const [pembinaEkstraList, setPembinaEkstraList] = useState<
+    PembinaEkstraItem[]
+  >(() => {
     try {
-      const saved = localStorage.getItem('simpanla_pembina_ekstra_list');
+      const saved = localStorage.getItem("simpanla_pembina_ekstra_list");
       return saved ? JSON.parse(saved) : [];
     } catch (e) {
       return [];
@@ -84,9 +128,12 @@ export default function PresensiQR() {
   const currentUserNip = profile?.nip?.trim();
   const currentUserName = profile?.full_name?.trim();
 
-  const assignedPembinaConfig = pembinaEkstraList.find(item => 
-    (currentUserNip && item.nip && item.nip.trim() === currentUserNip) ||
-    (currentUserName && item.nama && item.nama.toLowerCase().trim() === currentUserName.toLowerCase())
+  const assignedPembinaConfig = pembinaEkstraList.find(
+    (item) =>
+      (currentUserNip && item.nip && item.nip.trim() === currentUserNip) ||
+      (currentUserName &&
+        item.nama &&
+        item.nama.toLowerCase().trim() === currentUserName.toLowerCase()),
   );
 
   const isPembina = !!assignedPembinaConfig;
@@ -95,14 +142,24 @@ export default function PresensiQR() {
   // Allowed Ekstra list for current user (dikunci khusus untuk Pembina Ekstra yang dikelola Admin)
   const allowedEkstraForUser = isAdmin
     ? EKSTRA_LIST
-    : (isPembina && assignedPembinaConfig?.ekstraList && assignedPembinaConfig.ekstraList.length > 0)
-    ? (assignedPembinaConfig.ekstraList.includes('Semua') ? EKSTRA_LIST : EKSTRA_LIST.filter(e => assignedPembinaConfig.ekstraList.includes(e)))
-    : [];
+    : isPembina &&
+        assignedPembinaConfig?.ekstraList &&
+        assignedPembinaConfig.ekstraList.length > 0
+      ? assignedPembinaConfig.ekstraList.includes("Semua")
+        ? EKSTRA_LIST
+        : EKSTRA_LIST.filter((e) =>
+            assignedPembinaConfig.ekstraList.includes(e),
+          )
+      : [];
 
   // Mode & Tabs
-  const [activeTab, setActiveTab] = useState<'scan' | 'history' | 'rekap' | 'cards' | 'pembina'>('scan');
-  const [presensiMode, setPresensiMode] = useState<PresensiMode>('harian');
-  const [selectedEkstra, setSelectedEkstra] = useState<string>(allowedEkstraForUser[0] || '');
+  const [activeTab, setActiveTab] = useState<
+    "scan" | "history" | "rekap" | "cards" | "pembina"
+  >("scan");
+  const [presensiMode, setPresensiMode] = useState<PresensiMode>("harian");
+  const [selectedEkstra, setSelectedEkstra] = useState<string>(
+    allowedEkstraForUser[0] || "",
+  );
 
   // Synchronized Ref for Zero-Stale-Closure across Camera Scans, Barcode Gun, and Listeners
   const presensiModeRef = useRef<PresensiMode>(presensiMode);
@@ -118,28 +175,28 @@ export default function PresensiQR() {
 
   // Visual Activity Badge Helper for Teacher Monitoring
   const getActivityBadge = (mode: PresensiMode | string, subject?: string) => {
-    if (mode === 'harian') {
+    if (mode === "harian") {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shrink-0">
           <span>🛡️ Scan Masuk</span>
         </span>
       );
-    } else if (mode === 'dhuha') {
+    } else if (mode === "dhuha") {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
           <span>☀️ Sholat Dhuha</span>
         </span>
       );
-    } else if (mode === 'dzuhur') {
+    } else if (mode === "dzuhur") {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800 shrink-0">
           <span>🕌 Sholat Dzuhur</span>
         </span>
       );
-    } else if (mode === 'ekstra') {
+    } else if (mode === "ekstra") {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
-          <span>🏆 Ekstra: {subject || 'Umum'}</span>
+          <span>🏆 Ekstra: {subject || "Umum"}</span>
         </span>
       );
     }
@@ -148,36 +205,42 @@ export default function PresensiQR() {
 
   // Rekap Laporan Ekstra State
   const [rekapSelectedEkstra, setRekapSelectedEkstra] = useState<string>(() => {
-    return allowedEkstraForUser[0] || 'Tahfidz';
+    return allowedEkstraForUser[0] || "Tahfidz";
   });
   const [rekapMonth, setRekapMonth] = useState<string>(() => {
     const d = new Date();
     const yr = d.getFullYear();
-    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
     return `${yr}-${mo}`;
   });
   const [rekapLogs, setRekapLogs] = useState<any[]>([]);
   const [loadingRekap, setLoadingRekap] = useState<boolean>(false);
-  const [rekapSearch, setRekapSearch] = useState<string>('');
-  const [rekapClassFilter, setRekapClassFilter] = useState<string>('');
+  const [rekapSearch, setRekapSearch] = useState<string>("");
+  const [rekapClassFilter, setRekapClassFilter] = useState<string>("");
   const [onlyParticipated, setOnlyParticipated] = useState<boolean>(true);
 
   // Sync selectedEkstra & rekapSelectedEkstra when allowedEkstraForUser changes
   useEffect(() => {
-    if (allowedEkstraForUser.length > 0 && !allowedEkstraForUser.includes(selectedEkstra)) {
+    if (
+      allowedEkstraForUser.length > 0 &&
+      !allowedEkstraForUser.includes(selectedEkstra)
+    ) {
       setSelectedEkstra(allowedEkstraForUser[0]);
     } else if (allowedEkstraForUser.length === 0) {
-      setSelectedEkstra('');
+      setSelectedEkstra("");
     }
 
-    if (allowedEkstraForUser.length > 0 && !allowedEkstraForUser.includes(rekapSelectedEkstra)) {
+    if (
+      allowedEkstraForUser.length > 0 &&
+      !allowedEkstraForUser.includes(rekapSelectedEkstra)
+    ) {
       setRekapSelectedEkstra(allowedEkstraForUser[0]);
     }
   }, [allowedEkstraForUser]);
 
   // Classes list
   const [classes, setClasses] = useState<string[]>([]);
-  const [selectedClass, setSelectedClass] = useState<string>('');
+  const [selectedClass, setSelectedClass] = useState<string>("");
 
   // Students database cache
   const [students, setStudents] = useState<Student[]>([]);
@@ -186,20 +249,22 @@ export default function PresensiQR() {
   // Teachers database cache (for Pembina management)
   const [teachers, setTeachers] = useState<Profile[]>([]);
   const [loadingTeachers, setLoadingTeachers] = useState<boolean>(false);
-  const [pembinaSearch, setPembinaSearch] = useState<string>('');
+  const [pembinaSearch, setPembinaSearch] = useState<string>("");
   const [savingPembina, setSavingPembina] = useState<boolean>(false);
 
   // Scanner state
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isRestartingCamera, setIsRestartingCamera] = useState<boolean>(false);
-  const [modeRestartNotice, setModeRestartNotice] = useState<string | null>(null);
-  const [manualInput, setManualInput] = useState<string>('');
+  const [modeRestartNotice, setModeRestartNotice] = useState<string | null>(
+    null,
+  );
+  const [manualInput, setManualInput] = useState<string>("");
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isMirrored, setIsMirrored] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem('simpanla_qr_mirror');
-      return saved !== null ? saved === 'true' : true;
+      const saved = localStorage.getItem("simpanla_qr_mirror");
+      return saved !== null ? saved === "true" : true;
     } catch (e) {
       return true;
     }
@@ -207,13 +272,23 @@ export default function PresensiQR() {
   const lastScanTimeRef = useRef<number>(0);
   const [scanCooldown, setScanCooldown] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const [currentTime, setCurrentTime] = useState<string>(() => 
-    new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const [currentTime, setCurrentTime] = useState<string>(() =>
+    new Date().toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
   );
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setCurrentTime(
+        new Date().toLocaleTimeString("id-ID", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      );
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -227,7 +302,10 @@ export default function PresensiQR() {
     setIsFullscreen(target);
     if (target) {
       try {
-        if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+        if (
+          document.documentElement.requestFullscreen &&
+          !document.fullscreenElement
+        ) {
           document.documentElement.requestFullscreen().catch(() => {});
         }
       } catch (e) {}
@@ -247,7 +325,7 @@ export default function PresensiQR() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullscreen) {
+      if (e.key === "Escape" && isFullscreen) {
         toggleFullscreen(false);
       }
     };
@@ -259,24 +337,24 @@ export default function PresensiQR() {
         }, 200);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('fullscreenchange', handleFsChange);
+    window.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("fullscreenchange", handleFsChange);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('fullscreenchange', handleFsChange);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("fullscreenchange", handleFsChange);
     };
   }, [isFullscreen, isScanning, canScan]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('simpanla_qr_mirror', String(isMirrored));
+      localStorage.setItem("simpanla_qr_mirror", String(isMirrored));
     } catch (e) {}
   }, [isMirrored]);
-  
+
   // Last Scanned Result
   const [lastScannedStudent, setLastScannedStudent] = useState<{
     student: Student;
-    status: 'Hadir' | 'Terlambat';
+    status: "Hadir" | "Terlambat";
     recordTime: string;
     isDuplicate: boolean;
     mode?: PresensiMode | string;
@@ -286,14 +364,16 @@ export default function PresensiQR() {
   // Scan History
   const [scanHistory, setScanHistory] = useState<QRScanRecord[]>(() => {
     try {
-      const saved = localStorage.getItem('simpanla_qr_scans_today');
+      const saved = localStorage.getItem("simpanla_qr_scans_today");
       if (saved) {
         const parsed = JSON.parse(saved);
-        const todayStr = new Date().toISOString().split('T')[0];
-        return parsed.filter((item: QRScanRecord) => item.timestamp.startsWith(todayStr));
+        const todayStr = new Date().toISOString().split("T")[0];
+        return parsed.filter((item: QRScanRecord) =>
+          item.timestamp.startsWith(todayStr),
+        );
       }
     } catch (e) {
-      console.error('Error loading scan history:', e);
+      console.error("Error loading scan history:", e);
     }
     return [];
   });
@@ -302,45 +382,52 @@ export default function PresensiQR() {
   const [isRealtimeActive, setIsRealtimeActive] = useState<boolean>(true);
 
   // Database Log Manager Filter State
-  const [logDateMode, setLogDateMode] = useState<'today' | 'date' | 'month' | 'all'>('today');
+  const [logDateMode, setLogDateMode] = useState<
+    "today" | "date" | "month" | "all"
+  >("today");
   const [logSelectedDate, setLogSelectedDate] = useState<string>(() => {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const [logSelectedMonth, setLogSelectedMonth] = useState<string>(() => {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
-  const [logModeFilter, setLogModeFilter] = useState<string>(''); // '' = all
-  const [logEkstraFilter, setLogEkstraFilter] = useState<string>('');
-  const [logStatusFilter, setLogStatusFilter] = useState<string>('');
+  const [logModeFilter, setLogModeFilter] = useState<string>(""); // '' = all
+  const [logEkstraFilter, setLogEkstraFilter] = useState<string>("");
+  const [logStatusFilter, setLogStatusFilter] = useState<string>("");
   const [databaseLogs, setDatabaseLogs] = useState<QRScanRecord[]>([]);
 
   // Filter history
-  const [historySearch, setHistorySearch] = useState<string>('');
-  const [historyClassFilter, setHistoryClassFilter] = useState<string>('');
+  const [historySearch, setHistorySearch] = useState<string>("");
+  const [historyClassFilter, setHistoryClassFilter] = useState<string>("");
 
   // Unscanned Modal State
   const [showUnscannedModal, setShowUnscannedModal] = useState<boolean>(false);
-  const [unscannedClassFilter, setUnscannedClassFilter] = useState<string>('');
-
+  const [unscannedClassFilter, setUnscannedClassFilter] = useState<string>("");
 
   // Manual Add Modal State
   const [showManualAddModal, setShowManualAddModal] = useState<boolean>(false);
-  const [manualAddStudentSearch, setManualAddStudentSearch] = useState<string>('');
-  const [selectedStudentForManual, setSelectedStudentForManual] = useState<Student | null>(null);
-  const [manualAddMode, setManualAddMode] = useState<PresensiMode>('harian');
-  const [manualAddStatus, setManualAddStatus] = useState<'Hadir' | 'Terlambat'>('Hadir');
-  const [manualAddEkstra, setManualAddEkstra] = useState<string>(EKSTRA_LIST[0]);
+  const [manualAddStudentSearch, setManualAddStudentSearch] =
+    useState<string>("");
+  const [selectedStudentForManual, setSelectedStudentForManual] =
+    useState<Student | null>(null);
+  const [manualAddMode, setManualAddMode] = useState<PresensiMode>("harian");
+  const [manualAddStatus, setManualAddStatus] = useState<"Hadir" | "Terlambat">(
+    "Hadir",
+  );
+  const [manualAddEkstra, setManualAddEkstra] = useState<string>(
+    EKSTRA_LIST[0],
+  );
   const [manualAddTime, setManualAddTime] = useState<string>(() => {
     const d = new Date();
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   });
   const [manualAddDate, setManualAddDate] = useState<string>(() => {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
-  const [manualAddNotes, setManualAddNotes] = useState<string>('');
+  const [manualAddNotes, setManualAddNotes] = useState<string>("");
   const [savingManual, setSavingManual] = useState<boolean>(false);
 
   // Edit Status Modal State
@@ -351,17 +438,19 @@ export default function PresensiQR() {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
 
   // Card Generator
-  const [selectedCardClass, setSelectedCardClass] = useState<string>('');
-  const [cardSearch, setCardSearch] = useState<string>('');
+  const [selectedCardClass, setSelectedCardClass] = useState<string>("");
+  const [cardSearch, setCardSearch] = useState<string>("");
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
-  const scannerContainerId = 'qr-reader-viewfinder';
+  const scannerContainerId = "qr-reader-viewfinder";
   const manualInputRef = useRef<HTMLInputElement>(null);
 
   // Helper UUID check
   const isValidUUID = (str?: string) => {
     if (!str) return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      str,
+    );
   };
 
   // Helper to check if a timestamp is from today (local timezone aware)
@@ -382,15 +471,31 @@ export default function PresensiQR() {
   // Helper to get start and end ISO timestamps for today (covering wide 36-hour UTC range for WIB)
   const getTodayBounds = () => {
     const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const start = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0,
+      0,
+      0,
+      0,
+    );
+    const end = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999,
+    );
     const past36Hours = new Date(now.getTime() - 36 * 60 * 60 * 1000);
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    return { 
-      startISO: start.toISOString(), 
-      endISO: end.toISOString(), 
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return {
+      startISO: start.toISOString(),
+      endISO: end.toISOString(),
       past36HoursISO: past36Hours.toISOString(),
-      todayStr 
+      todayStr,
     };
   };
 
@@ -404,28 +509,44 @@ export default function PresensiQR() {
       const combinedRecords: QRScanRecord[] = [];
 
       let queryLogs = supabase
-        .from('qr_presensi_logs')
-        .select('id, student_id, student_name, nisn, kelas, mode, status, subject, scanned_at, notes, academic_year');
+        .from("qr_presensi_logs")
+        .select(
+          "id, student_id, student_name, nisn, kelas, mode, status, subject, scanned_at, notes, academic_year",
+        );
 
-      if (logDateMode === 'today') {
+      if (logDateMode === "today") {
         const today = new Date();
-        const startOfLocalToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
-        queryLogs = queryLogs.gte('scanned_at', startOfLocalToday.toISOString());
-      } else if (logDateMode === 'date') {
-        const [yr, mo, da] = logSelectedDate.split('-').map(Number);
+        const startOfLocalToday = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+          0,
+          0,
+          0,
+        );
+        queryLogs = queryLogs.gte(
+          "scanned_at",
+          startOfLocalToday.toISOString(),
+        );
+      } else if (logDateMode === "date") {
+        const [yr, mo, da] = logSelectedDate.split("-").map(Number);
         const startOfLocalDay = new Date(yr, mo - 1, da, 0, 0, 0);
         const endOfLocalDay = new Date(yr, mo - 1, da, 23, 59, 59, 999);
-        queryLogs = queryLogs.gte('scanned_at', startOfLocalDay.toISOString()).lte('scanned_at', endOfLocalDay.toISOString());
-      } else if (logDateMode === 'month') {
-        const [yr, mo] = logSelectedMonth.split('-').map(Number);
+        queryLogs = queryLogs
+          .gte("scanned_at", startOfLocalDay.toISOString())
+          .lte("scanned_at", endOfLocalDay.toISOString());
+      } else if (logDateMode === "month") {
+        const [yr, mo] = logSelectedMonth.split("-").map(Number);
         const startMonth = new Date(yr, mo - 1, 1, 0, 0, 0);
         const endMonth = new Date(yr, mo, 0, 23, 59, 59, 999);
-        queryLogs = queryLogs.gte('scanned_at', startMonth.toISOString()).lte('scanned_at', endMonth.toISOString());
+        queryLogs = queryLogs
+          .gte("scanned_at", startMonth.toISOString())
+          .lte("scanned_at", endMonth.toISOString());
       } else {
         queryLogs = queryLogs.limit(500);
       }
 
-      queryLogs = queryLogs.order('scanned_at', { ascending: false });
+      queryLogs = queryLogs.order("scanned_at", { ascending: false });
 
       // 1. Primary Query: qr_presensi_logs table
       try {
@@ -434,75 +555,104 @@ export default function PresensiQR() {
           data.forEach((item: any) => {
             const itemTime = item.scanned_at || item.created_at;
             let matchesDate = true;
-            if (logDateMode === 'today') {
+            if (logDateMode === "today") {
               matchesDate = isDateToday(itemTime);
-            } else if (logDateMode === 'date') {
-              const localDateStr = new Date(itemTime).toLocaleDateString('en-CA');
+            } else if (logDateMode === "date") {
+              const localDateStr = new Date(itemTime).toLocaleDateString(
+                "en-CA",
+              );
               matchesDate = localDateStr === logSelectedDate;
-            } else if (logDateMode === 'month') {
-              const localMonthStr = new Date(itemTime).toLocaleDateString('en-CA').substring(0, 7);
+            } else if (logDateMode === "month") {
+              const localMonthStr = new Date(itemTime)
+                .toLocaleDateString("en-CA")
+                .substring(0, 7);
               matchesDate = localMonthStr === logSelectedMonth;
             }
 
             if (matchesDate) {
               combinedRecords.push({
                 id: item.id || `${item.student_id}-${itemTime}`,
-                nisn: item.nisn || '-',
-                studentName: item.student_name || '-',
-                kelas: item.kelas || '-',
+                nisn: item.nisn || "-",
+                studentName: item.student_name || "-",
+                kelas: item.kelas || "-",
                 timestamp: itemTime,
-                mode: item.mode || 'harian',
-                status: item.status || 'Hadir',
+                mode: item.mode || "harian",
+                status: item.status || "Hadir",
                 subject: item.subject || undefined,
                 notes: item.notes || undefined,
               });
             }
           });
         } else if (error) {
-          console.warn('Query qr_presensi_logs info:', error.message);
+          console.warn("Query qr_presensi_logs info:", error.message);
         }
       } catch (errDb) {
-        console.warn('Query qr_presensi_logs error:', errDb);
+        console.warn("Query qr_presensi_logs error:", errDb);
       }
 
-      // 2. Merge & deduplicate
+      // 2. Merge & deduplicate (Keep the EARLIEST scan per day/mode/subject)
       const map = new Map<string, QRScanRecord>();
-      combinedRecords.forEach(r => {
-        const key = `${r.nisn.trim()}_${r.mode}_${r.subject || ''}_${r.timestamp.substring(0, 16)}`;
-        map.set(key, r);
+      combinedRecords.forEach((r) => {
+        const datePart = new Date(r.timestamp).toLocaleDateString("en-CA");
+        const key = `${r.nisn.trim()}_${r.mode}_${r.subject || ""}_${datePart}`;
+        if (map.has(key)) {
+          const existing = map.get(key)!;
+          if (
+            new Date(r.timestamp).getTime() <
+            new Date(existing.timestamp).getTime()
+          ) {
+            map.set(key, r);
+          }
+        } else {
+          map.set(key, r);
+        }
       });
 
       // Preserve local items that match the current date filter
-      scanHistory.forEach(p => {
+      scanHistory.forEach((p) => {
         let matchesDate = true;
-        if (logDateMode === 'today') {
+        if (logDateMode === "today") {
           matchesDate = isDateToday(p.timestamp);
-        } else if (logDateMode === 'date') {
-          const localDateStr = new Date(p.timestamp).toLocaleDateString('en-CA');
+        } else if (logDateMode === "date") {
+          const localDateStr = new Date(p.timestamp).toLocaleDateString(
+            "en-CA",
+          );
           matchesDate = localDateStr === logSelectedDate;
-        } else if (logDateMode === 'month') {
-          const localMonthStr = new Date(p.timestamp).toLocaleDateString('en-CA').substring(0, 7);
+        } else if (logDateMode === "month") {
+          const localMonthStr = new Date(p.timestamp)
+            .toLocaleDateString("en-CA")
+            .substring(0, 7);
           matchesDate = localMonthStr === logSelectedMonth;
         }
 
         if (matchesDate) {
-          const key = `${p.nisn.trim()}_${p.mode}_${p.subject || ''}_${p.timestamp.substring(0, 16)}`;
-          if (!map.has(key)) {
+          const datePart = new Date(p.timestamp).toLocaleDateString("en-CA");
+          const key = `${p.nisn.trim()}_${p.mode}_${p.subject || ""}_${datePart}`;
+          if (map.has(key)) {
+            const existing = map.get(key)!;
+            if (
+              new Date(p.timestamp).getTime() <
+              new Date(existing.timestamp).getTime()
+            ) {
+              map.set(key, p);
+            }
+          } else {
             map.set(key, p);
           }
         }
       });
 
       const sorted = Array.from(map.values()).sort(
-        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        (a, b) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
       );
 
       setDatabaseLogs(sorted);
-      if (logDateMode === 'today') {
+      if (logDateMode === "today") {
         setScanHistory(sorted);
       }
     } catch (err) {
-      console.warn('Failed to fetch presensi logs:', err);
+      console.warn("Failed to fetch presensi logs:", err);
     } finally {
       if (showLoading) setLoadingLogs(false);
     }
@@ -513,107 +663,169 @@ export default function PresensiQR() {
     fetchDatabaseLogs(true);
 
     const channel = supabase
-      .channel('simpanla_qr_presensi_live_room', {
+      .channel("simpanla_qr_presensi_live_room", {
         config: {
           broadcast: { self: true },
         },
       })
-      .on('broadcast', { event: 'NEW_SCAN' }, ({ payload }) => {
+      .on("broadcast", { event: "NEW_SCAN" }, ({ payload }) => {
         if (!payload) return;
         setIsRealtimeActive(true);
         const updateList = (prev: QRScanRecord[]) => {
-          const key = `${payload.nisn.trim()}_${payload.mode}_${payload.subject || ''}_${payload.timestamp.substring(0, 16)}`;
-          const exists = prev.some(item => 
-            item.id === payload.id || 
-            `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key
+          const payloadDate = new Date(payload.timestamp).toLocaleDateString(
+            "en-CA",
           );
+          const key = `${payload.nisn.trim()}_${payload.mode}_${payload.subject || ""}_${payloadDate}`;
+          const exists = prev.some((item) => {
+            const itemDate = new Date(item.timestamp).toLocaleDateString(
+              "en-CA",
+            );
+            return (
+              item.id === payload.id ||
+              `${item.nisn.trim()}_${item.mode}_${item.subject || ""}_${itemDate}` ===
+                key
+            );
+          });
           if (exists) {
-            return prev.map(item => item.id === payload.id ? payload : item);
+            return prev.map((item) =>
+              item.id === payload.id ? payload : item,
+            );
           }
           return [payload, ...prev];
         };
 
         if (payload.timestamp && isDateToday(payload.timestamp)) {
-          setScanHistory(prev => updateList(prev));
+          setScanHistory((prev) => updateList(prev));
         }
-        setDatabaseLogs(prev => updateList(prev));
+        setDatabaseLogs((prev) => updateList(prev));
       })
-      .on('broadcast', { event: 'UPDATE_SCAN' }, ({ payload }) => {
+      .on("broadcast", { event: "UPDATE_SCAN" }, ({ payload }) => {
         if (!payload?.id) return;
-        setScanHistory(prev => prev.map(item => item.id === payload.id ? { ...item, ...payload } : item));
-        setDatabaseLogs(prev => prev.map(item => item.id === payload.id ? { ...item, ...payload } : item));
+        setScanHistory((prev) =>
+          prev.map((item) =>
+            item.id === payload.id ? { ...item, ...payload } : item,
+          ),
+        );
+        setDatabaseLogs((prev) =>
+          prev.map((item) =>
+            item.id === payload.id ? { ...item, ...payload } : item,
+          ),
+        );
       })
-      .on('broadcast', { event: 'DELETE_SCAN' }, ({ payload }) => {
+      .on("broadcast", { event: "DELETE_SCAN" }, ({ payload }) => {
         if (payload?.id) {
-          setScanHistory(prev => prev.filter(item => item.id !== payload.id));
-          setDatabaseLogs(prev => prev.filter(item => item.id !== payload.id));
+          setScanHistory((prev) =>
+            prev.filter((item) => item.id !== payload.id),
+          );
+          setDatabaseLogs((prev) =>
+            prev.filter((item) => item.id !== payload.id),
+          );
         }
       })
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'qr_presensi_logs',
+          event: "*",
+          schema: "public",
+          table: "qr_presensi_logs",
         },
         (payload) => {
           setIsRealtimeActive(true);
-          if (payload.eventType === 'INSERT' && payload.new) {
+          if (payload.eventType === "INSERT" && payload.new) {
             const newRow = payload.new;
             const newRecord: QRScanRecord = {
               id: newRow.id || `${Date.now()}`,
-              nisn: newRow.nisn || '-',
-              studentName: newRow.student_name || '-',
-              kelas: newRow.kelas || '-',
+              nisn: newRow.nisn || "-",
+              studentName: newRow.student_name || "-",
+              kelas: newRow.kelas || "-",
               timestamp: newRow.scanned_at || newRow.created_at,
-              mode: newRow.mode || 'harian',
-              status: newRow.status || 'Hadir',
+              mode: newRow.mode || "harian",
+              status: newRow.status || "Hadir",
               subject: newRow.subject || undefined,
             };
 
             if (newRow.scanned_at && isDateToday(newRow.scanned_at)) {
-              setScanHistory(prev => {
-                const key = `${newRecord.nisn.trim()}_${newRecord.mode}_${newRecord.subject || ''}_${newRecord.timestamp.substring(0, 16)}`;
-                const exists = prev.some(item => item.id === newRecord.id || `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key);
-                if (exists) return prev.map(item => item.id === newRecord.id ? newRecord : item);
+              setScanHistory((prev) => {
+                const newRecordDate = new Date(
+                  newRecord.timestamp,
+                ).toLocaleDateString("en-CA");
+                const key = `${newRecord.nisn.trim()}_${newRecord.mode}_${newRecord.subject || ""}_${newRecordDate}`;
+                const exists = prev.some((item) => {
+                  const itemDate = new Date(item.timestamp).toLocaleDateString(
+                    "en-CA",
+                  );
+                  return (
+                    item.id === newRecord.id ||
+                    `${item.nisn.trim()}_${item.mode}_${item.subject || ""}_${itemDate}` ===
+                      key
+                  );
+                });
+                if (exists)
+                  return prev.map((item) =>
+                    item.id === newRecord.id ? newRecord : item,
+                  );
                 return [newRecord, ...prev];
               });
             }
 
-            setDatabaseLogs(prev => {
-              const key = `${newRecord.nisn.trim()}_${newRecord.mode}_${newRecord.subject || ''}_${newRecord.timestamp.substring(0, 16)}`;
-              const exists = prev.some(item => item.id === newRecord.id || `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key);
-              if (exists) return prev.map(item => item.id === newRecord.id ? newRecord : item);
+            setDatabaseLogs((prev) => {
+              const newRecordDate = new Date(
+                newRecord.timestamp,
+              ).toLocaleDateString("en-CA");
+              const key = `${newRecord.nisn.trim()}_${newRecord.mode}_${newRecord.subject || ""}_${newRecordDate}`;
+              const exists = prev.some((item) => {
+                const itemDate = new Date(item.timestamp).toLocaleDateString(
+                  "en-CA",
+                );
+                return (
+                  item.id === newRecord.id ||
+                  `${item.nisn.trim()}_${item.mode}_${item.subject || ""}_${itemDate}` ===
+                    key
+                );
+              });
+              if (exists)
+                return prev.map((item) =>
+                  item.id === newRecord.id ? newRecord : item,
+                );
               return [newRecord, ...prev];
             });
-          } else if (payload.eventType === 'DELETE' && payload.old?.id) {
+          } else if (payload.eventType === "DELETE" && payload.old?.id) {
             const deletedId = payload.old.id;
-            setScanHistory(prev => prev.filter(item => item.id !== deletedId));
-            setDatabaseLogs(prev => prev.filter(item => item.id !== deletedId));
-          } else if (payload.eventType === 'UPDATE' && payload.new?.id) {
+            setScanHistory((prev) =>
+              prev.filter((item) => item.id !== deletedId),
+            );
+            setDatabaseLogs((prev) =>
+              prev.filter((item) => item.id !== deletedId),
+            );
+          } else if (payload.eventType === "UPDATE" && payload.new?.id) {
             const updatedRow = payload.new;
-            const updateFn = (prev: QRScanRecord[]) => prev.map(item => item.id === updatedRow.id ? {
-              ...item,
-              status: updatedRow.status || item.status,
-              mode: updatedRow.mode || item.mode,
-              subject: updatedRow.subject || item.subject,
-            } : item);
+            const updateFn = (prev: QRScanRecord[]) =>
+              prev.map((item) =>
+                item.id === updatedRow.id
+                  ? {
+                      ...item,
+                      status: updatedRow.status || item.status,
+                      mode: updatedRow.mode || item.mode,
+                      subject: updatedRow.subject || item.subject,
+                    }
+                  : item,
+              );
             setScanHistory(updateFn);
             setDatabaseLogs(updateFn);
           }
-        }
+        },
       )
-      .on('broadcast', { event: 'late_time_updated' }, (payload: any) => {
+      .on("broadcast", { event: "late_time_updated" }, (payload: any) => {
         if (payload?.payload?.lateTimeLimit) {
           const newLimit = payload.payload.lateTimeLimit;
           setLateTimeLimit(newLimit);
           lateTimeLimitRef.current = newLimit;
           setTempLateTime(newLimit);
-          localStorage.setItem('simpanla_late_time_limit', newLimit);
+          localStorage.setItem("simpanla_late_time_limit", newLimit);
         }
       })
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
+        if (status === "SUBSCRIBED") {
           setIsRealtimeActive(true);
         }
       });
@@ -627,8 +839,8 @@ export default function PresensiQR() {
 
   // Safety fallback for non-admins trying to open admin tabs
   useEffect(() => {
-    if ((activeTab === 'cards' || activeTab === 'pembina') && !isAdmin) {
-      setActiveTab('scan');
+    if ((activeTab === "cards" || activeTab === "pembina") && !isAdmin) {
+      setActiveTab("scan");
     }
   }, [activeTab, isAdmin]);
 
@@ -641,78 +853,82 @@ export default function PresensiQR() {
   const loadLateTimeLimit = async () => {
     try {
       const { data } = await supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'late_time_limit')
+        .from("app_settings")
+        .select("value")
+        .eq("key", "late_time_limit")
         .maybeSingle();
 
       if (data && data.value) {
         setLateTimeLimit(data.value);
         lateTimeLimitRef.current = data.value;
         setTempLateTime(data.value);
-        localStorage.setItem('simpanla_late_time_limit', data.value);
+        localStorage.setItem("simpanla_late_time_limit", data.value);
       }
     } catch (e) {
-      console.warn('Failed to load late_time_limit setting:', e);
+      console.warn("Failed to load late_time_limit setting:", e);
     }
   };
 
   // Helper to adjust late time minutes up or down
   const handleAdjustLateMinutes = (deltaMinutes: number) => {
-    let [h, m] = (tempLateTime || '07:15').split(':').map(Number);
+    let [h, m] = (tempLateTime || "07:15").split(":").map(Number);
     if (isNaN(h)) h = 7;
     if (isNaN(m)) m = 15;
     let totalMinutes = h * 60 + m + deltaMinutes;
     if (totalMinutes < 0) totalMinutes = 0;
     if (totalMinutes > 23 * 60 + 59) totalMinutes = 23 * 60 + 59;
-    const newH = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
-    const newM = String(totalMinutes % 60).padStart(2, '0');
+    const newH = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
+    const newM = String(totalMinutes % 60).padStart(2, "0");
     setTempLateTime(`${newH}:${newM}`);
   };
 
   // Helper to set late hour directly (0-23)
   const handleSetLateHour = (hourVal: string | number) => {
-    let num = typeof hourVal === 'string' ? parseInt(hourVal, 10) : hourVal;
+    let num = typeof hourVal === "string" ? parseInt(hourVal, 10) : hourVal;
     if (isNaN(num)) num = 0;
     if (num < 0) num = 0;
     if (num > 23) num = 23;
-    const parts = (tempLateTime || '07:15').split(':');
-    const currentM = parts[1] || '15';
-    const newH = String(num).padStart(2, '0');
+    const parts = (tempLateTime || "07:15").split(":");
+    const currentM = parts[1] || "15";
+    const newH = String(num).padStart(2, "0");
     setTempLateTime(`${newH}:${currentM}`);
   };
 
   // Helper to set late minute directly (0-59)
   const handleSetLateMinute = (minuteVal: string | number) => {
-    let num = typeof minuteVal === 'string' ? parseInt(minuteVal, 10) : minuteVal;
+    let num =
+      typeof minuteVal === "string" ? parseInt(minuteVal, 10) : minuteVal;
     if (isNaN(num)) num = 0;
     if (num < 0) num = 0;
     if (num > 59) num = 59;
-    const parts = (tempLateTime || '07:15').split(':');
-    const currentH = parts[0] || '07';
-    const newM = String(num).padStart(2, '0');
+    const parts = (tempLateTime || "07:15").split(":");
+    const currentH = parts[0] || "07";
+    const newM = String(num).padStart(2, "0");
     setTempLateTime(`${currentH}:${newM}`);
   };
 
   const handleSaveLateTimeLimit = async (newTime?: string) => {
-    let raw = (newTime || tempLateTime || '').trim();
+    let raw = (newTime || tempLateTime || "").trim();
 
     // Auto-normalize formats: e.g. "7:15", "7.15", "0715", "7:5"
-    if (raw.includes(':') || raw.includes('.')) {
-      const parts = raw.replace('.', ':').split(':');
-      const normH = String(parseInt(parts[0] || '0', 10)).padStart(2, '0');
-      const normM = String(parseInt(parts[1] || '0', 10)).padStart(2, '0');
+    if (raw.includes(":") || raw.includes(".")) {
+      const parts = raw.replace(".", ":").split(":");
+      const normH = String(parseInt(parts[0] || "0", 10)).padStart(2, "0");
+      const normM = String(parseInt(parts[1] || "0", 10)).padStart(2, "0");
       raw = `${normH}:${normM}`;
     } else if (/^\d{3,4}$/.test(raw)) {
       const h = raw.length === 3 ? raw.substring(0, 1) : raw.substring(0, 2);
       const m = raw.substring(raw.length - 2);
-      const normH = String(parseInt(h, 10)).padStart(2, '0');
-      const normM = String(parseInt(m, 10)).padStart(2, '0');
+      const normH = String(parseInt(h, 10)).padStart(2, "0");
+      const normM = String(parseInt(m, 10)).padStart(2, "0");
       raw = `${normH}:${normM}`;
     }
 
     if (!raw.match(/^([01]\d|2[0-3]):[0-5]\d$/)) {
-      showAlert('Format jam tidak valid. Harap gunakan format JJ:MM (contoh: 07:15)', 'Format Jam Salah');
+      showAlert(
+        "Format jam tidak valid. Harap gunakan format JJ:MM (contoh: 07:15)",
+        "Format Jam Salah",
+      );
       return;
     }
 
@@ -721,25 +937,28 @@ export default function PresensiQR() {
       setLateTimeLimit(raw);
       lateTimeLimitRef.current = raw;
       setTempLateTime(raw);
-      localStorage.setItem('simpanla_late_time_limit', raw);
+      localStorage.setItem("simpanla_late_time_limit", raw);
 
-      await supabase.from('app_settings').upsert({
-        key: 'late_time_limit',
-        value: raw
+      await supabase.from("app_settings").upsert({
+        key: "late_time_limit",
+        value: raw,
       });
 
       if (broadcastChannelRef.current) {
         broadcastChannelRef.current.send({
-          type: 'broadcast',
-          event: 'late_time_updated',
-          payload: { lateTimeLimit: raw }
+          type: "broadcast",
+          event: "late_time_updated",
+          payload: { lateTimeLimit: raw },
         });
       }
 
-      showAlert(`Batas jam keterlambatan berhasil diubah ke ${raw} WIB.\nSiswa yang scan setelah jam ini otomatis berstatus Terlambat.`, 'Pengaturan Disimpan');
+      showAlert(
+        `Batas jam keterlambatan berhasil diubah ke ${raw} WIB.\nSiswa yang scan setelah jam ini otomatis berstatus Terlambat.`,
+        "Pengaturan Disimpan",
+      );
       setShowLateTimeModal(false);
     } catch (err: any) {
-      showAlert('Gagal menyimpan: ' + (err.message || err), 'Gagal');
+      showAlert("Gagal menyimpan: " + (err.message || err), "Gagal");
     } finally {
       setIsSavingLateTime(false);
     }
@@ -748,15 +967,18 @@ export default function PresensiQR() {
   const loadPembinaConfig = async () => {
     try {
       const { data, error } = await supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'pembina_ekstra_list')
+        .from("app_settings")
+        .select("value")
+        .eq("key", "pembina_ekstra_list")
         .single();
 
       if (data && data.value) {
         const parsed = JSON.parse(data.value);
         setPembinaEkstraList(parsed);
-        localStorage.setItem('simpanla_pembina_ekstra_list', JSON.stringify(parsed));
+        localStorage.setItem(
+          "simpanla_pembina_ekstra_list",
+          JSON.stringify(parsed),
+        );
       }
     } catch (e) {
       // Fallback to local storage if setting row not yet created
@@ -764,17 +986,21 @@ export default function PresensiQR() {
   };
 
   // Audio Beep Generator using Web Audio API
-  const playBeep = (type: 'success' | 'warning' | 'error', forcePlay = false) => {
+  const playBeep = (
+    type: "success" | "warning" | "error",
+    forcePlay = false,
+  ) => {
     if (!soundEnabled && !forcePlay) return;
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
-      
-      if (ctx.state === 'suspended') {
+
+      if (ctx.state === "suspended") {
         ctx.resume();
       }
-      
+
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -782,25 +1008,25 @@ export default function PresensiQR() {
 
       const now = ctx.currentTime;
 
-      if (type === 'success') {
+      if (type === "success") {
         // High-pitched cheerful double chime (A5 to E6)
-        osc.type = 'sine';
+        osc.type = "sine";
         osc.frequency.setValueAtTime(880, now);
         osc.frequency.setValueAtTime(1318.51, now + 0.08);
         gain.gain.setValueAtTime(0.5, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
         osc.start(now);
         osc.stop(now + 0.22);
-      } else if (type === 'warning') {
-        osc.type = 'triangle';
+      } else if (type === "warning") {
+        osc.type = "triangle";
         osc.frequency.setValueAtTime(523.25, now);
-        osc.frequency.setValueAtTime(392.00, now + 0.1);
+        osc.frequency.setValueAtTime(392.0, now + 0.1);
         gain.gain.setValueAtTime(0.4, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
         osc.start(now);
         osc.stop(now + 0.28);
       } else {
-        osc.type = 'sawtooth';
+        osc.type = "sawtooth";
         osc.frequency.setValueAtTime(300, now);
         osc.frequency.setValueAtTime(180, now + 0.12);
         gain.gain.setValueAtTime(0.5, now);
@@ -809,16 +1035,19 @@ export default function PresensiQR() {
         osc.stop(now + 0.35);
       }
     } catch (e) {
-      console.warn('Audio feedback error:', e);
+      console.warn("Audio feedback error:", e);
     }
   };
 
   // Save history to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('simpanla_qr_scans_today', JSON.stringify(scanHistory));
+      localStorage.setItem(
+        "simpanla_qr_scans_today",
+        JSON.stringify(scanHistory),
+      );
     } catch (e) {
-      console.error('Failed to persist scan history:', e);
+      console.error("Failed to persist scan history:", e);
     }
   }, [scanHistory]);
 
@@ -830,20 +1059,20 @@ export default function PresensiQR() {
   const fetchStudents = async () => {
     setLoadingStudents(true);
     try {
-      const year = academicYear || '2025/2026';
+      const year = academicYear || "2025/2026";
       let { data, error } = await supabase
-        .from('students')
-        .select('id, name, nisn, nis, kelas, gender, academic_year')
-        .eq('academic_year', year)
-        .order('kelas', { ascending: true })
-        .order('name', { ascending: true });
+        .from("students")
+        .select("id, name, nisn, nis, kelas, gender, academic_year")
+        .eq("academic_year", year)
+        .order("kelas", { ascending: true })
+        .order("name", { ascending: true });
 
       if (error || !data || data.length === 0) {
         const res = await supabase
-          .from('students')
-          .select('id, name, nisn, nis, kelas, gender, academic_year')
-          .order('kelas', { ascending: true })
-          .order('name', { ascending: true });
+          .from("students")
+          .select("id, name, nisn, nis, kelas, gender, academic_year")
+          .order("kelas", { ascending: true })
+          .order("name", { ascending: true });
         if (res.data && res.data.length > 0) {
           data = res.data;
         }
@@ -852,14 +1081,18 @@ export default function PresensiQR() {
       const loadedStudents = data || [];
       setStudents(loadedStudents);
 
-      const uniqueClasses = Array.from(new Set(loadedStudents.map((s: Student) => s.kelas))).filter(Boolean).sort() as string[];
+      const uniqueClasses = Array.from(
+        new Set(loadedStudents.map((s: Student) => s.kelas)),
+      )
+        .filter(Boolean)
+        .sort() as string[];
       setClasses(uniqueClasses);
       if (uniqueClasses.length > 0) {
         setSelectedClass(uniqueClasses[0]);
         setSelectedCardClass(uniqueClasses[0]);
       }
     } catch (err: any) {
-      console.error('Failed to fetch students:', err);
+      console.error("Failed to fetch students:", err);
     } finally {
       setLoadingStudents(false);
     }
@@ -870,29 +1103,29 @@ export default function PresensiQR() {
     setLoadingTeachers(true);
     try {
       const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, nip, role')
-        .order('full_name', { ascending: true });
+        .from("profiles")
+        .select("id, full_name, nip, role")
+        .order("full_name", { ascending: true });
 
       if (!error && data) {
         setTeachers(data as Profile[]);
       }
     } catch (e) {
-      console.error('Error fetching teachers:', e);
+      console.error("Error fetching teachers:", e);
     } finally {
       setLoadingTeachers(false);
     }
   };
 
   useEffect(() => {
-    if (isAdmin && activeTab === 'pembina') {
+    if (isAdmin && activeTab === "pembina") {
       fetchTeachers();
     }
   }, [isAdmin, activeTab]);
 
   // Fetch Rekap Logs for Ekstrakurikuler
   useEffect(() => {
-    if (activeTab === 'rekap' && rekapSelectedEkstra) {
+    if (activeTab === "rekap" && rekapSelectedEkstra) {
       fetchRekapLogs();
     }
   }, [activeTab, rekapSelectedEkstra, rekapMonth, academicYear]);
@@ -902,36 +1135,43 @@ export default function PresensiQR() {
     setLoadingRekap(true);
     try {
       let query = supabase
-        .from('qr_presensi_logs')
-        .select('*')
-        .eq('mode', 'ekstra')
-        .eq('subject', rekapSelectedEkstra);
+        .from("qr_presensi_logs")
+        .select("*")
+        .eq("mode", "ekstra")
+        .eq("subject", rekapSelectedEkstra);
 
-      if (rekapMonth !== 'all') {
-        const [yrStr, moStr] = rekapMonth.split('-');
+      if (rekapMonth !== "all") {
+        const [yrStr, moStr] = rekapMonth.split("-");
         const yr = parseInt(yrStr, 10);
         const mo = parseInt(moStr, 10);
-        
-        const startDate = new Date(Date.UTC(yr, mo - 1, 1, 0, 0, 0)).toISOString();
+
+        const startDate = new Date(
+          Date.UTC(yr, mo - 1, 1, 0, 0, 0),
+        ).toISOString();
         const endDate = new Date(Date.UTC(yr, mo, 1, 0, 0, 0)).toISOString();
-        
-        query = query.gte('scanned_at', startDate).lt('scanned_at', endDate);
+
+        query = query.gte("scanned_at", startDate).lt("scanned_at", endDate);
       }
 
-      const { data, error } = await query.order('scanned_at', { ascending: true });
+      const { data, error } = await query.order("scanned_at", {
+        ascending: true,
+      });
 
       let fetchedLogs: any[] = data || [];
 
       // Merge local scanHistory items from today if matching mode & subject
       const todayLocalMatch = scanHistory.filter(
-        item => item.mode === 'ekstra' && item.subject === rekapSelectedEkstra
+        (item) =>
+          item.mode === "ekstra" && item.subject === rekapSelectedEkstra,
       );
 
-      todayLocalMatch.forEach(localItem => {
+      todayLocalMatch.forEach((localItem) => {
         const ts = localItem.timestamp;
-        if (rekapMonth === 'all' || ts.startsWith(rekapMonth)) {
+        if (rekapMonth === "all" || ts.startsWith(rekapMonth)) {
           const isAlreadyInFetched = fetchedLogs.some(
-            l => l.nisn === localItem.nisn && l.scanned_at.substring(0, 16) === ts.substring(0, 16)
+            (l) =>
+              l.nisn === localItem.nisn &&
+              l.scanned_at.substring(0, 16) === ts.substring(0, 16),
           );
           if (!isAlreadyInFetched) {
             fetchedLogs.push({
@@ -940,7 +1180,7 @@ export default function PresensiQR() {
               nisn: localItem.nisn,
               student_name: localItem.studentName,
               kelas: localItem.kelas,
-              mode: 'ekstra',
+              mode: "ekstra",
               subject: localItem.subject,
               status: localItem.status,
               scanned_at: localItem.timestamp,
@@ -951,7 +1191,7 @@ export default function PresensiQR() {
 
       setRekapLogs(fetchedLogs);
     } catch (err) {
-      console.error('Failed to fetch rekap logs:', err);
+      console.error("Failed to fetch rekap logs:", err);
     } finally {
       setLoadingRekap(false);
     }
@@ -959,29 +1199,34 @@ export default function PresensiQR() {
 
   // Process & Aggregate Rekap Summary per Student
   const getRekapSummary = () => {
-    const summaryMap = new Map<string, {
-      nisn: string;
-      name: string;
-      kelas: string;
-      totalHadir: number;
-      totalTerlambat: number;
-      totalKehadiran: number;
-      datesSet: Set<string>;
-      datesFormattedList: string[];
-      lastScannedAt: string;
-    }>();
+    const summaryMap = new Map<
+      string,
+      {
+        nisn: string;
+        name: string;
+        kelas: string;
+        totalHadir: number;
+        totalTerlambat: number;
+        totalKehadiran: number;
+        datesSet: Set<string>;
+        datesFormattedList: string[];
+        lastScannedAt: string;
+      }
+    >();
 
     // Process logs
-    rekapLogs.forEach(log => {
-      const key = (log.nisn || log.student_name || '').trim();
+    rekapLogs.forEach((log) => {
+      const key = (log.nisn || log.student_name || "").trim();
       if (!key) return;
 
       if (!summaryMap.has(key)) {
-        const std = students.find(s => s.nisn === log.nisn || s.name === log.student_name);
+        const std = students.find(
+          (s) => s.nisn === log.nisn || s.name === log.student_name,
+        );
         summaryMap.set(key, {
-          nisn: log.nisn || std?.nisn || std?.nis || '-',
-          name: log.student_name || std?.name || 'Siswa',
-          kelas: log.kelas || std?.kelas || '-',
+          nisn: log.nisn || std?.nisn || std?.nis || "-",
+          name: log.student_name || std?.name || "Siswa",
+          kelas: log.kelas || std?.kelas || "-",
           totalHadir: 0,
           totalTerlambat: 0,
           totalKehadiran: 0,
@@ -992,7 +1237,7 @@ export default function PresensiQR() {
       }
 
       const item = summaryMap.get(key)!;
-      if (log.status === 'Terlambat') {
+      if (log.status === "Terlambat") {
         item.totalTerlambat += 1;
       } else {
         item.totalHadir += 1;
@@ -1000,9 +1245,16 @@ export default function PresensiQR() {
       item.totalKehadiran += 1;
 
       const d = new Date(log.scanned_at);
-      const dateOnly = d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const timeOnly = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-      
+      const dateOnly = d.toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+      const timeOnly = d.toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
       const dayStr = d.toISOString().substring(0, 10);
       item.datesSet.add(dayStr);
       item.datesFormattedList.push(`${dateOnly} (${timeOnly})`);
@@ -1016,11 +1268,11 @@ export default function PresensiQR() {
 
     // If user wants all students (including 0 attendance)
     if (!onlyParticipated) {
-      students.forEach(std => {
-        const key = (std.nisn || std.name || '').trim();
+      students.forEach((std) => {
+        const key = (std.nisn || std.name || "").trim();
         if (key && !summaryMap.has(key)) {
           resultList.push({
-            nisn: std.nisn || std.nis || '-',
+            nisn: std.nisn || std.nis || "-",
             name: std.name,
             kelas: std.kelas,
             totalHadir: 0,
@@ -1028,7 +1280,7 @@ export default function PresensiQR() {
             totalKehadiran: 0,
             datesSet: new Set<string>(),
             datesFormattedList: [],
-            lastScannedAt: '-',
+            lastScannedAt: "-",
           });
         }
       });
@@ -1038,16 +1290,16 @@ export default function PresensiQR() {
     if (rekapSearch.trim()) {
       const q = rekapSearch.toLowerCase().trim();
       resultList = resultList.filter(
-        item =>
+        (item) =>
           item.name.toLowerCase().includes(q) ||
           item.nisn.toLowerCase().includes(q) ||
-          item.kelas.toLowerCase().includes(q)
+          item.kelas.toLowerCase().includes(q),
       );
     }
 
     // Apply Class Filter
     if (rekapClassFilter) {
-      resultList = resultList.filter(item => item.kelas === rekapClassFilter);
+      resultList = resultList.filter((item) => item.kelas === rekapClassFilter);
     }
 
     // Sort by Kelas then Name
@@ -1061,11 +1313,21 @@ export default function PresensiQR() {
 
   // Helper for Month Label
   const getRekapMonthLabel = (mVal: string) => {
-    if (mVal === 'all') return 'Semua Bulan (All-Time / Total Kehadiran)';
-    const [yr, mo] = mVal.split('-');
+    if (mVal === "all") return "Semua Bulan (All-Time / Total Kehadiran)";
+    const [yr, mo] = mVal.split("-");
     const monthNames = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      "Januari",
+      "Februari",
+      "Maret",
+      "April",
+      "Mei",
+      "Juni",
+      "Juli",
+      "Agustus",
+      "September",
+      "Oktober",
+      "November",
+      "Desember",
     ];
     const idx = parseInt(mo, 10) - 1;
     return `${monthNames[idx] || mo} ${yr}`;
@@ -1075,14 +1337,23 @@ export default function PresensiQR() {
   const exportRekapCSV = () => {
     const summary = getRekapSummary();
     if (summary.length === 0) {
-      showAlert('Tidak ada data rekap untuk diexport.', 'Perhatian');
+      showAlert("Tidak ada data rekap untuk diexport.", "Perhatian");
       return;
     }
 
-    const periodText = rekapMonth === 'all' ? 'Semua_Periode' : rekapMonth;
-    const fileName = `Rekap_Presensi_${rekapSelectedEkstra.replace(/\s+/g, '_')}_${periodText}.csv`;
+    const periodText = rekapMonth === "all" ? "Semua_Periode" : rekapMonth;
+    const fileName = `Rekap_Presensi_${rekapSelectedEkstra.replace(/\s+/g, "_")}_${periodText}.csv`;
 
-    const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Total Kehadiran', 'Tepat Waktu', 'Terlambat', 'Detail Tanggal Scan'];
+    const headers = [
+      "No",
+      "NISN",
+      "Nama Siswa",
+      "Kelas",
+      "Total Kehadiran",
+      "Tepat Waktu",
+      "Terlambat",
+      "Detail Tanggal Scan",
+    ];
     const rows = summary.map((item, idx) => [
       idx + 1,
       `"${item.nisn}"`,
@@ -1091,15 +1362,17 @@ export default function PresensiQR() {
       item.totalKehadiran,
       item.totalHadir,
       item.totalTerlambat,
-      `"${item.datesFormattedList.join(', ')}"`
+      `"${item.datesFormattedList.join(", ")}"`,
     ]);
 
-    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const csvContent =
+      "\uFEFF" +
+      [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', fileName);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", fileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1110,22 +1383,30 @@ export default function PresensiQR() {
     setSavingPembina(true);
     try {
       setPembinaEkstraList(newList);
-      localStorage.setItem('simpanla_pembina_ekstra_list', JSON.stringify(newList));
+      localStorage.setItem(
+        "simpanla_pembina_ekstra_list",
+        JSON.stringify(newList),
+      );
 
       // Upsert to app_settings table in Supabase
-      const { error } = await supabase
-        .from('app_settings')
-        .upsert({
-          key: 'pembina_ekstra_list',
+      const { error } = await supabase.from("app_settings").upsert(
+        {
+          key: "pembina_ekstra_list",
           value: JSON.stringify(newList),
-          description: 'Daftar Guru Pembina Ekstrakurikuler yang diizinkan menscan QR Presensi'
-        }, { onConflict: 'key' });
+          description:
+            "Daftar Guru Pembina Ekstrakurikuler yang diizinkan menscan QR Presensi",
+        },
+        { onConflict: "key" },
+      );
 
       if (error) throw error;
-      showAlert('Daftar Pembina Ekstrakurikuler berhasil diperbarui & disimpan!', 'Berhasil');
+      showAlert(
+        "Daftar Pembina Ekstrakurikuler berhasil diperbarui & disimpan!",
+        "Berhasil",
+      );
     } catch (err: any) {
-      console.error('Failed to save pembina config:', err);
-      showAlert('Pengaturan tersimpan secara lokal di browser.');
+      console.error("Failed to save pembina config:", err);
+      showAlert("Pengaturan tersimpan secara lokal di browser.");
     } finally {
       setSavingPembina(false);
     }
@@ -1133,7 +1414,9 @@ export default function PresensiQR() {
 
   // Toggle teacher as Pembina Ekstra
   const handleTogglePembinaTeacher = (teacher: Profile) => {
-    const existingIndex = pembinaEkstraList.findIndex(p => p.nip === teacher.nip || p.nama === teacher.full_name);
+    const existingIndex = pembinaEkstraList.findIndex(
+      (p) => p.nip === teacher.nip || p.nama === teacher.full_name,
+    );
     let newList = [...pembinaEkstraList];
 
     if (existingIndex !== -1) {
@@ -1142,9 +1425,9 @@ export default function PresensiQR() {
     } else {
       // Add as Pembina
       newList.push({
-        nip: teacher.nip || '',
-        nama: teacher.full_name || '',
-        ekstraList: ['PRAMUKA'],
+        nip: teacher.nip || "",
+        nama: teacher.full_name || "",
+        ekstraList: ["PRAMUKA"],
         canScanHarian: true,
         canScanDhuha: true,
       });
@@ -1155,15 +1438,15 @@ export default function PresensiQR() {
 
   // Toggle assigned Ekstra for a Pembina
   const handleToggleEkstraForPembina = (nip: string, ekstraName: string) => {
-    const newList = pembinaEkstraList.map(item => {
+    const newList = pembinaEkstraList.map((item) => {
       if (item.nip === nip) {
         let currentList = item.ekstraList || [];
         if (currentList.includes(ekstraName)) {
-          currentList = currentList.filter(e => e !== ekstraName);
+          currentList = currentList.filter((e) => e !== ekstraName);
         } else {
           currentList = [...currentList, ekstraName];
         }
-        if (currentList.length === 0) currentList = ['PRAMUKA'];
+        if (currentList.length === 0) currentList = ["PRAMUKA"];
         return { ...item, ekstraList: currentList };
       }
       return item;
@@ -1195,7 +1478,7 @@ export default function PresensiQR() {
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
           // Perlebar area scan (94% lebar dan 90% tinggi) agar bidang bidik luas dan border samping sangat tipis
           const boxWidth = Math.floor(viewfinderWidth * 0.94);
-          const boxHeight = Math.floor(viewfinderHeight * 0.90);
+          const boxHeight = Math.floor(viewfinderHeight * 0.9);
           return {
             width: Math.max(260, boxWidth),
             height: Math.max(220, boxHeight),
@@ -1205,25 +1488,33 @@ export default function PresensiQR() {
 
       try {
         await html5QrCode.start(
-          { facingMode: 'environment' },
+          { facingMode: "environment" },
           config,
           (decodedText) => {
             handleScanSuccess(decodedText);
           },
-          () => {}
+          () => {},
         );
       } catch (firstErr) {
-        console.warn('Facing mode environment failed, trying available camera devices:', firstErr);
+        console.warn(
+          "Facing mode environment failed, trying available camera devices:",
+          firstErr,
+        );
         const devices = await Html5Qrcode.getCameras();
         if (devices && devices.length > 0) {
-          const backCam = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear')) || devices[devices.length - 1];
+          const backCam =
+            devices.find(
+              (d) =>
+                d.label.toLowerCase().includes("back") ||
+                d.label.toLowerCase().includes("rear"),
+            ) || devices[devices.length - 1];
           await html5QrCode.start(
             backCam.id,
             config,
             (decodedText) => {
               handleScanSuccess(decodedText);
             },
-            () => {}
+            () => {},
           );
         } else {
           throw firstErr;
@@ -1232,8 +1523,10 @@ export default function PresensiQR() {
 
       setIsScanning(true);
     } catch (err: any) {
-      console.error('Camera start error:', err);
-      setCameraError('Gagal mengakses kamera. Pastikan izin kamera telah diberikan atau gunakan opsi Input Manual / Barcode Gun.');
+      console.error("Camera start error:", err);
+      setCameraError(
+        "Gagal mengakses kamera. Pastikan izin kamera telah diberikan atau gunakan opsi Input Manual / Barcode Gun.",
+      );
       setIsScanning(false);
     }
   };
@@ -1247,7 +1540,7 @@ export default function PresensiQR() {
         }
         html5QrCodeRef.current.clear();
       } catch (e) {
-        console.warn('Error stopping camera:', e);
+        console.warn("Error stopping camera:", e);
       }
       html5QrCodeRef.current = null;
     }
@@ -1255,7 +1548,10 @@ export default function PresensiQR() {
   };
 
   // Restart Camera Automatically on Activity Selection / Mode Switch
-  const restartCameraForActivity = async (targetMode: PresensiMode, targetEkstra?: string) => {
+  const restartCameraForActivity = async (
+    targetMode: PresensiMode,
+    targetEkstra?: string,
+  ) => {
     // 1. Synchronously update ref values so any scanner callback or input immediately uses the new target mode
     presensiModeRef.current = targetMode;
     if (targetEkstra !== undefined) {
@@ -1266,7 +1562,8 @@ export default function PresensiQR() {
       setSelectedEkstra(targetEkstra);
     }
 
-    const activeEkstra = targetEkstra !== undefined ? targetEkstra : selectedEkstraRef.current;
+    const activeEkstra =
+      targetEkstra !== undefined ? targetEkstra : selectedEkstraRef.current;
     const activityLabel = getModeLabel(targetMode, activeEkstra);
     setIsRestartingCamera(true);
     setModeRestartNotice(`Mengalihkan kamera ke Presensi ${activityLabel}...`);
@@ -1276,14 +1573,14 @@ export default function PresensiQR() {
       await stopCamera();
 
       // 3. Beri jeda 350ms agar hardware kamera dan media stream browser ter-reset sempurna
-      await new Promise(resolve => setTimeout(resolve, 350));
+      await new Promise((resolve) => setTimeout(resolve, 350));
 
       // 4. Hidupkan kembali kamera secara otomatis dan siap scan
       if (canScan) {
         await startCamera();
         setModeRestartNotice(`✓ Kamera siap memindai: ${activityLabel}`);
         if (soundEnabled) {
-          playBeep('success', true);
+          playBeep("success", true);
         }
         setTimeout(() => {
           setModeRestartNotice(null);
@@ -1294,7 +1591,7 @@ export default function PresensiQR() {
         setModeRestartNotice(null);
       }
     } catch (err) {
-      console.error('Error restarting camera for activity:', err);
+      console.error("Error restarting camera for activity:", err);
       setIsRestartingCamera(false);
       setModeRestartNotice(null);
     }
@@ -1302,8 +1599,11 @@ export default function PresensiQR() {
 
   // Handler for Activity Mode Selection (Scan Masuk / Dhuha / Dzuhur / Ekstra)
   const handleSelectMode = async (newMode: PresensiMode) => {
-    if (newMode === 'ekstra' && allowedEkstraForUser.length === 0 && !isAdmin) {
-      showAlert('Pilihan Ekstrakurikuler hanya tersedia untuk Guru yang telah ditunjuk sebagai Pembina Ekstrakurikuler di Dashboard Admin.', 'Akses Ekstra Dibatasi');
+    if (newMode === "ekstra" && allowedEkstraForUser.length === 0 && !isAdmin) {
+      showAlert(
+        "Pilihan Ekstrakurikuler hanya tersedia untuk Guru yang telah ditunjuk sebagai Pembina Ekstrakurikuler di Dashboard Admin.",
+        "Akses Ekstra Dibatasi",
+      );
       return;
     }
 
@@ -1312,7 +1612,7 @@ export default function PresensiQR() {
 
   // Handler for specific Ekstrakurikuler Selection (PRAMUKA, PASKIB, PMR, dll)
   const handleSelectEkstra = async (ekstraName: string) => {
-    await restartCameraForActivity('ekstra', ekstraName);
+    await restartCameraForActivity("ekstra", ekstraName);
   };
 
   useEffect(() => {
@@ -1340,86 +1640,122 @@ export default function PresensiQR() {
     const currentMode = presensiModeRef.current;
     const currentEkstra = selectedEkstraRef.current;
 
-    if (currentMode === 'ekstra' && allowedEkstraForUser.length === 0 && !isAdmin) {
-      playBeep('error');
-      showAlert('Pilihan Ekstrakurikuler hanya tersedia untuk Guru yang telah ditunjuk sebagai Pembina Ekstrakurikuler di Dashboard Admin.', 'Akses Ekstra Dibatasi');
+    if (
+      currentMode === "ekstra" &&
+      allowedEkstraForUser.length === 0 &&
+      !isAdmin
+    ) {
+      playBeep("error");
+      showAlert(
+        "Pilihan Ekstrakurikuler hanya tersedia untuk Guru yang telah ditunjuk sebagai Pembina Ekstrakurikuler di Dashboard Admin.",
+        "Akses Ekstra Dibatasi",
+      );
       return;
     }
 
-    let cleanCode = rawValue.replace(/[\r\n\t]/g, '').trim();
-    if (cleanCode.startsWith('NISN:')) {
-      cleanCode = cleanCode.replace(/^NISN:\s*/i, '').trim();
-    } else if (cleanCode.startsWith('NIS:')) {
-      cleanCode = cleanCode.replace(/^NIS:\s*/i, '').trim();
-    } else if (cleanCode.includes('{')) {
+    let cleanCode = rawValue.replace(/[\r\n\t]/g, "").trim();
+    if (cleanCode.startsWith("NISN:")) {
+      cleanCode = cleanCode.replace(/^NISN:\s*/i, "").trim();
+    } else if (cleanCode.startsWith("NIS:")) {
+      cleanCode = cleanCode.replace(/^NIS:\s*/i, "").trim();
+    } else if (cleanCode.includes("{")) {
       try {
         const obj = JSON.parse(cleanCode);
         cleanCode = obj.nisn || obj.nis || cleanCode;
       } catch (e) {}
     }
 
-    const cleanDigits = cleanCode.replace(/\D/g, '');
+    const cleanDigits = cleanCode.replace(/\D/g, "");
 
     // 1. Match from in-memory students list
     let matchedStudent = students.find(
-      s => (s.nisn && s.nisn.trim() === cleanCode) || 
-           (s.nis && s.nis.trim() === cleanCode) ||
-           (cleanDigits.length >= 4 && s.nisn && s.nisn.replace(/\D/g, '') === cleanDigits)
+      (s) =>
+        (s.nisn && s.nisn.trim() === cleanCode) ||
+        (s.nis && s.nis.trim() === cleanCode) ||
+        (cleanDigits.length >= 4 &&
+          s.nisn &&
+          s.nisn.replace(/\D/g, "") === cleanDigits),
     );
 
     // 2. Direct online DB lookup fallback if not found in local cache
     if (!matchedStudent) {
       try {
-        let query = supabase.from('students').select('*');
+        let query = supabase.from("students").select("*");
         if (cleanDigits.length >= 4) {
-          query = query.or(`nisn.eq.${cleanCode},nis.eq.${cleanCode},nisn.ilike.%${cleanDigits}%`);
+          query = query.or(
+            `nisn.eq.${cleanCode},nis.eq.${cleanCode},nisn.ilike.%${cleanDigits}%`,
+          );
         } else {
           query = query.or(`nisn.eq.${cleanCode},nis.eq.${cleanCode}`);
         }
         const { data: dbRes } = await query.limit(1);
         if (dbRes && dbRes.length > 0) {
           matchedStudent = dbRes[0];
-          setStudents(prev => [matchedStudent!, ...prev.filter(s => s.id !== matchedStudent!.id)]);
+          setStudents((prev) => [
+            matchedStudent!,
+            ...prev.filter((s) => s.id !== matchedStudent!.id),
+          ]);
         }
       } catch (errDb) {
-        console.warn('Direct online student lookup warning:', errDb);
+        console.warn("Direct online student lookup warning:", errDb);
       }
     }
 
     const now = new Date();
-    const timeString = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const timeString = now.toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
     const fullTimestamp = now.toISOString();
 
     const currentHour = now.getHours();
     const currentMin = now.getMinutes();
-    const [limitHour = 7, limitMin = 15] = (lateTimeLimitRef.current || '07:15').split(':').map(Number);
-    const isLate = currentMode === 'harian' && (currentHour > limitHour || (currentHour === limitHour && currentMin > limitMin));
-    const status: 'Hadir' | 'Terlambat' = isLate ? 'Terlambat' : 'Hadir';
+    const [limitHour = 7, limitMin = 15] = (lateTimeLimitRef.current || "07:15")
+      .split(":")
+      .map(Number);
+    const isLate =
+      currentMode === "harian" &&
+      (currentHour > limitHour ||
+        (currentHour === limitHour && currentMin > limitMin));
+    const status: "Hadir" | "Terlambat" = isLate ? "Terlambat" : "Hadir";
 
     if (!matchedStudent) {
-      playBeep('error');
-      showAlert(`NISN / Kartu "${cleanCode}" tidak ditemukan di database siswa.`, 'Siswa Tidak Ditemukan');
+      playBeep("error");
+      showAlert(
+        `NISN / Kartu "${cleanCode}" tidak ditemukan di database siswa.`,
+        "Siswa Tidak Ditemukan",
+      );
       return;
     }
 
     // Check duplicate scan
-    const activeSubject = currentMode === 'ekstra' ? currentEkstra : undefined;
+    const activeSubject = currentMode === "ekstra" ? currentEkstra : undefined;
 
     const existingIndex = scanHistory.findIndex(
-      item => (item.nisn === matchedStudent!.nisn || (cleanDigits.length >= 4 && item.nisn.replace(/\D/g, '') === cleanDigits)) && 
-              item.mode === currentMode && 
-              (currentMode === 'ekstra' ? item.subject === currentEkstra : true)
+      (item) =>
+        (item.nisn === matchedStudent!.nisn ||
+          (cleanDigits.length >= 4 &&
+            item.nisn.replace(/\D/g, "") === cleanDigits)) &&
+        item.mode === currentMode &&
+        (currentMode === "ekstra" ? item.subject === currentEkstra : true),
     );
 
     const isDuplicate = existingIndex !== -1;
 
     if (isDuplicate) {
-      playBeep('warning');
+      playBeep("warning");
       const dupItem = scanHistory[existingIndex];
       setLastScannedStudent({
         student: matchedStudent,
         status: dupItem.status,
-        recordTime: dupItem.timestamp.split('T')[1]?.substring(0, 8) || timeString,
+        recordTime: dupItem.timestamp
+          ? new Date(dupItem.timestamp).toLocaleTimeString("id-ID", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })
+          : timeString,
         isDuplicate: true,
         mode: dupItem.mode,
         subject: dupItem.subject,
@@ -1428,7 +1764,7 @@ export default function PresensiQR() {
     }
 
     // Record new scan
-    playBeep('success');
+    playBeep("success");
 
     const newRecord: QRScanRecord = {
       id: `${Date.now()}-${matchedStudent.id || cleanDigits}`,
@@ -1441,7 +1777,7 @@ export default function PresensiQR() {
       subject: activeSubject,
     };
 
-    setScanHistory(prev => [newRecord, ...prev]);
+    setScanHistory((prev) => [newRecord, ...prev]);
     setLastScannedStudent({
       student: matchedStudent,
       status: status,
@@ -1455,65 +1791,83 @@ export default function PresensiQR() {
     try {
       if (broadcastChannelRef.current) {
         broadcastChannelRef.current.send({
-          type: 'broadcast',
-          event: 'NEW_SCAN',
+          type: "broadcast",
+          event: "NEW_SCAN",
           payload: newRecord,
         });
       }
     } catch (bcErr) {
-      console.warn('Broadcast send error:', bcErr);
+      console.warn("Broadcast send error:", bcErr);
     }
 
-    syncToSupabase(newRecord, matchedStudent, status, currentMode, activeSubject);
+    syncToSupabase(
+      newRecord,
+      matchedStudent,
+      status,
+      currentMode,
+      activeSubject,
+    );
   };
 
   // Sync to database (Optimized Single Write)
   const syncToSupabase = async (
     record: QRScanRecord,
     student: Student,
-    status: 'Hadir' | 'Terlambat',
+    status: "Hadir" | "Terlambat",
     mode: string,
-    subject?: string
+    subject?: string,
   ) => {
     const nowIso = record.timestamp || new Date().toISOString();
     const studentUuid = isValidUUID(student.id) ? student.id : null;
 
     // 1. Direct Insert into qr_presensi_logs table
     try {
-      const { data, error } = await supabase.from('qr_presensi_logs').insert([{
-        student_id: studentUuid,
-        student_name: student.name,
-        nisn: student.nisn || student.nis || record.nisn,
-        kelas: student.kelas,
-        mode: mode,
-        status: status,
-        subject: subject || null,
-        scanned_at: nowIso,
-        academic_year: academicYear || '2025/2026'
-      }]).select('id');
+      const { data, error } = await supabase
+        .from("qr_presensi_logs")
+        .insert([
+          {
+            student_id: studentUuid,
+            student_name: student.name,
+            nisn: student.nisn || student.nis || record.nisn,
+            kelas: student.kelas,
+            mode: mode,
+            status: status,
+            subject: subject || null,
+            scanned_at: nowIso,
+            academic_year: academicYear || "2025/2026",
+          },
+        ])
+        .select("id");
 
       if (!error && data && data[0]) {
-        setScanHistory(prev => prev.map(item => 
-          (item.id === record.id || (item.nisn === record.nisn && item.mode === mode && item.timestamp.substring(0, 16) === nowIso.substring(0, 16)))
-            ? { ...item, id: data[0].id }
-            : item
-        ));
+        setScanHistory((prev) =>
+          prev.map((item) =>
+            item.id === record.id ||
+            (item.nisn === record.nisn &&
+              item.mode === mode &&
+              item.timestamp.substring(0, 16) === nowIso.substring(0, 16))
+              ? { ...item, id: data[0].id }
+              : item,
+          ),
+        );
       } else if (error) {
         // Fallback to journal_notes if qr_presensi_logs encounters an error
-        console.warn('qr_presensi_logs insert fallback:', error.message);
-        await supabase.from('journal_notes').insert([{
-          student_id: studentUuid,
-          student_name: student.name,
-          type: 'kedisiplinan',
-          category: 'qr_presensi_log',
-          note: JSON.stringify(record),
-          follow_up: mode,
-          academic_year: academicYear || '2025/2026',
-          created_at: nowIso,
-        }]);
+        console.warn("qr_presensi_logs insert fallback:", error.message);
+        await supabase.from("journal_notes").insert([
+          {
+            student_id: studentUuid,
+            student_name: student.name,
+            type: "kedisiplinan",
+            category: "qr_presensi_log",
+            note: JSON.stringify(record),
+            follow_up: mode,
+            academic_year: academicYear || "2025/2026",
+            created_at: nowIso,
+          },
+        ]);
       }
     } catch (e) {
-      console.warn('syncToSupabase error:', e);
+      console.warn("syncToSupabase error:", e);
     }
   };
 
@@ -1522,7 +1876,7 @@ export default function PresensiQR() {
     e.preventDefault();
     if (!manualInput.trim()) return;
     handleScanSuccess(manualInput.trim());
-    setManualInput('');
+    setManualInput("");
     if (manualInputRef.current) {
       manualInputRef.current.focus();
     }
@@ -1530,18 +1884,22 @@ export default function PresensiQR() {
 
   // Delete item from history
   const handleDeleteHistory = async (id: string) => {
-    const targetItem = scanHistory.find(item => item.id === id) || databaseLogs.find(item => item.id === id);
-    const confirmed = await showConfirm('Hapus catatan presensi ini dari database dan daftar scan?');
+    const targetItem =
+      scanHistory.find((item) => item.id === id) ||
+      databaseLogs.find((item) => item.id === id);
+    const confirmed = await showConfirm(
+      "Hapus catatan presensi ini dari database dan daftar scan?",
+    );
     if (confirmed) {
-      setScanHistory(prev => prev.filter(item => item.id !== id));
-      setDatabaseLogs(prev => prev.filter(item => item.id !== id));
-      
+      setScanHistory((prev) => prev.filter((item) => item.id !== id));
+      setDatabaseLogs((prev) => prev.filter((item) => item.id !== id));
+
       // Broadcast deletion
       try {
         if (broadcastChannelRef.current) {
           broadcastChannelRef.current.send({
-            type: 'broadcast',
-            event: 'DELETE_SCAN',
+            type: "broadcast",
+            event: "DELETE_SCAN",
             payload: { id },
           });
         }
@@ -1549,36 +1907,42 @@ export default function PresensiQR() {
 
       // Delete from qr_presensi_logs
       try {
-        await supabase.from('qr_presensi_logs').delete().eq('id', id);
+        await supabase.from("qr_presensi_logs").delete().eq("id", id);
       } catch (err) {}
 
       // Delete from journal_notes backup
       try {
         if (targetItem) {
-          await supabase.from('journal_notes')
+          await supabase
+            .from("journal_notes")
             .delete()
-            .eq('category', 'qr_presensi_log')
-            .or(`student_name.eq.${targetItem.studentName},note.ilike.%${targetItem.nisn}%`);
+            .eq("category", "qr_presensi_log")
+            .or(
+              `student_name.eq.${targetItem.studentName},note.ilike.%${targetItem.nisn}%`,
+            );
         }
       } catch (jnErr) {}
 
       // Update app_settings backup
       try {
         const { data: existingData } = await supabase
-          .from('app_settings')
-          .select('value')
-          .eq('key', 'today_qr_scans_sync')
+          .from("app_settings")
+          .select("value")
+          .eq("key", "today_qr_scans_sync")
           .single();
 
         if (existingData && existingData.value) {
           const parsed = JSON.parse(existingData.value);
           if (Array.isArray(parsed)) {
             const filtered = parsed.filter((item: any) => item.id !== id);
-            await supabase.from('app_settings').upsert({
-              key: 'today_qr_scans_sync',
-              value: JSON.stringify(filtered),
-              description: 'Realtime backup of today scan presensi records'
-            }, { onConflict: 'key' });
+            await supabase.from("app_settings").upsert(
+              {
+                key: "today_qr_scans_sync",
+                value: JSON.stringify(filtered),
+                description: "Realtime backup of today scan presensi records",
+              },
+              { onConflict: "key" },
+            );
           }
         }
       } catch (e) {}
@@ -1587,19 +1951,24 @@ export default function PresensiQR() {
 
   // Toggle status inline (Hadir <-> Terlambat)
   const handleToggleStatus = async (record: QRScanRecord) => {
-    const newStatus: 'Hadir' | 'Terlambat' = record.status === 'Hadir' ? 'Terlambat' : 'Hadir';
+    const newStatus: "Hadir" | "Terlambat" =
+      record.status === "Hadir" ? "Terlambat" : "Hadir";
     const updated: QRScanRecord = { ...record, status: newStatus };
 
     // Optimistic state updates
-    setDatabaseLogs(prev => prev.map(item => item.id === record.id ? updated : item));
-    setScanHistory(prev => prev.map(item => item.id === record.id ? updated : item));
+    setDatabaseLogs((prev) =>
+      prev.map((item) => (item.id === record.id ? updated : item)),
+    );
+    setScanHistory((prev) =>
+      prev.map((item) => (item.id === record.id ? updated : item)),
+    );
 
     // Broadcast update
     try {
       if (broadcastChannelRef.current) {
         broadcastChannelRef.current.send({
-          type: 'broadcast',
-          event: 'UPDATE_SCAN',
+          type: "broadcast",
+          event: "UPDATE_SCAN",
           payload: updated,
         });
       }
@@ -1607,14 +1976,23 @@ export default function PresensiQR() {
 
     // Update in qr_presensi_logs
     try {
-      await supabase.from('qr_presensi_logs').update({ status: newStatus }).eq('id', record.id);
+      await supabase
+        .from("qr_presensi_logs")
+        .update({ status: newStatus })
+        .eq("id", record.id);
     } catch (e) {}
 
     // Update in journal_notes
     try {
-      await supabase.from('journal_notes').update({
-        note: JSON.stringify(updated)
-      }).eq('category', 'qr_presensi_log').or(`student_name.eq.${record.studentName},note.ilike.%${record.nisn}%`);
+      await supabase
+        .from("journal_notes")
+        .update({
+          note: JSON.stringify(updated),
+        })
+        .eq("category", "qr_presensi_log")
+        .or(
+          `student_name.eq.${record.studentName},note.ilike.%${record.nisn}%`,
+        );
     } catch (e) {}
   };
 
@@ -1622,17 +2000,19 @@ export default function PresensiQR() {
   const handleSaveManualAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudentForManual) {
-      showAlert('Silakan pilih data siswa terlebih dahulu.');
+      showAlert("Silakan pilih data siswa terlebih dahulu.");
       return;
     }
 
     setSavingManual(true);
     try {
       const timestamp = `${manualAddDate}T${manualAddTime}:00.000Z`;
-      const activeSubject = manualAddMode === 'ekstra' ? manualAddEkstra : undefined;
+      const activeSubject =
+        manualAddMode === "ekstra" ? manualAddEkstra : undefined;
       const newRecord: QRScanRecord = {
         id: `${Date.now()}-${selectedStudentForManual.id || selectedStudentForManual.nisn}`,
-        nisn: selectedStudentForManual.nisn || selectedStudentForManual.nis || '-',
+        nisn:
+          selectedStudentForManual.nisn || selectedStudentForManual.nis || "-",
         studentName: selectedStudentForManual.name,
         kelas: selectedStudentForManual.kelas,
         timestamp: timestamp,
@@ -1646,29 +2026,41 @@ export default function PresensiQR() {
       try {
         if (broadcastChannelRef.current) {
           broadcastChannelRef.current.send({
-            type: 'broadcast',
-            event: 'NEW_SCAN',
+            type: "broadcast",
+            event: "NEW_SCAN",
             payload: newRecord,
           });
         }
       } catch (e) {}
 
       // Insert to states
-      setDatabaseLogs(prev => [newRecord, ...prev]);
+      setDatabaseLogs((prev) => [newRecord, ...prev]);
       if (isDateToday(timestamp)) {
-        setScanHistory(prev => [newRecord, ...prev]);
+        setScanHistory((prev) => [newRecord, ...prev]);
       }
 
       // Sync to DB
-      await syncToSupabase(newRecord, selectedStudentForManual, manualAddStatus, manualAddMode, activeSubject);
+      await syncToSupabase(
+        newRecord,
+        selectedStudentForManual,
+        manualAddStatus,
+        manualAddMode,
+        activeSubject,
+      );
 
       setShowManualAddModal(false);
       setSelectedStudentForManual(null);
-      setManualAddStudentSearch('');
-      setManualAddNotes('');
-      showAlert(`Presensi siswa "${selectedStudentForManual.name}" berhasil disimpan ke database!`, 'Berhasil');
+      setManualAddStudentSearch("");
+      setManualAddNotes("");
+      showAlert(
+        `Presensi siswa "${selectedStudentForManual.name}" berhasil disimpan ke database!`,
+        "Berhasil",
+      );
     } catch (err: any) {
-      showAlert(`Gagal menyimpan presensi manual: ${err.message || err}`, 'Gagal');
+      showAlert(
+        `Gagal menyimpan presensi manual: ${err.message || err}`,
+        "Gagal",
+      );
     } finally {
       setSavingManual(false);
     }
@@ -1681,31 +2073,38 @@ export default function PresensiQR() {
     setSavingEdit(true);
     try {
       const updated = { ...editingRecord };
-      setDatabaseLogs(prev => prev.map(item => item.id === updated.id ? updated : item));
-      setScanHistory(prev => prev.map(item => item.id === updated.id ? updated : item));
+      setDatabaseLogs((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setScanHistory((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item)),
+      );
 
       try {
         if (broadcastChannelRef.current) {
           broadcastChannelRef.current.send({
-            type: 'broadcast',
-            event: 'UPDATE_SCAN',
+            type: "broadcast",
+            event: "UPDATE_SCAN",
             payload: updated,
           });
         }
       } catch (e) {}
 
       // Update DB
-      await supabase.from('qr_presensi_logs').update({
-        status: updated.status,
-        mode: updated.mode,
-        subject: updated.subject || null,
-        notes: updated.notes || null,
-      }).eq('id', updated.id);
+      await supabase
+        .from("qr_presensi_logs")
+        .update({
+          status: updated.status,
+          mode: updated.mode,
+          subject: updated.subject || null,
+          notes: updated.notes || null,
+        })
+        .eq("id", updated.id);
 
       setEditingRecord(null);
-      showAlert('Catatan presensi berhasil diperbarui.', 'Berhasil');
+      showAlert("Catatan presensi berhasil diperbarui.", "Berhasil");
     } catch (err: any) {
-      showAlert(`Gagal memperbarui: ${err.message || err}`, 'Gagal');
+      showAlert(`Gagal memperbarui: ${err.message || err}`, "Gagal");
     } finally {
       setSavingEdit(false);
     }
@@ -1713,49 +2112,81 @@ export default function PresensiQR() {
 
   // Clear all history for today
   const handleClearHistory = async () => {
-    const confirmed = await showConfirm('Apakah Anda yakin ingin menghapus SELURUH riwayat scan presensi hari ini? Tindakan ini akan menghapus log hari ini baik di server maupun perangkat ini.');
+    const confirmed = await showConfirm(
+      "Apakah Anda yakin ingin menghapus SELURUH riwayat scan presensi hari ini? Tindakan ini akan menghapus log hari ini baik di server maupun perangkat ini.",
+    );
     if (confirmed) {
       setScanHistory([]);
-      setDatabaseLogs(prev => prev.filter(item => !isDateToday(item.timestamp)));
+      setDatabaseLogs((prev) =>
+        prev.filter((item) => !isDateToday(item.timestamp)),
+      );
       setLastScannedStudent(null);
       try {
         const { past36HoursISO } = getTodayBounds();
         await supabase
-          .from('qr_presensi_logs')
+          .from("qr_presensi_logs")
           .delete()
-          .gte('scanned_at', past36HoursISO);
+          .gte("scanned_at", past36HoursISO);
       } catch (err) {
-        console.warn('Failed to clear remote logs for today:', err);
+        console.warn("Failed to clear remote logs for today:", err);
       }
 
       try {
         const { past36HoursISO } = getTodayBounds();
         await supabase
-          .from('journal_notes')
+          .from("journal_notes")
           .delete()
-          .eq('category', 'qr_presensi_log')
-          .gte('created_at', past36HoursISO);
+          .eq("category", "qr_presensi_log")
+          .gte("created_at", past36HoursISO);
       } catch (err) {}
 
       try {
-        await supabase.from('app_settings').upsert({
-          key: 'today_qr_scans_sync',
-          value: JSON.stringify([]),
-          description: 'Realtime backup of today scan presensi records'
-        }, { onConflict: 'key' });
+        await supabase.from("app_settings").upsert(
+          {
+            key: "today_qr_scans_sync",
+            value: JSON.stringify([]),
+            description: "Realtime backup of today scan presensi records",
+          },
+          { onConflict: "key" },
+        );
       } catch (e) {}
     }
   };
 
   // Filtered Database Logs
-  const activeLogDataset = logDateMode === 'today' ? scanHistory : databaseLogs;
-  const filteredDatabaseLogs = activeLogDataset.filter(item => {
-    const cleanSearch = historySearch.trim().toLowerCase();
-    const digitsSearch = cleanSearch.replace(/\D/g, '');
-    const itemDigits = (item.nisn || '').replace(/\D/g, '');
+  const activeLogDataset = logDateMode === "today" ? scanHistory : databaseLogs;
 
-    const matchSearch = !cleanSearch || 
-      item.studentName.toLowerCase().includes(cleanSearch) || 
+  // Dedup: only show the first scan record per student for the same mode/subject/date
+  const dedupedLogDataset = Object.values(
+    activeLogDataset.reduce(
+      (acc, current) => {
+        const date = current.timestamp
+          ? new Date(current.timestamp).toLocaleDateString()
+          : "";
+        const key = `${current.nisn}-${current.mode}-${current.subject || ""}-${date}`;
+        // Keep only the earliest scan
+        if (
+          !acc[key] ||
+          new Date(current.timestamp) < new Date(acc[key].timestamp)
+        ) {
+          acc[key] = current;
+        }
+        return acc;
+      },
+      {} as Record<string, (typeof activeLogDataset)[0]>,
+    ),
+  ).sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+  );
+
+  const filteredDatabaseLogs = dedupedLogDataset.filter((item) => {
+    const cleanSearch = historySearch.trim().toLowerCase();
+    const digitsSearch = cleanSearch.replace(/\D/g, "");
+    const itemDigits = (item.nisn || "").replace(/\D/g, "");
+
+    const matchSearch =
+      !cleanSearch ||
+      item.studentName.toLowerCase().includes(cleanSearch) ||
       item.nisn.toLowerCase().includes(cleanSearch) ||
       (digitsSearch.length >= 3 && itemDigits.includes(digitsSearch)) ||
       item.kelas.toLowerCase().includes(cleanSearch);
@@ -1773,34 +2204,48 @@ export default function PresensiQR() {
   // Export history / filtered logs to CSV
   const exportUnscannedToCSV = () => {
     if (unscannedStudents.length === 0) {
-      showAlert('Semua siswa sudah melakukan presensi, tidak ada data untuk diekspor.');
+      showAlert(
+        "Semua siswa sudah melakukan presensi, tidak ada data untuk diekspor.",
+      );
       return;
     }
 
-    const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Keterangan'];
+    const headers = ["No", "NISN", "Nama Siswa", "Kelas", "Keterangan"];
     const rows = unscannedStudents.map((item, idx) => {
       return [
         idx + 1,
         `'${item.nisn}`,
         `"${item.name}"`,
         item.kelas,
-        'Belum Presensi'
+        "Belum Presensi",
       ];
     });
 
     const csvContent = [
-      headers.join(','),
-      ...rows.map(e => e.join(','))
-    ].join('\n');
+      headers.join(","),
+      ...rows.map((e) => e.join(",")),
+    ].join("\n");
 
-    const dateLabel = logDateMode === 'today' ? 'Hari_Ini' : logDateMode === 'date' ? logSelectedDate : logDateMode === 'month' ? logSelectedMonth : 'Semua';
-    const classLabel = unscannedClassFilter ? `Kelas_${unscannedClassFilter}` : 'Semua_Kelas';
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const dateLabel =
+      logDateMode === "today"
+        ? "Hari_Ini"
+        : logDateMode === "date"
+          ? logSelectedDate
+          : logDateMode === "month"
+            ? logSelectedMonth
+            : "Semua";
+    const classLabel = unscannedClassFilter
+      ? `Kelas_${unscannedClassFilter}`
+      : "Semua_Kelas";
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Rekap_Siswa_Belum_Scan_${classLabel}_${dateLabel}.csv`);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `Rekap_Siswa_Belum_Scan_${classLabel}_${dateLabel}.csv`,
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1808,11 +2253,21 @@ export default function PresensiQR() {
 
   const exportToCSV = () => {
     if (filteredDatabaseLogs.length === 0) {
-      showAlert('Belum ada data scan yang cocok dengan filter untuk diekspor.');
+      showAlert("Belum ada data scan yang cocok dengan filter untuk diekspor.");
       return;
     }
 
-    const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Tanggal Scan', 'Waktu Scan', 'Kegiatan Presensi', 'Status', 'Catatan'];
+    const headers = [
+      "No",
+      "NISN",
+      "Nama Siswa",
+      "Kelas",
+      "Tanggal Scan",
+      "Waktu Scan",
+      "Kegiatan Presensi",
+      "Status",
+      "Catatan",
+    ];
     const rows = filteredDatabaseLogs.map((item, idx) => {
       const dateObj = new Date(item.timestamp);
       return [
@@ -1820,71 +2275,106 @@ export default function PresensiQR() {
         `'${item.nisn}`,
         `"${item.studentName}"`,
         item.kelas,
-        dateObj.toLocaleDateString('id-ID'),
-        dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        item.mode === 'harian' ? 'Scan Masuk' : item.mode === 'dhuha' ? 'Sholat Dhuha' : item.mode === 'dzuhur' ? 'Sholat Dzuhur' : `Ekstra: ${item.subject || '-'}`,
+        dateObj.toLocaleDateString("id-ID"),
+        dateObj.toLocaleTimeString("id-ID", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+        item.mode === "harian"
+          ? "Scan Masuk"
+          : item.mode === "dhuha"
+            ? "Sholat Dhuha"
+            : item.mode === "dzuhur"
+              ? "Sholat Dzuhur"
+              : `Ekstra: ${item.subject || "-"}`,
         item.status,
-        `"${item.notes || '-'}"`,
+        `"${item.notes || "-"}"`,
       ];
     });
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const csvContent =
+      "data:text/csv;charset=utf-8,\uFEFF" +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    const dateLabel = logDateMode === 'today' ? 'Hari_Ini' : logDateMode === 'date' ? logSelectedDate : logDateMode === 'month' ? logSelectedMonth : 'Semua';
-    link.setAttribute('download', `Hasil_Scan_Presensi_${dateLabel}.csv`);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const dateLabel =
+      logDateMode === "today"
+        ? "Hari_Ini"
+        : logDateMode === "date"
+          ? logSelectedDate
+          : logDateMode === "month"
+            ? logSelectedMonth
+            : "Semua";
+    link.setAttribute("download", `Hasil_Scan_Presensi_${dateLabel}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   // Filter students for manual attendance popup
-  const searchMatchedStudents = students.filter(s => {
-    if (!manualAddStudentSearch.trim()) return false;
-    const term = manualAddStudentSearch.toLowerCase().trim();
-    return s.name.toLowerCase().includes(term) || (s.nisn && s.nisn.includes(term)) || s.kelas.toLowerCase().includes(term);
-  }).slice(0, 10);
+  const searchMatchedStudents = students
+    .filter((s) => {
+      if (!manualAddStudentSearch.trim()) return false;
+      const term = manualAddStudentSearch.toLowerCase().trim();
+      return (
+        s.name.toLowerCase().includes(term) ||
+        (s.nisn && s.nisn.includes(term)) ||
+        s.kelas.toLowerCase().includes(term)
+      );
+    })
+    .slice(0, 10);
 
   // Filtered Students for Card Printing
-  const studentsForCards = students.filter(s => {
+  const studentsForCards = students.filter((s) => {
     const matchClass = !selectedCardClass || s.kelas === selectedCardClass;
-    const matchSearch = !cardSearch || s.name.toLowerCase().includes(cardSearch.toLowerCase()) || (s.nisn && s.nisn.includes(cardSearch));
+    const matchSearch =
+      !cardSearch ||
+      s.name.toLowerCase().includes(cardSearch.toLowerCase()) ||
+      (s.nisn && s.nisn.includes(cardSearch));
     return matchClass && matchSearch;
   });
 
   // Calculate statistics from active log dataset
   const totalScanned = activeLogDataset.length;
-  const totalHadir = activeLogDataset.filter(i => i.status === 'Hadir').length;
-  const totalTerlambat = activeLogDataset.filter(i => i.status === 'Terlambat').length;
-  const uniqueStudentsCount = new Set(activeLogDataset.map(i => i.nisn)).size;
+  const totalHadir = activeLogDataset.filter(
+    (i) => i.status === "Hadir",
+  ).length;
+  const totalTerlambat = activeLogDataset.filter(
+    (i) => i.status === "Terlambat",
+  ).length;
+  const uniqueStudentsCount = new Set(activeLogDataset.map((i) => i.nisn)).size;
 
   // Computed Unscanned Students
   const unscannedStudents = React.useMemo(() => {
-    const scannedNisns = new Set(filteredDatabaseLogs.map(log => log.nisn));
-    let unscanned = students.filter(student => !scannedNisns.has(student.nisn));
+    const scannedNisns = new Set(filteredDatabaseLogs.map((log) => log.nisn));
+    let unscanned = students.filter(
+      (student) => !scannedNisns.has(student.nisn),
+    );
     if (unscannedClassFilter) {
-      unscanned = unscanned.filter(student => student.kelas === unscannedClassFilter);
+      unscanned = unscanned.filter(
+        (student) => student.kelas === unscannedClassFilter,
+      );
     }
     return unscanned;
   }, [students, filteredDatabaseLogs, unscannedClassFilter]);
 
   const getModeLabel = (mode: PresensiMode, subject?: string) => {
-    if (mode === 'harian') return 'Scan Masuk';
-    if (mode === 'dhuha') return 'Sholat Dhuha';
-    if (mode === 'dzuhur') return 'Sholat Dzuhur';
-    if (mode === 'ekstra') return `Ekstrakurikuler (${subject || '-'})`;
+    if (mode === "harian") return "Scan Masuk";
+    if (mode === "dhuha") return "Sholat Dhuha";
+    if (mode === "dzuhur") return "Sholat Dzuhur";
+    if (mode === "ekstra") return `Ekstrakurikuler (${subject || "-"})`;
     return mode;
   };
 
   return (
     <Layout>
       <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-fade-in">
-        
         {/* Page Header */}
         <div className="bg-gradient-to-r from-slate-900 via-purple-950 to-slate-900 text-white rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden">
           <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-purple-500/10 blur-3xl pointer-events-none"></div>
-          
+
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-xs font-bold border border-purple-400/30 mb-3">
@@ -1895,18 +2385,21 @@ export default function PresensiQR() {
                 Presensi QR Siswa
               </h1>
               <p className="text-slate-300 text-xs md:text-sm mt-1 max-w-xl">
-                Scan Kartu NISN Siswa untuk Kehadiran Gerbang (Scan Masuk), Salat Dhuha, dan Ekstrakurikuler secara instan & akurat.
+                Scan Kartu NISN Siswa untuk Kehadiran Gerbang (Scan Masuk),
+                Salat Dhuha, dan Ekstrakurikuler secara instan & akurat.
               </p>
 
               {/* Status Access Badge */}
               <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-xl bg-white/10 text-xs font-bold border border-white/15">
                 {isAdmin ? (
                   <span className="text-amber-300 flex items-center gap-1.5">
-                    <UserCheck size={14} /> Administrator (Akses Penuh Scan & Pengelolaan)
+                    <UserCheck size={14} /> Administrator (Akses Penuh Scan &
+                    Pengelolaan)
                   </span>
                 ) : isPembina ? (
                   <span className="text-emerald-300 flex items-center gap-1.5">
-                    <Trophy size={14} /> Pembina Ekstra: {assignedPembinaConfig?.ekstraList?.join(', ') || 'Aktif'}
+                    <Trophy size={14} /> Pembina Ekstra:{" "}
+                    {assignedPembinaConfig?.ekstraList?.join(", ") || "Aktif"}
                   </span>
                 ) : (
                   <span className="text-purple-300 flex items-center gap-1.5">
@@ -1919,16 +2412,28 @@ export default function PresensiQR() {
             {/* Quick Mode Stats */}
             <div className="flex items-center gap-3">
               <div className="bg-white/10 backdrop-blur-md rounded-2xl px-4 py-3 border border-white/10 text-center min-w-[90px]">
-                <div className="text-xs text-purple-200 font-medium">Total Scan</div>
-                <div className="text-xl font-black text-white">{totalScanned}</div>
+                <div className="text-xs text-purple-200 font-medium">
+                  Total Scan
+                </div>
+                <div className="text-xl font-black text-white">
+                  {totalScanned}
+                </div>
               </div>
               <div className="bg-emerald-500/20 backdrop-blur-md rounded-2xl px-4 py-3 border border-emerald-400/30 text-center min-w-[90px]">
-                <div className="text-xs text-emerald-200 font-medium">Tepat Waktu</div>
-                <div className="text-xl font-black text-emerald-300">{totalHadir}</div>
+                <div className="text-xs text-emerald-200 font-medium">
+                  Tepat Waktu
+                </div>
+                <div className="text-xl font-black text-emerald-300">
+                  {totalHadir}
+                </div>
               </div>
               <div className="bg-rose-500/20 backdrop-blur-md rounded-2xl px-4 py-3 border border-rose-400/30 text-center min-w-[90px]">
-                <div className="text-xs text-rose-200 font-medium">Terlambat</div>
-                <div className="text-xl font-black text-rose-300">{totalTerlambat}</div>
+                <div className="text-xs text-rose-200 font-medium">
+                  Terlambat
+                </div>
+                <div className="text-xl font-black text-rose-300">
+                  {totalTerlambat}
+                </div>
               </div>
             </div>
           </div>
@@ -1937,13 +2442,13 @@ export default function PresensiQR() {
           <div className="flex flex-wrap gap-2 mt-6 pt-6 border-t border-white/10">
             <button
               onClick={() => {
-                setActiveTab('scan');
+                setActiveTab("scan");
                 if (canScan && !isScanning) startCamera();
               }}
               className={`px-5 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 ${
-                activeTab === 'scan'
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/40'
-                  : 'bg-white/5 hover:bg-white/10 text-slate-300'
+                activeTab === "scan"
+                  ? "bg-purple-600 text-white shadow-lg shadow-purple-600/40"
+                  : "bg-white/5 hover:bg-white/10 text-slate-300"
               }`}
             >
               <Camera size={16} />
@@ -1952,13 +2457,13 @@ export default function PresensiQR() {
 
             <button
               onClick={() => {
-                setActiveTab('history');
+                setActiveTab("history");
                 stopCamera();
               }}
               className={`px-5 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 ${
-                activeTab === 'history'
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/40'
-                  : 'bg-white/5 hover:bg-white/10 text-slate-300'
+                activeTab === "history"
+                  ? "bg-purple-600 text-white shadow-lg shadow-purple-600/40"
+                  : "bg-white/5 hover:bg-white/10 text-slate-300"
               }`}
             >
               <Database size={16} />
@@ -1968,13 +2473,13 @@ export default function PresensiQR() {
             {/* Rekap Laporan Ekstrakurikuler */}
             <button
               onClick={() => {
-                setActiveTab('rekap');
+                setActiveTab("rekap");
                 stopCamera();
               }}
               className={`px-5 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 ${
-                activeTab === 'rekap'
-                  ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/40'
-                  : 'bg-white/5 hover:bg-white/10 text-slate-300'
+                activeTab === "rekap"
+                  ? "bg-amber-500 text-white shadow-lg shadow-amber-500/40"
+                  : "bg-white/5 hover:bg-white/10 text-slate-300"
               }`}
             >
               <Trophy size={16} />
@@ -1985,13 +2490,13 @@ export default function PresensiQR() {
             {isAdmin && (
               <button
                 onClick={() => {
-                  setActiveTab('pembina');
+                  setActiveTab("pembina");
                   stopCamera();
                 }}
                 className={`px-5 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 ${
-                  activeTab === 'pembina'
-                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/40'
-                    : 'bg-white/5 hover:bg-white/10 text-slate-300'
+                  activeTab === "pembina"
+                    ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/40"
+                    : "bg-white/5 hover:bg-white/10 text-slate-300"
                 }`}
               >
                 <UserCog size={16} />
@@ -2003,13 +2508,13 @@ export default function PresensiQR() {
             {isAdmin && (
               <button
                 onClick={() => {
-                  setActiveTab('cards');
+                  setActiveTab("cards");
                   stopCamera();
                 }}
                 className={`px-5 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 ${
-                  activeTab === 'cards'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/40'
-                    : 'bg-white/5 hover:bg-white/10 text-slate-300'
+                  activeTab === "cards"
+                    ? "bg-purple-600 text-white shadow-lg shadow-purple-600/40"
+                    : "bg-white/5 hover:bg-white/10 text-slate-300"
                 }`}
               >
                 <Printer size={16} />
@@ -2035,7 +2540,7 @@ export default function PresensiQR() {
         </div>
 
         {/* TAB 1: SCANNER VIEW */}
-        {activeTab === 'scan' && (
+        {activeTab === "scan" && (
           <div>
             {/* FULLSCREEN IMMERSIVE SCANNER VIEW - PORTAL TO BODY FOR TRUE 100% FULLSCREEN */}
             {isFullscreen ? (
@@ -2052,17 +2557,19 @@ export default function PresensiQR() {
                       >
                         <Minimize2 size={16} />
                         <span>Keluar Fullscreen</span>
-                        <kbd className="px-1.5 py-0.5 text-[10px] bg-rose-950/80 rounded border border-rose-700/50">Esc</kbd>
+                        <kbd className="px-1.5 py-0.5 text-[10px] bg-rose-950/80 rounded border border-rose-700/50">
+                          Esc
+                        </kbd>
                       </button>
 
                       {/* Mode Selector in Fullscreen */}
                       <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-2xl border border-slate-800">
                         <button
-                          onClick={() => handleSelectMode('harian')}
+                          onClick={() => handleSelectMode("harian")}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                            presensiMode === 'harian'
-                              ? 'bg-purple-600 text-white shadow-md shadow-purple-600/40'
-                              : 'text-slate-400 hover:text-slate-200'
+                            presensiMode === "harian"
+                              ? "bg-purple-600 text-white shadow-md shadow-purple-600/40"
+                              : "text-slate-400 hover:text-slate-200"
                           }`}
                         >
                           <ShieldCheck size={14} />
@@ -2070,11 +2577,11 @@ export default function PresensiQR() {
                         </button>
 
                         <button
-                          onClick={() => handleSelectMode('dhuha')}
+                          onClick={() => handleSelectMode("dhuha")}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                            presensiMode === 'dhuha'
-                              ? 'bg-amber-500 text-white shadow-md shadow-amber-500/40'
-                              : 'text-slate-400 hover:text-slate-200'
+                            presensiMode === "dhuha"
+                              ? "bg-amber-500 text-white shadow-md shadow-amber-500/40"
+                              : "text-slate-400 hover:text-slate-200"
                           }`}
                         >
                           <Sun size={14} />
@@ -2082,11 +2589,11 @@ export default function PresensiQR() {
                         </button>
 
                         <button
-                          onClick={() => handleSelectMode('dzuhur')}
+                          onClick={() => handleSelectMode("dzuhur")}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                            presensiMode === 'dzuhur'
-                              ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/40'
-                              : 'text-slate-400 hover:text-slate-200'
+                            presensiMode === "dzuhur"
+                              ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/40"
+                              : "text-slate-400 hover:text-slate-200"
                           }`}
                         >
                           <Sun size={14} />
@@ -2094,11 +2601,11 @@ export default function PresensiQR() {
                         </button>
 
                         <button
-                          onClick={() => handleSelectMode('ekstra')}
+                          onClick={() => handleSelectMode("ekstra")}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                            presensiMode === 'ekstra'
-                              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/40'
-                              : 'text-slate-400 hover:text-slate-200'
+                            presensiMode === "ekstra"
+                              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/40"
+                              : "text-slate-400 hover:text-slate-200"
                           }`}
                         >
                           <Trophy size={14} />
@@ -2107,22 +2614,32 @@ export default function PresensiQR() {
                       </div>
 
                       {/* Quick Ekstra Dropdown in Fullscreen if in Ekstra mode */}
-                      {presensiMode === 'ekstra' && allowedEkstraForUser.length > 0 && (
-                        <select
-                          value={selectedEkstra}
-                          onChange={(e) => handleSelectEkstra(e.target.value)}
-                          className="px-3 py-1.5 bg-emerald-950/80 border border-emerald-700/80 text-emerald-300 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500"
-                        >
-                          {allowedEkstraForUser.map(e => (
-                            <option key={e} value={e} className="bg-slate-900 text-white">{e}</option>
-                          ))}
-                        </select>
-                      )}
+                      {presensiMode === "ekstra" &&
+                        allowedEkstraForUser.length > 0 && (
+                          <select
+                            value={selectedEkstra}
+                            onChange={(e) => handleSelectEkstra(e.target.value)}
+                            className="px-3 py-1.5 bg-emerald-950/80 border border-emerald-700/80 text-emerald-300 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                          >
+                            {allowedEkstraForUser.map((e) => (
+                              <option
+                                key={e}
+                                value={e}
+                                className="bg-slate-900 text-white"
+                              >
+                                {e}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                     </div>
 
                     {/* Center: Live Digital Clock */}
                     <div className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-900/90 border border-slate-800 font-mono text-sm font-black text-purple-400 shadow-inner">
-                      <Clock size={16} className="text-purple-400 animate-pulse" />
+                      <Clock
+                        size={16}
+                        className="text-purple-400 animate-pulse"
+                      />
                       <span>{currentTime} WIB</span>
                     </div>
 
@@ -2134,16 +2651,23 @@ export default function PresensiQR() {
                         onClick={() => {
                           const nextState = !soundEnabled;
                           setSoundEnabled(nextState);
-                          if (nextState) playBeep('success', true);
+                          if (nextState) playBeep("success", true);
                         }}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                          soundEnabled 
-                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700' 
-                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                          soundEnabled
+                            ? "bg-emerald-950/80 text-emerald-300 border-emerald-700"
+                            : "bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800"
                         }`}
                       >
-                        {soundEnabled ? <Volume2 size={14} className="animate-pulse text-emerald-400" /> : <VolumeX size={14} />}
-                        <span>{soundEnabled ? 'Beep ON' : 'Beep OFF'}</span>
+                        {soundEnabled ? (
+                          <Volume2
+                            size={14}
+                            className="animate-pulse text-emerald-400"
+                          />
+                        ) : (
+                          <VolumeX size={14} />
+                        )}
+                        <span>{soundEnabled ? "Beep ON" : "Beep OFF"}</span>
                       </button>
 
                       {/* Mirror Toggle */}
@@ -2151,13 +2675,13 @@ export default function PresensiQR() {
                         type="button"
                         onClick={() => setIsMirrored(!isMirrored)}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                          isMirrored 
-                            ? 'bg-purple-950/80 text-purple-300 border-purple-700' 
-                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                          isMirrored
+                            ? "bg-purple-950/80 text-purple-300 border-purple-700"
+                            : "bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800"
                         }`}
                       >
                         <FlipHorizontal size={14} />
-                        <span>{isMirrored ? 'Cermin ON' : 'Cermin OFF'}</span>
+                        <span>{isMirrored ? "Cermin ON" : "Cermin OFF"}</span>
                       </button>
 
                       {/* Camera Power */}
@@ -2182,10 +2706,8 @@ export default function PresensiQR() {
 
                   {/* Fullscreen Body: Spacious Camera & Live Recent Scans */}
                   <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 pt-3 min-h-0 overflow-hidden">
-                    
                     {/* Left (7 Cols): Big Spacious Camera Viewfinder & Result Card */}
                     <div className="lg:col-span-7 flex flex-col gap-3 min-h-0 h-full overflow-hidden">
-                      
                       {/* Viewfinder Frame - Fully responsive and filling available height/width */}
                       <div className="flex-1 w-full min-h-[300px] bg-black rounded-3xl relative overflow-hidden border-2 border-purple-500/40 shadow-2xl flex items-center justify-center">
                         <style>{`
@@ -2206,8 +2728,8 @@ export default function PresensiQR() {
                             max-height: 100% !important;
                             object-fit: contain !important;
                             border-radius: 1.5rem !important;
-                            transform: ${isMirrored ? 'scaleX(-1)' : 'none'} !important;
-                            -webkit-transform: ${isMirrored ? 'scaleX(-1)' : 'none'} !important;
+                            transform: ${isMirrored ? "scaleX(-1)" : "none"} !important;
+                            -webkit-transform: ${isMirrored ? "scaleX(-1)" : "none"} !important;
                           }
                           #${scannerContainerId}__scan_region {
                             display: flex !important;
@@ -2234,20 +2756,31 @@ export default function PresensiQR() {
                             display: none !important;
                           }
                         `}</style>
-                        <div id={scannerContainerId} className="w-full h-full"></div>
+                        <div
+                          id={scannerContainerId}
+                          className="w-full h-full"
+                        ></div>
 
                         {/* Mode Switch & Camera Restart Live HUD Notice */}
                         {modeRestartNotice && (
                           <div className="absolute top-4 inset-x-4 md:inset-x-12 z-30 flex items-center justify-center animate-fade-in pointer-events-none">
-                            <div className={`px-4 py-2 rounded-2xl shadow-2xl font-black text-xs md:text-sm flex items-center gap-2.5 backdrop-blur-md border ${
-                              isRestartingCamera
-                                ? 'bg-purple-950/90 text-purple-200 border-purple-400/60 animate-pulse'
-                                : 'bg-emerald-950/90 text-emerald-200 border-emerald-400/60'
-                            }`}>
+                            <div
+                              className={`px-4 py-2 rounded-2xl shadow-2xl font-black text-xs md:text-sm flex items-center gap-2.5 backdrop-blur-md border ${
+                                isRestartingCamera
+                                  ? "bg-purple-950/90 text-purple-200 border-purple-400/60 animate-pulse"
+                                  : "bg-emerald-950/90 text-emerald-200 border-emerald-400/60"
+                              }`}
+                            >
                               {isRestartingCamera ? (
-                                <RefreshCw size={16} className="animate-spin text-purple-400" />
+                                <RefreshCw
+                                  size={16}
+                                  className="animate-spin text-purple-400"
+                                />
                               ) : (
-                                <CheckCircle2 size={16} className="text-emerald-400" />
+                                <CheckCircle2
+                                  size={16}
+                                  className="text-emerald-400"
+                                />
                               )}
                               <span>{modeRestartNotice}</span>
                             </div>
@@ -2284,10 +2817,16 @@ export default function PresensiQR() {
                         {/* Idle / Camera Off State */}
                         {!isScanning && (
                           <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-950/90 text-slate-300">
-                            <Scan size={64} className="text-purple-400 mb-3 animate-bounce" />
-                            <p className="font-black text-lg text-white">Scanner Kamera Siap</p>
+                            <Scan
+                              size={64}
+                              className="text-purple-400 mb-3 animate-bounce"
+                            />
+                            <p className="font-black text-lg text-white">
+                              Scanner Kamera Siap
+                            </p>
                             <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                              Klik tombol di bawah untuk menyalakan kamera pemindai QR Card NISN.
+                              Klik tombol di bawah untuk menyalakan kamera
+                              pemindai QR Card NISN.
                             </p>
                             <button
                               onClick={startCamera}
@@ -2310,56 +2849,12 @@ export default function PresensiQR() {
 
                       {/* Bottom Strip: Last Scanned Result & Barcode Input */}
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-3 shrink-0">
-                        {/* Hasil Scan Terakhir Banner */}
-                        <div className="md:col-span-8 bg-slate-900/90 rounded-2xl p-3 border border-slate-800/80 shadow-lg">
-                          {lastScannedStudent ? (
-                            <div className={`p-3 rounded-xl border transition-all ${
-                              lastScannedStudent.isDuplicate
-                                ? 'bg-amber-950/60 border-amber-500/50 text-amber-200'
-                                : lastScannedStudent.status === 'Terlambat'
-                                ? 'bg-rose-950/60 border-rose-500/50 text-rose-200'
-                                : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
-                            }`}>
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-md">
-                                  {lastScannedStudent.student.name.charAt(0)}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
-                                      lastScannedStudent.isDuplicate
-                                        ? 'bg-amber-500 text-white'
-                                        : lastScannedStudent.status === 'Terlambat'
-                                        ? 'bg-rose-600 text-white'
-                                        : 'bg-emerald-600 text-white'
-                                    }`}>
-                                      {lastScannedStudent.isDuplicate ? 'Sudah Di-Scan' : lastScannedStudent.status}
-                                    </span>
-                                    {getActivityBadge(lastScannedStudent.mode || presensiMode, lastScannedStudent.subject || selectedEkstra)}
-                                  </div>
-                                  <h4 className="font-black text-white text-sm truncate mt-0.5">
-                                    {lastScannedStudent.student.name}
-                                  </h4>
-                                  <p className="text-[11px] font-semibold text-purple-300">
-                                    Kelas {lastScannedStudent.student.kelas} • NISN: {lastScannedStudent.student.nisn || '-'}
-                                  </p>
-                                </div>
-                                <div className="text-right shrink-0 font-mono font-black text-sm text-white">
-                                  {lastScannedStudent.recordTime}
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="py-2.5 text-center text-slate-400 flex items-center justify-center gap-2">
-                              <Scan size={16} className="text-purple-400 animate-pulse" />
-                              <span className="text-xs font-semibold">Arahkan Kartu QR NISN Siswa ke kamera pemindai...</span>
-                            </div>
-                          )}
-                        </div>
-
                         {/* Barcode Gun / Manual Input Bar */}
-                        <div className="md:col-span-4 flex items-center">
-                          <form onSubmit={handleManualSubmit} className="flex gap-2 w-full">
+                        <div className="md:col-span-12 flex items-center">
+                          <form
+                            onSubmit={handleManualSubmit}
+                            className="flex gap-2 w-full"
+                          >
                             <input
                               ref={manualInputRef}
                               type="text"
@@ -2377,94 +2872,92 @@ export default function PresensiQR() {
                           </form>
                         </div>
                       </div>
-
                     </div>
 
-                    {/* Right (5 Cols): Realtime Activity History Feed in Fullscreen */}
-                    <div className="lg:col-span-5 bg-slate-900/90 rounded-3xl p-4 border border-slate-800/80 shadow-2xl flex flex-col min-h-0 h-full overflow-hidden">
-                      <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
-                        <div>
-                          <h3 className="font-black text-white text-sm flex items-center gap-2">
-                            <Clock size={16} className="text-purple-400" />
-                            <span>Aktivitas Scan Terbaru</span>
-                          </h3>
-                          <p className="text-[11px] text-slate-400 mt-0.5">Riwayat kehadiran realtime hari ini</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-1 rounded-xl bg-purple-950/80 border border-purple-800 text-purple-300 font-mono text-xs font-bold">
-                            Total: {totalScanned}
-                          </span>
-                          <span className="px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-300 font-mono text-xs font-bold">
-                            {totalHadir} Hadir
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Scrollable Scans List */}
-                      <div className="flex-1 overflow-y-auto space-y-2 mt-3 pr-1 custom-scrollbar min-h-0">
-                        {scanHistory.length === 0 ? (
-                          <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-500">
-                            <Users size={36} className="mb-2 opacity-40" />
-                            <p className="text-xs font-bold text-slate-400">Belum ada riwayat scan hari ini</p>
-                            <p className="text-[11px] mt-1 text-slate-500">Data siswa yang discan akan otomatis muncul di sini secara realtime.</p>
+                    {/* Right (5 Cols): Local Notification Panel */}
+                    <div className="lg:col-span-5 bg-slate-900/90 rounded-3xl p-6 border border-slate-800/80 shadow-2xl flex flex-col justify-center min-h-0 h-full overflow-hidden">
+                      {lastScannedStudent ? (
+                        <div
+                          className={`flex flex-col items-center justify-center text-center transition-all animate-in zoom-in duration-300 ${
+                            lastScannedStudent.isDuplicate
+                              ? "text-amber-400"
+                              : lastScannedStudent.status === "Terlambat"
+                                ? "text-rose-400"
+                                : "text-emerald-400"
+                          }`}
+                        >
+                          <div
+                            className={`w-32 h-32 rounded-full font-black text-6xl flex items-center justify-center mb-6 shadow-2xl ${
+                              lastScannedStudent.isDuplicate
+                                ? "bg-amber-500/20 text-amber-300 ring-4 ring-amber-500/30"
+                                : lastScannedStudent.status === "Terlambat"
+                                  ? "bg-rose-500/20 text-rose-300 ring-4 ring-rose-500/30"
+                                  : "bg-emerald-500/20 text-emerald-300 ring-4 ring-emerald-500/30"
+                            }`}
+                          >
+                            {lastScannedStudent.student.name.charAt(0)}
                           </div>
-                        ) : (
-                          scanHistory.map((item, idx) => (
-                            <div
-                              key={item.id}
-                              className={`p-3 rounded-2xl border flex items-center justify-between text-xs transition-all ${
-                                idx === 0 
-                                  ? 'bg-slate-800/90 border-purple-500/50 shadow-md ring-1 ring-purple-500/30' 
-                                  : 'bg-slate-900/60 border-slate-800/80 hover:bg-slate-800/50'
-                              }`}
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className={`w-8 h-8 rounded-xl font-bold flex items-center justify-center shrink-0 text-xs text-white ${
-                                  item.status === 'Terlambat' ? 'bg-rose-600' : 'bg-emerald-600'
-                                }`}>
-                                  {item.studentName.charAt(0)}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-extrabold text-white truncate">{item.studentName}</span>
-                                    {getActivityBadge(item.mode, item.subject)}
-                                  </div>
-                                  <div className="text-[11px] text-slate-400 mt-0.5">
-                                    Kelas {item.kelas} • <span className="font-mono text-slate-500">{item.nisn}</span>
-                                  </div>
-                                </div>
-                              </div>
 
-                              <div className="text-right shrink-0 ml-2">
-                                <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold ${
-                                  item.status === 'Terlambat' 
-                                    ? 'bg-rose-950/80 text-rose-300 border border-rose-800' 
-                                    : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800'
-                                }`}>
-                                  {item.status}
-                                </span>
-                                <div className="text-[10px] font-mono text-slate-400 mt-1">
-                                  {new Date(item.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                </div>
-                              </div>
+                          <span
+                            className={`inline-block px-4 py-1.5 rounded-full text-sm font-black uppercase tracking-wider mb-4 shadow-sm ${
+                              lastScannedStudent.isDuplicate
+                                ? "bg-amber-500 text-slate-900"
+                                : lastScannedStudent.status === "Terlambat"
+                                  ? "bg-rose-600 text-white"
+                                  : "bg-emerald-600 text-white"
+                            }`}
+                          >
+                            {lastScannedStudent.isDuplicate
+                              ? "SUDAH DI-SCAN SEBELUMNYA"
+                              : lastScannedStudent.status}
+                          </span>
+
+                          <h2 className="font-black text-white text-3xl leading-tight mb-2">
+                            {lastScannedStudent.student.name}
+                          </h2>
+
+                          <p className="text-base font-bold text-slate-300 mb-8">
+                            Kelas {lastScannedStudent.student.kelas} • NISN:{" "}
+                            {lastScannedStudent.student.nisn || "-"}
+                          </p>
+
+                          <div className="flex flex-col items-center gap-3 mt-4">
+                            <div className="font-mono font-black text-6xl text-white tracking-tighter">
+                              {lastScannedStudent.recordTime}
                             </div>
-                          ))
-                        )}
-                      </div>
+                            <div className="scale-125 origin-top mt-2">
+                              {getActivityBadge(
+                                lastScannedStudent.mode || presensiMode,
+                                lastScannedStudent.subject || selectedEkstra,
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-center text-slate-500 space-y-4">
+                          <div className="w-24 h-24 rounded-full bg-slate-800/50 flex items-center justify-center border border-slate-700/50 mb-2">
+                            <Scan size={40} className="text-slate-400" />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-lg text-slate-300">
+                              Menunggu Scan...
+                            </h3>
+                            <p className="text-sm mt-1">
+                              Arahkan kartu QR siswa ke kamera.
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-
                   </div>
-
                 </div>,
-                document.body
+                document.body,
               )
             ) : (
               /* REGULAR SCANNER UI */
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                
                 {/* Left Scanner & Controls (7 Cols) */}
                 <div className="lg:col-span-7 space-y-6">
-                  
                   {/* Activity Selector Card (Redundant Top Sound Button Removed) */}
                   <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm space-y-4">
                     <div className="flex items-center justify-between">
@@ -2480,73 +2973,91 @@ export default function PresensiQR() {
                     {/* Activity Buttons Grid (4 Modes: Harian, Dhuha, Dzuhur, Ekstra) */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <button
-                        onClick={() => handleSelectMode('harian')}
+                        onClick={() => handleSelectMode("harian")}
                         className={`p-3 rounded-2xl border text-left transition-all ${
-                          presensiMode === 'harian'
-                            ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-500 dark:border-purple-600 text-purple-900 dark:text-purple-200 shadow-sm ring-2 ring-purple-500/20'
-                            : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300'
+                          presensiMode === "harian"
+                            ? "bg-purple-50 dark:bg-purple-950/40 border-purple-500 dark:border-purple-600 text-purple-900 dark:text-purple-200 shadow-sm ring-2 ring-purple-500/20"
+                            : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300"
                         }`}
                       >
                         <div className="flex items-center gap-2 font-bold text-xs mb-1">
                           <ShieldCheck size={16} className="text-purple-600" />
                           <span>Scan Masuk</span>
                         </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400">Presensi Harian Gerbang</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                          Presensi Harian Gerbang
+                        </div>
                       </button>
 
                       <button
-                        onClick={() => handleSelectMode('dhuha')}
+                        onClick={() => handleSelectMode("dhuha")}
                         className={`p-3 rounded-2xl border text-left transition-all ${
-                          presensiMode === 'dhuha'
-                            ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500 dark:border-amber-600 text-amber-900 dark:text-amber-200 shadow-sm ring-2 ring-amber-500/20'
-                            : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300'
+                          presensiMode === "dhuha"
+                            ? "bg-amber-50 dark:bg-amber-950/40 border-amber-500 dark:border-amber-600 text-amber-900 dark:text-amber-200 shadow-sm ring-2 ring-amber-500/20"
+                            : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300"
                         }`}
                       >
                         <div className="flex items-center gap-2 font-bold text-xs mb-1">
                           <Sun size={16} className="text-amber-500" />
                           <span>Sholat Dhuha</span>
                         </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400">Presensi Dhuha Berjamaah</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                          Presensi Dhuha Berjamaah
+                        </div>
                       </button>
 
                       <button
-                        onClick={() => handleSelectMode('dzuhur')}
+                        onClick={() => handleSelectMode("dzuhur")}
                         className={`p-3 rounded-2xl border text-left transition-all ${
-                          presensiMode === 'dzuhur'
-                            ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-500 dark:border-cyan-600 text-cyan-900 dark:text-cyan-200 shadow-sm ring-2 ring-cyan-500/20'
-                            : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300'
+                          presensiMode === "dzuhur"
+                            ? "bg-cyan-50 dark:bg-cyan-950/40 border-cyan-500 dark:border-cyan-600 text-cyan-900 dark:text-cyan-200 shadow-sm ring-2 ring-cyan-500/20"
+                            : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300"
                         }`}
                       >
                         <div className="flex items-center gap-2 font-bold text-xs mb-1">
                           <Sun size={16} className="text-cyan-600" />
                           <span>Sholat Dzuhur</span>
                         </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400">Presensi Dzuhur Berjamaah</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                          Presensi Dzuhur Berjamaah
+                        </div>
                       </button>
 
                       <button
-                        onClick={() => handleSelectMode('ekstra')}
+                        onClick={() => handleSelectMode("ekstra")}
                         className={`p-3 rounded-2xl border text-left transition-all ${
-                          presensiMode === 'ekstra'
-                            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 dark:border-emerald-600 text-emerald-900 dark:text-emerald-200 shadow-sm ring-2 ring-emerald-500/20'
-                            : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300'
+                          presensiMode === "ekstra"
+                            ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 dark:border-emerald-600 text-emerald-900 dark:text-emerald-200 shadow-sm ring-2 ring-emerald-500/20"
+                            : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300"
                         }`}
                       >
                         <div className="flex items-center gap-2 font-bold text-xs mb-1">
                           <Trophy size={16} className="text-emerald-600" />
                           <span>Ekstrakurikuler</span>
                         </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400">Presensi Kegiatan Ekstra</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                          Presensi Kegiatan Ekstra
+                        </div>
                       </button>
                     </div>
 
                     {/* Sub-Info for Scan Masuk (Batas Keterlambatan) */}
-                    {presensiMode === 'harian' && (
+                    {presensiMode === "harian" && (
                       <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2 text-xs animate-fade-in">
                         <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                          <Clock size={15} className="text-amber-500 shrink-0" />
-                          <span>Batas Masuk Tepat Waktu: <strong className="text-amber-600 dark:text-amber-400 font-black">{lateTimeLimit} WIB</strong></span>
-                          <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">(Scan setelah ini = Terlambat)</span>
+                          <Clock
+                            size={15}
+                            className="text-amber-500 shrink-0"
+                          />
+                          <span>
+                            Batas Masuk Tepat Waktu:{" "}
+                            <strong className="text-amber-600 dark:text-amber-400 font-black">
+                              {lateTimeLimit} WIB
+                            </strong>
+                          </span>
+                          <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">
+                            (Scan setelah ini = Terlambat)
+                          </span>
                         </div>
                         {isAdminOrOperator && (
                           <button
@@ -2565,7 +3076,7 @@ export default function PresensiQR() {
                     )}
 
                     {/* Sub-Selection for Ekstrakurikuler Mode (Updated 10 Ekstra List) */}
-                    {presensiMode === 'ekstra' && (
+                    {presensiMode === "ekstra" && (
                       <div className="pt-3 border-t border-slate-100 dark:border-slate-700 space-y-2.5 animate-fade-in">
                         <div className="flex items-center justify-between">
                           <label className="text-xs font-extrabold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
@@ -2587,8 +3098,8 @@ export default function PresensiQR() {
                                 onClick={() => handleSelectEkstra(ekstra)}
                                 className={`px-3 py-2 rounded-xl text-xs font-bold transition-all text-center border ${
                                   selectedEkstra === ekstra
-                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                                    : 'bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100'
+                                    ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                                    : "bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-100"
                                 }`}
                               >
                                 {ekstra}
@@ -2598,7 +3109,10 @@ export default function PresensiQR() {
                         ) : (
                           <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
                             <Lock size={16} className="shrink-0" />
-                            <span>Anda belum ditunjuk sebagai Pembina Ekstrakurikuler oleh Admin.</span>
+                            <span>
+                              Anda belum ditunjuk sebagai Pembina
+                              Ekstrakurikuler oleh Admin.
+                            </span>
                           </div>
                         )}
                       </div>
@@ -2609,9 +3123,13 @@ export default function PresensiQR() {
                   <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm space-y-4">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full ${isScanning ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'}`}></div>
+                        <div
+                          className={`w-3 h-3 rounded-full ${isScanning ? "bg-emerald-500 animate-ping" : "bg-slate-400"}`}
+                        ></div>
                         <h3 className="font-extrabold text-slate-800 dark:text-white text-xs sm:text-sm">
-                          {isScanning ? `Kamera Aktif — Presensi ${getModeLabel(presensiMode, selectedEkstra)}` : 'Kamera Non-Aktif'}
+                          {isScanning
+                            ? `Kamera Aktif — Presensi ${getModeLabel(presensiMode, selectedEkstra)}`
+                            : "Kamera Non-Aktif"}
                         </h3>
                       </div>
 
@@ -2623,33 +3141,52 @@ export default function PresensiQR() {
                             const nextState = !soundEnabled;
                             setSoundEnabled(nextState);
                             if (nextState) {
-                              playBeep('success', true);
+                              playBeep("success", true);
                             }
                           }}
-                          title={soundEnabled ? "Suara Beep Scan Aktif (Klik untuk matikan)" : "Suara Beep Scan Non-Aktif (Klik untuk nyalakan)"}
+                          title={
+                            soundEnabled
+                              ? "Suara Beep Scan Aktif (Klik untuk matikan)"
+                              : "Suara Beep Scan Non-Aktif (Klik untuk nyalakan)"
+                          }
                           className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                            soundEnabled 
-                              ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' 
-                              : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-600 hover:bg-slate-200'
+                            soundEnabled
+                              ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800"
+                              : "bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-600 hover:bg-slate-200"
                           }`}
                         >
-                          {soundEnabled ? <Volume2 size={14} className="animate-pulse text-emerald-600 dark:text-emerald-400" /> : <VolumeX size={14} />}
-                          <span className="hidden sm:inline">{soundEnabled ? 'Beep ON' : 'Beep OFF'}</span>
+                          {soundEnabled ? (
+                            <Volume2
+                              size={14}
+                              className="animate-pulse text-emerald-600 dark:text-emerald-400"
+                            />
+                          ) : (
+                            <VolumeX size={14} />
+                          )}
+                          <span className="hidden sm:inline">
+                            {soundEnabled ? "Beep ON" : "Beep OFF"}
+                          </span>
                         </button>
 
                         {/* Mirror Toggle Button */}
                         <button
                           type="button"
                           onClick={() => setIsMirrored(!isMirrored)}
-                          title={isMirrored ? "Kamera Cermin (Mirror) Aktif" : "Kamera Normal"}
+                          title={
+                            isMirrored
+                              ? "Kamera Cermin (Mirror) Aktif"
+                              : "Kamera Normal"
+                          }
                           className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                            isMirrored 
-                              ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800' 
-                              : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-200'
+                            isMirrored
+                              ? "bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800"
+                              : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-200"
                           }`}
                         >
                           <FlipHorizontal size={14} />
-                          <span className="hidden sm:inline">{isMirrored ? 'Cermin ON' : 'Cermin OFF'}</span>
+                          <span className="hidden sm:inline">
+                            {isMirrored ? "Cermin ON" : "Cermin OFF"}
+                          </span>
                         </button>
 
                         {/* FULLSCREEN BUTTON */}
@@ -2701,8 +3238,8 @@ export default function PresensiQR() {
                           max-width: 100% !important;
                           max-height: 100% !important;
                           object-fit: contain !important;
-                          transform: ${isMirrored ? 'scaleX(-1)' : 'none'} !important;
-                          -webkit-transform: ${isMirrored ? 'scaleX(-1)' : 'none'} !important;
+                          transform: ${isMirrored ? "scaleX(-1)" : "none"} !important;
+                          -webkit-transform: ${isMirrored ? "scaleX(-1)" : "none"} !important;
                         }
                         #${scannerContainerId}__scan_region {
                           display: flex !important;
@@ -2729,20 +3266,31 @@ export default function PresensiQR() {
                           display: none !important;
                         }
                       `}</style>
-                      <div id={scannerContainerId} className="w-full h-full"></div>
+                      <div
+                        id={scannerContainerId}
+                        className="w-full h-full"
+                      ></div>
 
                       {/* Mode Switch & Camera Restart Live HUD Notice */}
                       {modeRestartNotice && (
                         <div className="absolute top-3 inset-x-3 z-30 flex items-center justify-center animate-fade-in pointer-events-none">
-                          <div className={`px-3.5 py-1.5 rounded-xl shadow-xl font-black text-xs flex items-center gap-2 backdrop-blur-md border ${
-                            isRestartingCamera
-                              ? 'bg-purple-950/90 text-purple-200 border-purple-400/60 animate-pulse'
-                              : 'bg-emerald-950/90 text-emerald-200 border-emerald-400/60'
-                          }`}>
+                          <div
+                            className={`px-3.5 py-1.5 rounded-xl shadow-xl font-black text-xs flex items-center gap-2 backdrop-blur-md border ${
+                              isRestartingCamera
+                                ? "bg-purple-950/90 text-purple-200 border-purple-400/60 animate-pulse"
+                                : "bg-emerald-950/90 text-emerald-200 border-emerald-400/60"
+                            }`}
+                          >
                             {isRestartingCamera ? (
-                              <RefreshCw size={14} className="animate-spin text-purple-400" />
+                              <RefreshCw
+                                size={14}
+                                className="animate-spin text-purple-400"
+                              />
                             ) : (
-                              <CheckCircle2 size={14} className="text-emerald-400" />
+                              <CheckCircle2
+                                size={14}
+                                className="text-emerald-400"
+                              />
                             )}
                             <span>{modeRestartNotice}</span>
                           </div>
@@ -2758,10 +3306,16 @@ export default function PresensiQR() {
 
                       {!isScanning && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-slate-900/90 text-slate-300">
-                          <Scan size={48} className="text-purple-400 mb-3 animate-bounce" />
-                          <p className="font-bold text-sm text-white">Scanner Belum Aktif</p>
+                          <Scan
+                            size={48}
+                            className="text-purple-400 mb-3 animate-bounce"
+                          />
+                          <p className="font-bold text-sm text-white">
+                            Scanner Belum Aktif
+                          </p>
                           <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                            Klik tombol di atas untuk membuka kamera, atau gunakan input Barcode Gun di bawah ini.
+                            Klik tombol di atas untuk membuka kamera, atau
+                            gunakan input Barcode Gun di bawah ini.
                           </p>
                           <button
                             onClick={startCamera}
@@ -2804,143 +3358,104 @@ export default function PresensiQR() {
                           </button>
                         </div>
                         <p className="text-[10px] text-slate-400 italic">
-                          *Scanner USB Barcode/QR Gun otomatis mengirim enter setelah scan.
+                          *Scanner USB Barcode/QR Gun otomatis mengirim enter
+                          setelah scan.
                         </p>
                       </form>
                     </div>
-
                   </div>
-
                 </div>
 
-                {/* Right Last Scanned Card & Quick History (5 Cols) */}
-                <div className="lg:col-span-5 space-y-6">
-                  
-                  {/* Scan Status Card */}
-                  <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm space-y-4">
-                    <h3 className="font-extrabold text-slate-800 dark:text-white text-sm flex items-center gap-2">
-                      <CheckCircle2 size={18} className="text-emerald-500" />
-                      <span>Hasil Scan Terakhir</span>
-                    </h3>
-
+                {/* Right Last Scanned Card (Local Notification) */}
+                <div className="lg:col-span-5 space-y-6 flex flex-col justify-center min-h-[500px]">
+                  <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 border border-slate-100 dark:border-slate-700 shadow-xl h-full flex flex-col justify-center min-h-[600px]">
                     {lastScannedStudent ? (
-                      <div className={`p-5 rounded-2xl border transition-all ${
-                        lastScannedStudent.isDuplicate
-                          ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700'
-                          : lastScannedStudent.status === 'Terlambat'
-                          ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700'
-                          : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700'
-                      }`}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-md">
-                              {lastScannedStudent.student.name.charAt(0)}
-                            </div>
-                            <div>
-                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider mb-1 ${
-                                lastScannedStudent.isDuplicate
-                                  ? 'bg-amber-500 text-white'
-                                  : lastScannedStudent.status === 'Terlambat'
-                                  ? 'bg-rose-600 text-white'
-                                  : 'bg-emerald-600 text-white'
-                              }`}>
-                                {lastScannedStudent.isDuplicate ? 'Sudah Di-Scan Sebelumnya' : lastScannedStudent.status}
-                              </span>
-                              <h4 className="font-extrabold text-slate-900 dark:text-white text-base leading-snug">
-                                {lastScannedStudent.student.name}
-                              </h4>
-                              <p className="text-xs font-bold text-purple-700 dark:text-purple-300 mt-0.5">
-                                Kelas {lastScannedStudent.student.kelas} • NISN: {lastScannedStudent.student.nisn || '-'}
-                              </p>
-                            </div>
-                          </div>
+                      <div
+                        className={`flex flex-col items-center justify-center text-center transition-all animate-in zoom-in duration-300 ${
+                          lastScannedStudent.isDuplicate
+                            ? "text-amber-500 dark:text-amber-400"
+                            : lastScannedStudent.status === "Terlambat"
+                              ? "text-rose-600 dark:text-rose-400"
+                              : "text-emerald-600 dark:text-emerald-400"
+                        }`}
+                      >
+                        <div
+                          className={`w-40 h-40 rounded-full font-black text-7xl flex items-center justify-center mb-8 shadow-2xl ${
+                            lastScannedStudent.isDuplicate
+                              ? "bg-amber-100 dark:bg-amber-950/40 text-amber-500 ring-8 ring-amber-500/20"
+                              : lastScannedStudent.status === "Terlambat"
+                                ? "bg-rose-100 dark:bg-rose-950/40 text-rose-600 ring-8 ring-rose-500/20"
+                                : "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 ring-8 ring-emerald-500/20"
+                          }`}
+                        >
+                          {lastScannedStudent.student.name.charAt(0)}
                         </div>
 
-                        <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
-                          <div>Waktu: <span className="font-bold text-slate-900 dark:text-white">{lastScannedStudent.recordTime}</span></div>
-                          <div className="flex items-center gap-1.5">
-                            <span>Kegiatan:</span>
-                            {getActivityBadge(lastScannedStudent.mode || presensiMode, lastScannedStudent.subject || selectedEkstra)}
+                        <span
+                          className={`inline-block px-5 py-2 rounded-full text-base font-black uppercase tracking-widest mb-6 shadow-sm ${
+                            lastScannedStudent.isDuplicate
+                              ? "bg-amber-500 text-white"
+                              : lastScannedStudent.status === "Terlambat"
+                                ? "bg-rose-600 text-white"
+                                : "bg-emerald-600 text-white"
+                          }`}
+                        >
+                          {lastScannedStudent.isDuplicate
+                            ? "SUDAH DI-SCAN"
+                            : lastScannedStudent.status}
+                        </span>
+
+                        <h2 className="font-black text-slate-900 dark:text-white text-4xl leading-tight mb-3">
+                          {lastScannedStudent.student.name}
+                        </h2>
+
+                        <p className="text-lg font-bold text-slate-500 dark:text-slate-400 mb-10">
+                          Kelas {lastScannedStudent.student.kelas} • NISN:{" "}
+                          {lastScannedStudent.student.nisn || "-"}
+                        </p>
+
+                        <div className="flex flex-col items-center gap-4 mt-auto">
+                          <div className="font-mono font-black text-7xl text-slate-800 dark:text-white tracking-tighter">
+                            {lastScannedStudent.recordTime}
+                          </div>
+                          <div className="scale-150 origin-top mt-4">
+                            {getActivityBadge(
+                              lastScannedStudent.mode || presensiMode,
+                              lastScannedStudent.subject || selectedEkstra,
+                            )}
                           </div>
                         </div>
                       </div>
                     ) : (
-                      <div className="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl text-slate-400">
-                        <Scan size={36} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-xs font-bold">Belum ada scan kartu NISN</p>
-                        <p className="text-[11px] mt-1">Gunakan kamera atau barcode gun untuk memulai.</p>
+                      <div className="flex flex-col items-center justify-center text-center text-slate-400 dark:text-slate-500 space-y-6">
+                        <div className="w-32 h-32 rounded-full bg-slate-50 dark:bg-slate-900/50 flex items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-700/50 mb-4">
+                          <Scan
+                            size={56}
+                            className="text-slate-300 dark:text-slate-600"
+                          />
+                        </div>
+                        <div>
+                          <h3 className="font-black text-2xl text-slate-500 dark:text-slate-400">
+                            Menunggu Scan...
+                          </h3>
+                          <p className="text-base font-medium mt-2">
+                            Arahkan kartu QR siswa ke kamera.
+                          </p>
+                        </div>
                       </div>
                     )}
                   </div>
-
-                  {/* Recent Scans Mini Feed */}
-                  <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-extrabold text-slate-800 dark:text-white text-sm">
-                        Aktivitas Scan Terbaru ({scanHistory.slice(0, 5).length})
-                      </h3>
-                      {scanHistory.length > 0 && (
-                        <button
-                          onClick={() => setActiveTab('history')}
-                          className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1"
-                        >
-                          <span>Lihat Semua</span>
-                          <ArrowRight size={12} />
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      {scanHistory.length === 0 ? (
-                        <p className="text-xs text-slate-400 italic text-center py-4">Belum ada riwayat scan hari ini.</p>
-                      ) : (
-                        scanHistory.slice(0, 5).map(item => (
-                          <div
-                            key={item.id}
-                            className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs"
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className={`w-2 h-2 rounded-full shrink-0 ${item.status === 'Terlambat' ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-extrabold text-slate-800 dark:text-slate-100">{item.studentName}</span>
-                                  {getActivityBadge(item.mode, item.subject)}
-                                </div>
-                                <div className="text-[10px] text-slate-500 mt-0.5">Kelas {item.kelas} • NISN: {item.nisn}</div>
-                              </div>
-                            </div>
-
-                            <div className="text-right">
-                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                                item.status === 'Terlambat' 
-                                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300' 
-                                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
-                              }`}>
-                                {item.status}
-                              </span>
-                              <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-                                {new Date(item.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
                 </div>
-
               </div>
             )}
           </div>
         )}
 
         {/* TAB 2: KELOLA HASIL SCAN & DATABASE PRESENSI */}
-        {activeTab === 'history' && (
+        {activeTab === "history" && (
           <div className="space-y-6 animate-fade-in">
             {/* Main Container */}
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 md:p-8 border border-slate-100 dark:border-slate-700 shadow-sm space-y-6">
-              
               {/* Header & Live Sync Status */}
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100 dark:border-slate-700">
                 <div>
@@ -2954,7 +3469,9 @@ export default function PresensiQR() {
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl">
-                    Semua data scan presensi tersimpan otomatis di database server dan disinkronkan secara realtime antar semua akun guru, admin, dan perangkat pemindai.
+                    Semua data scan presensi tersimpan otomatis di database
+                    server dan disinkronkan secara realtime antar semua akun
+                    guru, admin, dan perangkat pemindai.
                   </p>
                 </div>
 
@@ -2964,7 +3481,7 @@ export default function PresensiQR() {
                     type="button"
                     onClick={() => {
                       setSelectedStudentForManual(null);
-                      setManualAddStudentSearch('');
+                      setManualAddStudentSearch("");
                       setShowManualAddModal(true);
                     }}
                     className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
@@ -2980,8 +3497,13 @@ export default function PresensiQR() {
                     className="px-3.5 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-600 shadow-xs disabled:opacity-60"
                     title="Muat ulang sinkronisasi data dari database server"
                   >
-                    <RefreshCw size={14} className={loadingLogs ? 'animate-spin text-purple-600' : ''} />
-                    <span>{loadingLogs ? 'Menyinkronkan...' : 'Refresh'}</span>
+                    <RefreshCw
+                      size={14}
+                      className={
+                        loadingLogs ? "animate-spin text-purple-600" : ""
+                      }
+                    />
+                    <span>{loadingLogs ? "Menyinkronkan..." : "Refresh"}</span>
                   </button>
 
                   <button
@@ -3014,16 +3536,18 @@ export default function PresensiQR() {
                     <span>Cetak Laporan</span>
                   </button>
 
-                  {isAdmin && logDateMode === 'today' && scanHistory.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleClearHistory}
-                      className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 border border-rose-200 dark:border-rose-800"
-                    >
-                      <Trash2 size={14} />
-                      <span>Reset Hari Ini</span>
-                    </button>
-                  )}
+                  {isAdmin &&
+                    logDateMode === "today" &&
+                    scanHistory.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearHistory}
+                        className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 border border-rose-200 dark:border-rose-800"
+                      >
+                        <Trash2 size={14} />
+                        <span>Reset Hari Ini</span>
+                      </button>
+                    )}
                 </div>
               </div>
 
@@ -3048,12 +3572,15 @@ export default function PresensiQR() {
                     <CheckCircle2 size={16} className="text-emerald-600" />
                   </div>
                   <div className="text-2xl font-black text-emerald-900 dark:text-emerald-100">
-                    {filteredDatabaseLogs.filter(i => i.status === 'Hadir').length}
+                    {
+                      filteredDatabaseLogs.filter((i) => i.status === "Hadir")
+                        .length
+                    }
                   </div>
                   <div className="text-[10px] text-emerald-600/80 dark:text-emerald-400 mt-0.5">
-                    {filteredDatabaseLogs.length > 0 
-                      ? `${Math.round((filteredDatabaseLogs.filter(i => i.status === 'Hadir').length / filteredDatabaseLogs.length) * 100)}% dari total scan`
-                      : '0%'}
+                    {filteredDatabaseLogs.length > 0
+                      ? `${Math.round((filteredDatabaseLogs.filter((i) => i.status === "Hadir").length / filteredDatabaseLogs.length) * 100)}% dari total scan`
+                      : "0%"}
                   </div>
                 </div>
 
@@ -3063,19 +3590,26 @@ export default function PresensiQR() {
                     <AlertCircle size={16} className="text-rose-600" />
                   </div>
                   <div className="text-2xl font-black text-rose-900 dark:text-rose-100">
-                    {filteredDatabaseLogs.filter(i => i.status === 'Terlambat').length}
+                    {
+                      filteredDatabaseLogs.filter(
+                        (i) => i.status === "Terlambat",
+                      ).length
+                    }
                   </div>
                   <div className="text-[10px] text-rose-600/80 dark:text-rose-400 mt-0.5">
-                    {filteredDatabaseLogs.length > 0 
-                      ? `${Math.round((filteredDatabaseLogs.filter(i => i.status === 'Terlambat').length / filteredDatabaseLogs.length) * 100)}% dari total scan`
-                      : '0%'}
+                    {filteredDatabaseLogs.length > 0
+                      ? `${Math.round((filteredDatabaseLogs.filter((i) => i.status === "Terlambat").length / filteredDatabaseLogs.length) * 100)}% dari total scan`
+                      : "0%"}
                   </div>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700">
                   <div className="flex items-center justify-between text-slate-700 dark:text-slate-300 text-xs font-bold mb-1">
                     <span>Siswa Unik</span>
-                    <Users size={16} className="text-slate-600 dark:text-slate-400" />
+                    <Users
+                      size={16}
+                      className="text-slate-600 dark:text-slate-400"
+                    />
                   </div>
                   <div className="text-2xl font-black text-slate-900 dark:text-white">
                     {uniqueStudentsCount}
@@ -3092,44 +3626,44 @@ export default function PresensiQR() {
                   <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-900/80 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs font-bold">
                     <button
                       type="button"
-                      onClick={() => setLogDateMode('today')}
+                      onClick={() => setLogDateMode("today")}
                       className={`px-3.5 py-1.5 rounded-xl transition-all ${
-                        logDateMode === 'today'
-                          ? 'bg-purple-600 text-white shadow-xs'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                        logDateMode === "today"
+                          ? "bg-purple-600 text-white shadow-xs"
+                          : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
                       }`}
                     >
                       Hari Ini
                     </button>
                     <button
                       type="button"
-                      onClick={() => setLogDateMode('date')}
+                      onClick={() => setLogDateMode("date")}
                       className={`px-3.5 py-1.5 rounded-xl transition-all ${
-                        logDateMode === 'date'
-                          ? 'bg-purple-600 text-white shadow-xs'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                        logDateMode === "date"
+                          ? "bg-purple-600 text-white shadow-xs"
+                          : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
                       }`}
                     >
                       Pilih Tanggal
                     </button>
                     <button
                       type="button"
-                      onClick={() => setLogDateMode('month')}
+                      onClick={() => setLogDateMode("month")}
                       className={`px-3.5 py-1.5 rounded-xl transition-all ${
-                        logDateMode === 'month'
-                          ? 'bg-purple-600 text-white shadow-xs'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                        logDateMode === "month"
+                          ? "bg-purple-600 text-white shadow-xs"
+                          : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
                       }`}
                     >
                       Pilih Bulan
                     </button>
                     <button
                       type="button"
-                      onClick={() => setLogDateMode('all')}
+                      onClick={() => setLogDateMode("all")}
                       className={`px-3.5 py-1.5 rounded-xl transition-all ${
-                        logDateMode === 'all'
-                          ? 'bg-purple-600 text-white shadow-xs'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                        logDateMode === "all"
+                          ? "bg-purple-600 text-white shadow-xs"
+                          : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
                       }`}
                     >
                       Semua Data Database
@@ -3137,7 +3671,7 @@ export default function PresensiQR() {
                   </div>
 
                   {/* Date or Month Picker Inputs */}
-                  {logDateMode === 'date' && (
+                  {logDateMode === "date" && (
                     <div className="flex items-center gap-2 animate-fade-in">
                       <Calendar size={15} className="text-purple-600" />
                       <input
@@ -3149,7 +3683,7 @@ export default function PresensiQR() {
                     </div>
                   )}
 
-                  {logDateMode === 'month' && (
+                  {logDateMode === "month" && (
                     <div className="flex items-center gap-2 animate-fade-in">
                       <Calendar size={15} className="text-purple-600" />
                       <input
@@ -3166,7 +3700,10 @@ export default function PresensiQR() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 pt-2">
                   {/* Search Input */}
                   <div className="relative lg:col-span-2">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search
+                      size={15}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
                     <input
                       type="text"
                       placeholder="Cari Nama Siswa atau NISN..."
@@ -3177,7 +3714,7 @@ export default function PresensiQR() {
                     {historySearch && (
                       <button
                         type="button"
-                        onClick={() => setHistorySearch('')}
+                        onClick={() => setHistorySearch("")}
                         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
                       >
                         <X size={13} />
@@ -3191,7 +3728,7 @@ export default function PresensiQR() {
                       value={logModeFilter}
                       onChange={(e) => {
                         setLogModeFilter(e.target.value);
-                        if (e.target.value !== 'ekstra') setLogEkstraFilter('');
+                        if (e.target.value !== "ekstra") setLogEkstraFilter("");
                       }}
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
                     >
@@ -3204,7 +3741,7 @@ export default function PresensiQR() {
                   </div>
 
                   {/* Ekstra Sub Filter (if ekstra selected) OR Class Filter */}
-                  {logModeFilter === 'ekstra' ? (
+                  {logModeFilter === "ekstra" ? (
                     <div>
                       <select
                         value={logEkstraFilter}
@@ -3212,8 +3749,10 @@ export default function PresensiQR() {
                         className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
                       >
                         <option value="">Semua Cabang Ekstra</option>
-                        {EKSTRA_LIST.map(ek => (
-                          <option key={ek} value={ek}>{ek}</option>
+                        {EKSTRA_LIST.map((ek) => (
+                          <option key={ek} value={ek}>
+                            {ek}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -3225,8 +3764,10 @@ export default function PresensiQR() {
                         className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
                       >
                         <option value="">Semua Kelas</option>
-                        {classes.map(c => (
-                          <option key={c} value={c}>Kelas {c}</option>
+                        {classes.map((c) => (
+                          <option key={c} value={c}>
+                            Kelas {c}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -3266,30 +3807,52 @@ export default function PresensiQR() {
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                     {loadingLogs && filteredDatabaseLogs.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-4 py-10 text-center text-slate-400 italic">
-                          <RefreshCw size={22} className="animate-spin text-purple-600 mx-auto mb-2" />
-                          <span>Menyinkronkan data presensi dari database server...</span>
+                        <td
+                          colSpan={9}
+                          className="px-4 py-10 text-center text-slate-400 italic"
+                        >
+                          <RefreshCw
+                            size={22}
+                            className="animate-spin text-purple-600 mx-auto mb-2"
+                          />
+                          <span>
+                            Menyinkronkan data presensi dari database server...
+                          </span>
                         </td>
                       </tr>
                     ) : filteredDatabaseLogs.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
-                          <Clock size={32} className="mx-auto mb-2 opacity-40" />
-                          <p className="font-bold text-sm text-slate-600 dark:text-slate-300">Tidak ada data presensi yang sesuai filter</p>
-                          <p className="text-xs text-slate-400 mt-1">
-                            {historySearch || historyClassFilter || logModeFilter || logStatusFilter
-                              ? 'Coba ubah atau bersihkan kriteria filter di atas.'
-                              : 'Belum ada catatan presensi yang terekam pada periode ini.'}
+                        <td
+                          colSpan={9}
+                          className="px-4 py-12 text-center text-slate-400"
+                        >
+                          <Clock
+                            size={32}
+                            className="mx-auto mb-2 opacity-40"
+                          />
+                          <p className="font-bold text-sm text-slate-600 dark:text-slate-300">
+                            Tidak ada data presensi yang sesuai filter
                           </p>
-                          {(historySearch || historyClassFilter || logModeFilter || logStatusFilter) && (
+                          <p className="text-xs text-slate-400 mt-1">
+                            {historySearch ||
+                            historyClassFilter ||
+                            logModeFilter ||
+                            logStatusFilter
+                              ? "Coba ubah atau bersihkan kriteria filter di atas."
+                              : "Belum ada catatan presensi yang terekam pada periode ini."}
+                          </p>
+                          {(historySearch ||
+                            historyClassFilter ||
+                            logModeFilter ||
+                            logStatusFilter) && (
                             <button
                               type="button"
                               onClick={() => {
-                                setHistorySearch('');
-                                setHistoryClassFilter('');
-                                setLogModeFilter('');
-                                setLogEkstraFilter('');
-                                setLogStatusFilter('');
+                                setHistorySearch("");
+                                setHistoryClassFilter("");
+                                setLogModeFilter("");
+                                setLogEkstraFilter("");
+                                setLogStatusFilter("");
                               }}
                               className="mt-3 px-3 py-1.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded-xl text-xs font-bold hover:bg-purple-200 inline-flex items-center gap-1"
                             >
@@ -3302,16 +3865,35 @@ export default function PresensiQR() {
                     ) : (
                       filteredDatabaseLogs.map((item, index) => {
                         const dateObj = new Date(item.timestamp);
-                        const dateStr = dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-                        const timeStr = dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        const dateStr = dateObj.toLocaleDateString("id-ID", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        });
+                        const timeStr = dateObj.toLocaleTimeString("id-ID", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        });
                         return (
-                          <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors">
-                            <td className="px-4 py-3 font-bold text-slate-400 text-center">{index + 1}</td>
-                            <td className="px-4 py-3">
-                              <div className="font-mono font-bold text-slate-800 dark:text-slate-200">{timeStr}</div>
-                              <div className="text-[10px] text-slate-400">{dateStr}</div>
+                          <tr
+                            key={item.id}
+                            className="hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors"
+                          >
+                            <td className="px-4 py-3 font-bold text-slate-400 text-center">
+                              {index + 1}
                             </td>
-                            <td className="px-4 py-3 font-mono font-bold text-purple-700 dark:text-purple-300">{item.nisn}</td>
+                            <td className="px-4 py-3">
+                              <div className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                                {timeStr}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {dateStr}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 font-mono font-bold text-purple-700 dark:text-purple-300">
+                              {item.nisn}
+                            </td>
                             <td className="px-4 py-3 font-extrabold text-slate-900 dark:text-white">
                               {item.studentName}
                             </td>
@@ -3321,15 +3903,17 @@ export default function PresensiQR() {
                               </span>
                             </td>
                             <td className="px-4 py-3">
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${
-                                item.mode === 'harian'
-                                  ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
-                                  : item.mode === 'dhuha'
-                                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                  : item.mode === 'dzuhur'
-                                  ? 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800'
-                                  : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                              }`}>
+                              <span
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${
+                                  item.mode === "harian"
+                                    ? "bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800"
+                                    : item.mode === "dhuha"
+                                      ? "bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                                      : item.mode === "dzuhur"
+                                        ? "bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800"
+                                        : "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                                }`}
+                              >
                                 {getModeLabel(item.mode, item.subject)}
                               </span>
                             </td>
@@ -3339,16 +3923,16 @@ export default function PresensiQR() {
                                 onClick={() => handleToggleStatus(item)}
                                 title="Klik untuk mengubah status (Hadir <-> Terlambat)"
                                 className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all hover:scale-105 active:scale-95 ${
-                                  item.status === 'Terlambat'
-                                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
-                                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                                  item.status === "Terlambat"
+                                    ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800"
+                                    : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
                                 }`}
                               >
                                 {item.status}
                               </button>
                             </td>
                             <td className="px-4 py-3 text-slate-500 text-[11px] max-w-[150px] truncate">
-                              {item.notes || '-'}
+                              {item.notes || "-"}
                             </td>
                             <td className="px-4 py-3 text-center">
                               <div className="flex items-center justify-center gap-1">
@@ -3379,16 +3963,14 @@ export default function PresensiQR() {
                   </tbody>
                 </table>
               </div>
-
             </div>
           </div>
         )}
 
         {/* TAB REKAP & LAPORAN EKSTRAKURIKULER */}
-        {activeTab === 'rekap' && (
+        {activeTab === "rekap" && (
           <div className="space-y-6">
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm space-y-6">
-              
               {/* Header & Actions */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
@@ -3397,10 +3979,10 @@ export default function PresensiQR() {
                     <span>Laporan & Rekapitulasi Ekstrakurikuler</span>
                   </div>
                   <h3 className="text-xl font-black text-slate-800 dark:text-white">
-                    Rekap Presensi {rekapSelectedEkstra || 'Ekstrakurikuler'}
+                    Rekap Presensi {rekapSelectedEkstra || "Ekstrakurikuler"}
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    {isPembina && !isAdmin 
+                    {isPembina && !isAdmin
                       ? `Laporan khusus peserta & kehadiran ${rekapSelectedEkstra} untuk dikirimkan kepada Kepala Sekolah.`
                       : `Pilih Ekstrakurikuler dan periode bulan untuk melihat & mendownload rekap kehadiran siswa.`}
                   </p>
@@ -3413,7 +3995,10 @@ export default function PresensiQR() {
                     className="px-3 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
                     title="Muat Ulang Data Scan"
                   >
-                    <RefreshCw size={14} className={loadingRekap ? 'animate-spin' : ''} />
+                    <RefreshCw
+                      size={14}
+                      className={loadingRekap ? "animate-spin" : ""}
+                    />
                     <span>Refresh</span>
                   </button>
 
@@ -3447,7 +4032,9 @@ export default function PresensiQR() {
                   {isPembina && !isAdmin && allowedEkstraForUser.length <= 1 ? (
                     <div className="w-full px-3 py-2 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 rounded-xl text-xs font-extrabold text-amber-900 dark:text-amber-200 flex items-center justify-between">
                       <span>{rekapSelectedEkstra}</span>
-                      <span className="text-[10px] bg-amber-200 dark:bg-amber-900 px-1.5 py-0.5 rounded text-amber-900 dark:text-amber-100">Dikunci Pembina</span>
+                      <span className="text-[10px] bg-amber-200 dark:bg-amber-900 px-1.5 py-0.5 rounded text-amber-900 dark:text-amber-100">
+                        Dikunci Pembina
+                      </span>
                     </div>
                   ) : (
                     <select
@@ -3455,15 +4042,17 @@ export default function PresensiQR() {
                       onChange={(e) => setRekapSelectedEkstra(e.target.value)}
                       className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white"
                     >
-                      {allowedEkstraForUser.length > 0 ? (
-                        allowedEkstraForUser.map(e => (
-                          <option key={e} value={e}>{e}</option>
-                        ))
-                      ) : (
-                        EKSTRA_LIST.map(e => (
-                          <option key={e} value={e}>{e}</option>
-                        ))
-                      )}
+                      {allowedEkstraForUser.length > 0
+                        ? allowedEkstraForUser.map((e) => (
+                            <option key={e} value={e}>
+                              {e}
+                            </option>
+                          ))
+                        : EKSTRA_LIST.map((e) => (
+                            <option key={e} value={e}>
+                              {e}
+                            </option>
+                          ))}
                     </select>
                   )}
                 </div>
@@ -3483,17 +4072,36 @@ export default function PresensiQR() {
                       const now = new Date();
                       const opts = [];
                       const monthNames = [
-                        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
-                        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+                        "Januari",
+                        "Februari",
+                        "Maret",
+                        "April",
+                        "Mei",
+                        "Juni",
+                        "Juli",
+                        "Agustus",
+                        "September",
+                        "Oktober",
+                        "November",
+                        "Desember",
                       ];
                       for (let i = 0; i < 12; i++) {
-                        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                        const d = new Date(
+                          now.getFullYear(),
+                          now.getMonth() - i,
+                          1,
+                        );
                         const yr = d.getFullYear();
-                        const mo = String(d.getMonth() + 1).padStart(2, '0');
-                        opts.push({ val: `${yr}-${mo}`, label: `${monthNames[d.getMonth()]} ${yr}` });
+                        const mo = String(d.getMonth() + 1).padStart(2, "0");
+                        opts.push({
+                          val: `${yr}-${mo}`,
+                          label: `${monthNames[d.getMonth()]} ${yr}`,
+                        });
                       }
-                      return opts.map(o => (
-                        <option key={o.val} value={o.val}>{o.label}</option>
+                      return opts.map((o) => (
+                        <option key={o.val} value={o.val}>
+                          {o.label}
+                        </option>
                       ));
                     })()}
                   </select>
@@ -3505,7 +4113,10 @@ export default function PresensiQR() {
                     Pencarian Siswa:
                   </label>
                   <div className="relative">
-                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search
+                      size={14}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
                     <input
                       type="text"
                       placeholder="Cari nama / NISN..."
@@ -3527,8 +4138,10 @@ export default function PresensiQR() {
                     className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white"
                   >
                     <option value="">Semua Kelas</option>
-                    {classes.map(c => (
-                      <option key={c} value={c}>Kelas {c}</option>
+                    {classes.map((c) => (
+                      <option key={c} value={c}>
+                        Kelas {c}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -3543,20 +4156,30 @@ export default function PresensiQR() {
                     onChange={(e) => setOnlyParticipated(e.target.checked)}
                     className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-300"
                   />
-                  <span>Hanya tampilkan peserta yang pernah scan/hadir di {rekapSelectedEkstra}</span>
+                  <span>
+                    Hanya tampilkan peserta yang pernah scan/hadir di{" "}
+                    {rekapSelectedEkstra}
+                  </span>
                 </label>
 
                 <div className="text-xs text-slate-500 font-medium">
-                  Periode: <strong className="text-amber-600 dark:text-amber-400">{getRekapMonthLabel(rekapMonth)}</strong>
+                  Periode:{" "}
+                  <strong className="text-amber-600 dark:text-amber-400">
+                    {getRekapMonthLabel(rekapMonth)}
+                  </strong>
                 </div>
               </div>
 
               {/* Statistics Cards */}
               {(() => {
                 const summary = getRekapSummary();
-                const totalActiveStudents = summary.filter(s => s.totalKehadiran > 0).length;
+                const totalActiveStudents = summary.filter(
+                  (s) => s.totalKehadiran > 0,
+                ).length;
                 const totalScans = rekapLogs.length;
-                const uniqueDatesCount = new Set(rekapLogs.map(l => l.scanned_at.substring(0, 10))).size;
+                const uniqueDatesCount = new Set(
+                  rekapLogs.map((l) => l.scanned_at.substring(0, 10)),
+                ).size;
 
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -3565,9 +4188,14 @@ export default function PresensiQR() {
                         <Users size={16} /> Total Peserta Aktif
                       </div>
                       <div className="text-2xl font-black text-amber-900 dark:text-amber-100 mt-1">
-                        {totalActiveStudents} <span className="text-xs font-normal text-amber-700 dark:text-amber-300">Siswa</span>
+                        {totalActiveStudents}{" "}
+                        <span className="text-xs font-normal text-amber-700 dark:text-amber-300">
+                          Siswa
+                        </span>
                       </div>
-                      <div className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">Siswa yang pernah melakukan scan</div>
+                      <div className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
+                        Siswa yang pernah melakukan scan
+                      </div>
                     </div>
 
                     <div className="bg-purple-50 dark:bg-purple-950/40 p-4 rounded-2xl border border-purple-200 dark:border-purple-800">
@@ -3575,9 +4203,14 @@ export default function PresensiQR() {
                         <Calendar size={16} /> Total Pertemuan Ekstra
                       </div>
                       <div className="text-2xl font-black text-purple-900 dark:text-purple-100 mt-1">
-                        {uniqueDatesCount} <span className="text-xs font-normal text-purple-700 dark:text-purple-300">Hari Pelaksanaan</span>
+                        {uniqueDatesCount}{" "}
+                        <span className="text-xs font-normal text-purple-700 dark:text-purple-300">
+                          Hari Pelaksanaan
+                        </span>
                       </div>
-                      <div className="text-[11px] text-purple-700 dark:text-purple-400 mt-1">Hari ditemukannya catatan presensi</div>
+                      <div className="text-[11px] text-purple-700 dark:text-purple-400 mt-1">
+                        Hari ditemukannya catatan presensi
+                      </div>
                     </div>
 
                     <div className="bg-emerald-50 dark:bg-emerald-950/40 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800">
@@ -3585,9 +4218,14 @@ export default function PresensiQR() {
                         <CheckCircle2 size={16} /> Total Scan Recorded
                       </div>
                       <div className="text-2xl font-black text-emerald-900 dark:text-emerald-100 mt-1">
-                        {totalScans} <span className="text-xs font-normal text-emerald-700 dark:text-emerald-300">Presensi</span>
+                        {totalScans}{" "}
+                        <span className="text-xs font-normal text-emerald-700 dark:text-emerald-300">
+                          Presensi
+                        </span>
                       </div>
-                      <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1">Total seluruh akumulasi scan presensi</div>
+                      <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1">
+                        Total seluruh akumulasi scan presensi
+                      </div>
                     </div>
                   </div>
                 );
@@ -3611,23 +4249,42 @@ export default function PresensiQR() {
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                     {loadingRekap ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-8 text-center text-slate-400 italic">
+                        <td
+                          colSpan={8}
+                          className="px-4 py-8 text-center text-slate-400 italic"
+                        >
                           Mengambil data rekap presensi...
                         </td>
                       </tr>
                     ) : getRekapSummary().length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-8 text-center text-slate-400 italic">
-                          Belum ada catatan scan presensi untuk {rekapSelectedEkstra} pada periode {getRekapMonthLabel(rekapMonth)}.
+                        <td
+                          colSpan={8}
+                          className="px-4 py-8 text-center text-slate-400 italic"
+                        >
+                          Belum ada catatan scan presensi untuk{" "}
+                          {rekapSelectedEkstra} pada periode{" "}
+                          {getRekapMonthLabel(rekapMonth)}.
                         </td>
                       </tr>
                     ) : (
                       getRekapSummary().map((item, index) => (
-                        <tr key={item.nisn + index} className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
-                          <td className="px-4 py-3 font-bold text-slate-500">{index + 1}</td>
-                          <td className="px-4 py-3 font-mono font-bold text-purple-700 dark:text-purple-300">{item.nisn}</td>
-                          <td className="px-4 py-3 font-extrabold text-slate-900 dark:text-white">{item.name}</td>
-                          <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-300">Kelas {item.kelas}</td>
+                        <tr
+                          key={item.nisn + index}
+                          className="hover:bg-slate-50 dark:hover:bg-slate-900/40"
+                        >
+                          <td className="px-4 py-3 font-bold text-slate-500">
+                            {index + 1}
+                          </td>
+                          <td className="px-4 py-3 font-mono font-bold text-purple-700 dark:text-purple-300">
+                            {item.nisn}
+                          </td>
+                          <td className="px-4 py-3 font-extrabold text-slate-900 dark:text-white">
+                            {item.name}
+                          </td>
+                          <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-300">
+                            Kelas {item.kelas}
+                          </td>
                           <td className="px-4 py-3 text-center">
                             <span className="inline-block px-2.5 py-1 rounded-full font-black text-xs bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
                               {item.totalKehadiran} Kali
@@ -3643,13 +4300,18 @@ export default function PresensiQR() {
                             {item.datesFormattedList.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {item.datesFormattedList.map((dt, dIdx) => (
-                                  <span key={dIdx} className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                                  <span
+                                    key={dIdx}
+                                    className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[10px] font-mono"
+                                  >
                                     {dt}
                                   </span>
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-slate-400 italic">Belum Pernah Scan</span>
+                              <span className="text-slate-400 italic">
+                                Belum Pernah Scan
+                              </span>
                             )}
                           </td>
                         </tr>
@@ -3658,11 +4320,13 @@ export default function PresensiQR() {
                   </tbody>
                 </table>
               </div>
-
             </div>
 
             {/* Official Report Print Area (Visible only when Printing) */}
-            <div id="rekap-ekstra-print-area" className="hidden print:block p-8 bg-white text-black font-sans">
+            <div
+              id="rekap-ekstra-print-area"
+              className="hidden print:block p-8 bg-white text-black font-sans"
+            >
               <style>{`
                 @media print {
                   body * {
@@ -3684,22 +4348,52 @@ export default function PresensiQR() {
 
               {/* Kop Laporan Header */}
               <div className="text-center border-b-2 border-black pb-4 mb-6">
-                <h2 className="text-xl font-bold uppercase tracking-wider">UPT SMP NEGERI 8 PASURUAN</h2>
-                <h3 className="text-sm font-semibold uppercase text-slate-700">Laporan Rekapitulasi Presensi Ekstrakurikuler</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Sistem Informasi Management Presensi & Laporan (SIMPANLA)</p>
+                <h2 className="text-xl font-bold uppercase tracking-wider">
+                  UPT SMP NEGERI 8 PASURUAN
+                </h2>
+                <h3 className="text-sm font-semibold uppercase text-slate-700">
+                  Laporan Rekapitulasi Presensi Ekstrakurikuler
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Sistem Informasi Management Presensi & Laporan (SIMPANLA)
+                </p>
               </div>
 
               {/* Information Grid */}
               <div className="grid grid-cols-2 gap-4 text-xs mb-6 border p-4 rounded">
                 <div>
-                  <div className="mb-1"><span className="font-bold">Kegiatan Ekstra:</span> {rekapSelectedEkstra}</div>
-                  <div className="mb-1"><span className="font-bold">Periode Laporan:</span> {getRekapMonthLabel(rekapMonth)}</div>
-                  <div className="mb-1"><span className="font-bold">Tahun Ajaran:</span> {academicYear || '2025/2026'}</div>
+                  <div className="mb-1">
+                    <span className="font-bold">Kegiatan Ekstra:</span>{" "}
+                    {rekapSelectedEkstra}
+                  </div>
+                  <div className="mb-1">
+                    <span className="font-bold">Periode Laporan:</span>{" "}
+                    {getRekapMonthLabel(rekapMonth)}
+                  </div>
+                  <div className="mb-1">
+                    <span className="font-bold">Tahun Ajaran:</span>{" "}
+                    {academicYear || "2025/2026"}
+                  </div>
                 </div>
                 <div>
-                  <div className="mb-1"><span className="font-bold">Pembina Ekstra:</span> {assignedPembinaConfig?.nama || profile?.full_name || 'Pembina Ekstrakurikuler'}</div>
-                  <div className="mb-1"><span className="font-bold">NIP Pembina:</span> {assignedPembinaConfig?.nip || profile?.nip || '-'}</div>
-                  <div className="mb-1"><span className="font-bold">Tanggal Cetak:</span> {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                  <div className="mb-1">
+                    <span className="font-bold">Pembina Ekstra:</span>{" "}
+                    {assignedPembinaConfig?.nama ||
+                      profile?.full_name ||
+                      "Pembina Ekstrakurikuler"}
+                  </div>
+                  <div className="mb-1">
+                    <span className="font-bold">NIP Pembina:</span>{" "}
+                    {assignedPembinaConfig?.nip || profile?.nip || "-"}
+                  </div>
+                  <div className="mb-1">
+                    <span className="font-bold">Tanggal Cetak:</span>{" "}
+                    {new Date().toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -3709,22 +4403,38 @@ export default function PresensiQR() {
                   <tr className="bg-slate-100 text-black font-bold text-center">
                     <th className="border border-slate-400 p-2 w-10">NO</th>
                     <th className="border border-slate-400 p-2 w-28">NISN</th>
-                    <th className="border border-slate-400 p-2 text-left">NAMA SISWA</th>
+                    <th className="border border-slate-400 p-2 text-left">
+                      NAMA SISWA
+                    </th>
                     <th className="border border-slate-400 p-2 w-20">KELAS</th>
-                    <th className="border border-slate-400 p-2 w-24">TOTAL SCAN</th>
-                    <th className="border border-slate-400 p-2 text-left">RINCIAN TANGGAL KEHADIRAN</th>
+                    <th className="border border-slate-400 p-2 w-24">
+                      TOTAL SCAN
+                    </th>
+                    <th className="border border-slate-400 p-2 text-left">
+                      RINCIAN TANGGAL KEHADIRAN
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {getRekapSummary().map((item, idx) => (
                     <tr key={idx} className="border-b border-slate-300">
-                      <td className="border border-slate-400 p-2 text-center">{idx + 1}</td>
-                      <td className="border border-slate-400 p-2 text-center font-mono">{item.nisn}</td>
-                      <td className="border border-slate-400 p-2 font-bold">{item.name}</td>
-                      <td className="border border-slate-400 p-2 text-center">Kelas {item.kelas}</td>
-                      <td className="border border-slate-400 p-2 text-center font-bold">{item.totalKehadiran} Kali</td>
+                      <td className="border border-slate-400 p-2 text-center">
+                        {idx + 1}
+                      </td>
+                      <td className="border border-slate-400 p-2 text-center font-mono">
+                        {item.nisn}
+                      </td>
+                      <td className="border border-slate-400 p-2 font-bold">
+                        {item.name}
+                      </td>
+                      <td className="border border-slate-400 p-2 text-center">
+                        Kelas {item.kelas}
+                      </td>
+                      <td className="border border-slate-400 p-2 text-center font-bold">
+                        {item.totalKehadiran} Kali
+                      </td>
                       <td className="border border-slate-400 p-2 text-xs">
-                        {item.datesFormattedList.join(', ')}
+                        {item.datesFormattedList.join(", ")}
                       </td>
                     </tr>
                   ))}
@@ -3737,25 +4447,44 @@ export default function PresensiQR() {
                   <p>Mengetahui,</p>
                   <p className="font-bold">Kepala Sekolah</p>
                   <div className="h-20"></div>
-                  <p className="font-bold underline">_________________________</p>
+                  <p className="font-bold underline">
+                    _________________________
+                  </p>
                   <p>NIP. ....................................</p>
                 </div>
 
                 <div className="text-center w-60">
-                  <p>Pasuruan, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-                  <p className="font-bold">Pembina Ekstrakurikuler {rekapSelectedEkstra}</p>
+                  <p>
+                    Pasuruan,{" "}
+                    {new Date().toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </p>
+                  <p className="font-bold">
+                    Pembina Ekstrakurikuler {rekapSelectedEkstra}
+                  </p>
                   <div className="h-20"></div>
-                  <p className="font-bold underline">{assignedPembinaConfig?.nama || profile?.full_name || '....................................'}</p>
-                  <p>NIP. {assignedPembinaConfig?.nip || profile?.nip || '....................................'}</p>
+                  <p className="font-bold underline">
+                    {assignedPembinaConfig?.nama ||
+                      profile?.full_name ||
+                      "...................................."}
+                  </p>
+                  <p>
+                    NIP.{" "}
+                    {assignedPembinaConfig?.nip ||
+                      profile?.nip ||
+                      "...................................."}
+                  </p>
                 </div>
               </div>
             </div>
-
           </div>
         )}
 
         {/* TAB 3: KELOLA PEMBINA EKSTRA (ADMIN ONLY) */}
-        {activeTab === 'pembina' && isAdmin && (
+        {activeTab === "pembina" && isAdmin && (
           <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
@@ -3767,7 +4496,9 @@ export default function PresensiQR() {
                   Penetapan Guru Pembina Ekstrakurikuler
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Tentukan Guru yang bertindak sebagai Pembina Ekstrakurikuler. Hanya Guru yang aktif sebagai Pembina Ekstra yang memiliki izin melakukan Scan QR Presensi.
+                  Tentukan Guru yang bertindak sebagai Pembina Ekstrakurikuler.
+                  Hanya Guru yang aktif sebagai Pembina Ekstra yang memiliki
+                  izin melakukan Scan QR Presensi.
                 </p>
               </div>
 
@@ -3776,7 +4507,10 @@ export default function PresensiQR() {
                   onClick={fetchTeachers}
                   className="px-3 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
                 >
-                  <RefreshCw size={14} className={loadingTeachers ? 'animate-spin' : ''} />
+                  <RefreshCw
+                    size={14}
+                    className={loadingTeachers ? "animate-spin" : ""}
+                  />
                   <span>Reload Guru</span>
                 </button>
               </div>
@@ -3784,7 +4518,10 @@ export default function PresensiQR() {
 
             {/* Search filter */}
             <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
               <input
                 type="text"
                 placeholder="Cari NIP atau nama Guru..."
@@ -3797,48 +4534,77 @@ export default function PresensiQR() {
             {/* Teacher Pembina List */}
             <div className="space-y-4">
               {loadingTeachers ? (
-                <div className="p-8 text-center text-slate-400">Loading data guru...</div>
+                <div className="p-8 text-center text-slate-400">
+                  Loading data guru...
+                </div>
               ) : teachers.length === 0 ? (
-                <div className="p-8 text-center text-slate-400">Belum ada data guru di database.</div>
+                <div className="p-8 text-center text-slate-400">
+                  Belum ada data guru di database.
+                </div>
               ) : (
                 teachers
-                  .filter(t => !pembinaSearch || (t.full_name && t.full_name.toLowerCase().includes(pembinaSearch.toLowerCase())) || (t.nip && t.nip.includes(pembinaSearch)))
-                  .map(teacher => {
-                    const isPembinaActive = pembinaEkstraList.some(p => p.nip === teacher.nip || p.nama === teacher.full_name);
-                    const pembinaItem = pembinaEkstraList.find(p => p.nip === teacher.nip || p.nama === teacher.full_name);
+                  .filter(
+                    (t) =>
+                      !pembinaSearch ||
+                      (t.full_name &&
+                        t.full_name
+                          .toLowerCase()
+                          .includes(pembinaSearch.toLowerCase())) ||
+                      (t.nip && t.nip.includes(pembinaSearch)),
+                  )
+                  .map((teacher) => {
+                    const isPembinaActive = pembinaEkstraList.some(
+                      (p) =>
+                        p.nip === teacher.nip || p.nama === teacher.full_name,
+                    );
+                    const pembinaItem = pembinaEkstraList.find(
+                      (p) =>
+                        p.nip === teacher.nip || p.nama === teacher.full_name,
+                    );
                     const assignedEkstra = pembinaItem?.ekstraList || [];
 
                     return (
-                      <div 
+                      <div
                         key={teacher.id}
                         className={`p-4 rounded-2xl border transition-all ${
                           isPembinaActive
-                            ? 'bg-emerald-50/60 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700'
-                            : 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800'
+                            ? "bg-emerald-50/60 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700"
+                            : "bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800"
                         }`}
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-xl font-bold flex items-center justify-center shrink-0 ${
-                              isPembinaActive ? 'bg-emerald-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                            }`}>
-                              {teacher.full_name?.charAt(0) || 'G'}
+                            <div
+                              className={`w-10 h-10 rounded-xl font-bold flex items-center justify-center shrink-0 ${
+                                isPembinaActive
+                                  ? "bg-emerald-600 text-white"
+                                  : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                              }`}
+                            >
+                              {teacher.full_name?.charAt(0) || "G"}
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
                                 <h4 className="font-extrabold text-slate-900 dark:text-white text-sm">
                                   {teacher.full_name}
                                 </h4>
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                                  isPembinaActive
-                                    ? 'bg-emerald-600 text-white'
-                                    : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
-                                }`}>
-                                  {isPembinaActive ? 'Pembina Ekstra Aktif' : 'Guru Biasa'}
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                                    isPembinaActive
+                                      ? "bg-emerald-600 text-white"
+                                      : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
+                                  }`}
+                                >
+                                  {isPembinaActive
+                                    ? "Pembina Ekstra Aktif"
+                                    : "Guru Biasa"}
                                 </span>
                               </div>
                               <p className="text-xs text-slate-500 font-mono mt-0.5">
-                                NIP: {teacher.nip || '-'} {teacher.mengajar_mapel ? `• Mapel: ${teacher.mengajar_mapel}` : ''}
+                                NIP: {teacher.nip || "-"}{" "}
+                                {teacher.mengajar_mapel
+                                  ? `• Mapel: ${teacher.mengajar_mapel}`
+                                  : ""}
                               </p>
                             </div>
                           </div>
@@ -3847,8 +4613,8 @@ export default function PresensiQR() {
                             onClick={() => handleTogglePembinaTeacher(teacher)}
                             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 self-start sm:self-auto ${
                               isPembinaActive
-                                ? 'bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'
-                                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                ? "bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300"
+                                : "bg-emerald-600 hover:bg-emerald-700 text-white"
                             }`}
                           >
                             {isPembinaActive ? (
@@ -3872,20 +4638,30 @@ export default function PresensiQR() {
                               Ekstrakurikuler yang Diampu:
                             </label>
                             <div className="flex flex-wrap gap-1.5">
-                              {EKSTRA_LIST.map(ekstraName => {
-                                const isChecked = assignedEkstra.includes(ekstraName);
+                              {EKSTRA_LIST.map((ekstraName) => {
+                                const isChecked =
+                                  assignedEkstra.includes(ekstraName);
                                 return (
                                   <button
                                     key={ekstraName}
                                     type="button"
-                                    onClick={() => handleToggleEkstraForPembina(teacher.nip, ekstraName)}
+                                    onClick={() =>
+                                      handleToggleEkstraForPembina(
+                                        teacher.nip,
+                                        ekstraName,
+                                      )
+                                    }
                                     className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
                                       isChecked
-                                        ? 'bg-emerald-600 text-white shadow-sm'
-                                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                                        ? "bg-emerald-600 text-white shadow-sm"
+                                        : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                                     }`}
                                   >
-                                    {isChecked ? <CheckSquare size={12} /> : <Square size={12} />}
+                                    {isChecked ? (
+                                      <CheckSquare size={12} />
+                                    ) : (
+                                      <Square size={12} />
+                                    )}
                                     <span>{ekstraName}</span>
                                   </button>
                                 );
@@ -3898,17 +4674,22 @@ export default function PresensiQR() {
                   })
               )}
             </div>
-
           </div>
         )}
 
         {/* TAB 4: CETAK KARTU QR NISN (ADMIN ONLY) */}
-        {activeTab === 'cards' && isAdmin && (
+        {activeTab === "cards" && isAdmin && (
           <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h3 className="text-lg font-black text-slate-800 dark:text-white">Generator & Cetak Kartu QR NISN</h3>
-                <p className="text-xs text-slate-500">Fitur cetak kartu identitas siswa yang dilengkapi QR Code NISN resmi UPT SMP Negeri 8 Pasuruan untuk kebutuhan cetak massal per kelas.</p>
+                <h3 className="text-lg font-black text-slate-800 dark:text-white">
+                  Generator & Cetak Kartu QR NISN
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Fitur cetak kartu identitas siswa yang dilengkapi QR Code NISN
+                  resmi UPT SMP Negeri 8 Pasuruan untuk kebutuhan cetak massal
+                  per kelas.
+                </p>
               </div>
 
               <button
@@ -3923,21 +4704,29 @@ export default function PresensiQR() {
             {/* Filter Bar */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700">
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Filter Kelas</label>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Filter Kelas
+                </label>
                 <select
                   value={selectedCardClass}
                   onChange={(e) => setSelectedCardClass(e.target.value)}
                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white"
                 >
-                  <option value="">Semua Kelas ({students.length} Siswa)</option>
-                  {classes.map(c => (
-                    <option key={c} value={c}>Kelas {c}</option>
+                  <option value="">
+                    Semua Kelas ({students.length} Siswa)
+                  </option>
+                  {classes.map((c) => (
+                    <option key={c} value={c}>
+                      Kelas {c}
+                    </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Cari Nama / NISN</label>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Cari Nama / NISN
+                </label>
                 <input
                   type="text"
                   placeholder="Ketik nama siswa..."
@@ -3965,8 +4754,12 @@ export default function PresensiQR() {
                       <div className="flex items-center gap-2">
                         <GraduationCap size={18} className="text-purple-600" />
                         <div>
-                          <div className="text-[10px] font-black text-purple-900 dark:text-purple-300 uppercase tracking-wider">UPT SMPN 8 PASURUAN</div>
-                          <div className="text-[9px] text-slate-400 font-bold">KARTU PRESENSI NISN</div>
+                          <div className="text-[10px] font-black text-purple-900 dark:text-purple-300 uppercase tracking-wider">
+                            UPT SMPN 8 PASURUAN
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-bold">
+                            KARTU PRESENSI NISN
+                          </div>
                         </div>
                       </div>
                       <span className="px-2 py-0.5 rounded bg-purple-600 text-white text-[10px] font-black">
@@ -3981,10 +4774,10 @@ export default function PresensiQR() {
                           {st.name}
                         </h4>
                         <div className="text-[11px] font-mono font-bold text-purple-700 dark:text-purple-300">
-                          NISN: {st.nisn || st.nis || '-'}
+                          NISN: {st.nisn || st.nis || "-"}
                         </div>
                         <div className="text-[10px] text-slate-500">
-                          T.A {academicYear || '2025/2026'}
+                          T.A {academicYear || "2025/2026"}
                         </div>
                       </div>
 
@@ -4008,7 +4801,6 @@ export default function PresensiQR() {
                 ))
               )}
             </div>
-
           </div>
         )}
 
@@ -4016,7 +4808,6 @@ export default function PresensiQR() {
         {showManualAddModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fade-in">
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-slate-100 dark:border-slate-700 space-y-5 max-h-[90vh] overflow-y-auto">
-              
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-600 flex items-center justify-center font-bold">
@@ -4040,14 +4831,16 @@ export default function PresensiQR() {
                 </button>
               </div>
 
-              <form onSubmit={handleSaveManualAttendance} className="space-y-4 text-xs">
-                
+              <form
+                onSubmit={handleSaveManualAttendance}
+                className="space-y-4 text-xs"
+              >
                 {/* Search & Select Student */}
                 <div className="space-y-1.5">
                   <label className="font-bold text-slate-700 dark:text-slate-300">
                     Pilih Siswa <span className="text-rose-500">*</span>
                   </label>
-                  
+
                   {selectedStudentForManual ? (
                     <div className="p-3 bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 rounded-xl flex items-center justify-between">
                       <div>
@@ -4055,7 +4848,10 @@ export default function PresensiQR() {
                           {selectedStudentForManual.name}
                         </div>
                         <div className="text-purple-700 dark:text-purple-300 text-xs font-bold mt-0.5">
-                          Kelas {selectedStudentForManual.kelas} • NISN: {selectedStudentForManual.nisn || selectedStudentForManual.nis || '-'}
+                          Kelas {selectedStudentForManual.kelas} • NISN:{" "}
+                          {selectedStudentForManual.nisn ||
+                            selectedStudentForManual.nis ||
+                            "-"}
                         </div>
                       </div>
                       <button
@@ -4069,12 +4865,17 @@ export default function PresensiQR() {
                   ) : (
                     <div className="space-y-2">
                       <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Search
+                          size={14}
+                          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                        />
                         <input
                           type="text"
                           placeholder="Ketik nama siswa atau NISN..."
                           value={manualAddStudentSearch}
-                          onChange={(e) => setManualAddStudentSearch(e.target.value)}
+                          onChange={(e) =>
+                            setManualAddStudentSearch(e.target.value)
+                          }
                           className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
                         />
                       </div>
@@ -4083,24 +4884,32 @@ export default function PresensiQR() {
                         <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800">
                           {searchMatchedStudents.length === 0 ? (
                             <div className="p-3 text-center text-slate-400 italic text-xs">
-                              Tidak ada siswa yang cocok dengan "{manualAddStudentSearch}"
+                              Tidak ada siswa yang cocok dengan "
+                              {manualAddStudentSearch}"
                             </div>
                           ) : (
-                            searchMatchedStudents.map(st => (
+                            searchMatchedStudents.map((st) => (
                               <button
                                 key={st.id}
                                 type="button"
                                 onClick={() => {
                                   setSelectedStudentForManual(st);
-                                  setManualAddStudentSearch('');
+                                  setManualAddStudentSearch("");
                                 }}
                                 className="w-full text-left p-2.5 hover:bg-purple-50 dark:hover:bg-purple-950/50 flex items-center justify-between text-xs transition-colors"
                               >
                                 <div>
-                                  <div className="font-extrabold text-slate-800 dark:text-slate-100">{st.name}</div>
-                                  <div className="text-[10px] text-slate-500">Kelas {st.kelas} • NISN: {st.nisn || st.nis || '-'}</div>
+                                  <div className="font-extrabold text-slate-800 dark:text-slate-100">
+                                    {st.name}
+                                  </div>
+                                  <div className="text-[10px] text-slate-500">
+                                    Kelas {st.kelas} • NISN:{" "}
+                                    {st.nisn || st.nis || "-"}
+                                  </div>
                                 </div>
-                                <span className="text-purple-600 font-bold text-[11px]">+ Pilih</span>
+                                <span className="text-purple-600 font-bold text-[11px]">
+                                  + Pilih
+                                </span>
                               </button>
                             ))
                           )}
@@ -4113,7 +4922,9 @@ export default function PresensiQR() {
                 {/* Tanggal & Waktu */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="font-bold text-slate-700 dark:text-slate-300">Tanggal</label>
+                    <label className="font-bold text-slate-700 dark:text-slate-300">
+                      Tanggal
+                    </label>
                     <input
                       type="date"
                       value={manualAddDate}
@@ -4124,7 +4935,9 @@ export default function PresensiQR() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-bold text-slate-700 dark:text-slate-300">Waktu</label>
+                    <label className="font-bold text-slate-700 dark:text-slate-300">
+                      Waktu
+                    </label>
                     <input
                       type="time"
                       value={manualAddTime}
@@ -4137,29 +4950,39 @@ export default function PresensiQR() {
 
                 {/* Kegiatan Presensi */}
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Kegiatan Presensi</label>
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    Kegiatan Presensi
+                  </label>
                   <select
                     value={manualAddMode}
-                    onChange={(e) => setManualAddMode(e.target.value as PresensiMode)}
+                    onChange={(e) =>
+                      setManualAddMode(e.target.value as PresensiMode)
+                    }
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white"
                   >
-                    <option value="harian">Scan Masuk Gerbang (Presensi Harian)</option>
+                    <option value="harian">
+                      Scan Masuk Gerbang (Presensi Harian)
+                    </option>
                     <option value="dhuha">Sholat Dhuha</option>
                     <option value="dzuhur">Sholat Dzuhur</option>
                     <option value="ekstra">Ekstrakurikuler</option>
                   </select>
                 </div>
 
-                {manualAddMode === 'ekstra' && (
+                {manualAddMode === "ekstra" && (
                   <div className="space-y-1 animate-fade-in">
-                    <label className="font-bold text-slate-700 dark:text-slate-300">Cabang Ekstrakurikuler</label>
+                    <label className="font-bold text-slate-700 dark:text-slate-300">
+                      Cabang Ekstrakurikuler
+                    </label>
                     <select
                       value={manualAddEkstra}
                       onChange={(e) => setManualAddEkstra(e.target.value)}
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white"
                     >
-                      {EKSTRA_LIST.map(ek => (
-                        <option key={ek} value={ek}>{ek}</option>
+                      {EKSTRA_LIST.map((ek) => (
+                        <option key={ek} value={ek}>
+                          {ek}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -4167,26 +4990,28 @@ export default function PresensiQR() {
 
                 {/* Status Kehadiran */}
                 <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Status Kehadiran</label>
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    Status Kehadiran
+                  </label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setManualAddStatus('Hadir')}
+                      onClick={() => setManualAddStatus("Hadir")}
                       className={`py-2 px-3 rounded-xl font-black text-xs transition-all border ${
-                        manualAddStatus === 'Hadir'
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                          : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                        manualAddStatus === "Hadir"
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                          : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                       }`}
                     >
                       ✓ Hadir (Tepat Waktu)
                     </button>
                     <button
                       type="button"
-                      onClick={() => setManualAddStatus('Terlambat')}
+                      onClick={() => setManualAddStatus("Terlambat")}
                       className={`py-2 px-3 rounded-xl font-black text-xs transition-all border ${
-                        manualAddStatus === 'Terlambat'
-                          ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                          : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                        manualAddStatus === "Terlambat"
+                          ? "bg-rose-600 text-white border-rose-600 shadow-sm"
+                          : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                       }`}
                     >
                       ⚠ Terlambat
@@ -4196,7 +5021,9 @@ export default function PresensiQR() {
 
                 {/* Catatan */}
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Catatan / Keterangan (Opsional)</label>
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    Catatan / Keterangan (Opsional)
+                  </label>
                   <input
                     type="text"
                     placeholder="Contoh: Izin terlambat dari orang tua, Kartu tertinggal, dll."
@@ -4233,9 +5060,7 @@ export default function PresensiQR() {
                     )}
                   </button>
                 </div>
-
               </form>
-
             </div>
           </div>
         )}
@@ -4244,7 +5069,6 @@ export default function PresensiQR() {
         {editingRecord && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fade-in">
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-slate-100 dark:border-slate-700 space-y-5">
-              
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-600 flex items-center justify-center font-bold">
@@ -4269,7 +5093,6 @@ export default function PresensiQR() {
               </div>
 
               <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
-                
                 {/* Student Info Readonly Banner */}
                 <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
                   <div className="font-black text-slate-900 dark:text-white text-sm">
@@ -4279,32 +5102,43 @@ export default function PresensiQR() {
                     Kelas {editingRecord.kelas} • NISN: {editingRecord.nisn}
                   </div>
                   <div className="text-[10px] text-slate-400 mt-1 font-mono">
-                    Waktu: {new Date(editingRecord.timestamp).toLocaleString('id-ID')}
+                    Waktu:{" "}
+                    {new Date(editingRecord.timestamp).toLocaleString("id-ID")}
                   </div>
                 </div>
 
                 {/* Status Toggle */}
                 <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Status Kehadiran</label>
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    Status Kehadiran
+                  </label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setEditingRecord(prev => prev ? { ...prev, status: 'Hadir' } : null)}
+                      onClick={() =>
+                        setEditingRecord((prev) =>
+                          prev ? { ...prev, status: "Hadir" } : null,
+                        )
+                      }
                       className={`py-2 px-3 rounded-xl font-black text-xs transition-all border ${
-                        editingRecord.status === 'Hadir'
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                          : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                        editingRecord.status === "Hadir"
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                          : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700"
                       }`}
                     >
                       ✓ Hadir
                     </button>
                     <button
                       type="button"
-                      onClick={() => setEditingRecord(prev => prev ? { ...prev, status: 'Terlambat' } : null)}
+                      onClick={() =>
+                        setEditingRecord((prev) =>
+                          prev ? { ...prev, status: "Terlambat" } : null,
+                        )
+                      }
                       className={`py-2 px-3 rounded-xl font-black text-xs transition-all border ${
-                        editingRecord.status === 'Terlambat'
-                          ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                          : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                        editingRecord.status === "Terlambat"
+                          ? "bg-rose-600 text-white border-rose-600 shadow-sm"
+                          : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700"
                       }`}
                     >
                       ⚠ Terlambat
@@ -4314,29 +5148,47 @@ export default function PresensiQR() {
 
                 {/* Mode Kegiatan */}
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Kegiatan</label>
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    Kegiatan
+                  </label>
                   <select
                     value={editingRecord.mode}
-                    onChange={(e) => setEditingRecord(prev => prev ? { ...prev, mode: e.target.value as PresensiMode } : null)}
+                    onChange={(e) =>
+                      setEditingRecord((prev) =>
+                        prev
+                          ? { ...prev, mode: e.target.value as PresensiMode }
+                          : null,
+                      )
+                    }
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white"
                   >
-                    <option value="harian">Scan Masuk Gerbang (Presensi Harian)</option>
+                    <option value="harian">
+                      Scan Masuk Gerbang (Presensi Harian)
+                    </option>
                     <option value="dhuha">Sholat Dhuha</option>
                     <option value="dzuhur">Sholat Dzuhur</option>
                     <option value="ekstra">Ekstrakurikuler</option>
                   </select>
                 </div>
 
-                {editingRecord.mode === 'ekstra' && (
+                {editingRecord.mode === "ekstra" && (
                   <div className="space-y-1 animate-fade-in">
-                    <label className="font-bold text-slate-700 dark:text-slate-300">Cabang Ekstra</label>
+                    <label className="font-bold text-slate-700 dark:text-slate-300">
+                      Cabang Ekstra
+                    </label>
                     <select
                       value={editingRecord.subject || EKSTRA_LIST[0]}
-                      onChange={(e) => setEditingRecord(prev => prev ? { ...prev, subject: e.target.value } : null)}
+                      onChange={(e) =>
+                        setEditingRecord((prev) =>
+                          prev ? { ...prev, subject: e.target.value } : null,
+                        )
+                      }
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white"
                     >
-                      {EKSTRA_LIST.map(ek => (
-                        <option key={ek} value={ek}>{ek}</option>
+                      {EKSTRA_LIST.map((ek) => (
+                        <option key={ek} value={ek}>
+                          {ek}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -4344,11 +5196,17 @@ export default function PresensiQR() {
 
                 {/* Notes */}
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-700 dark:text-slate-300">Catatan / Keterangan</label>
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    Catatan / Keterangan
+                  </label>
                   <input
                     type="text"
-                    value={editingRecord.notes || ''}
-                    onChange={(e) => setEditingRecord(prev => prev ? { ...prev, notes: e.target.value } : null)}
+                    value={editingRecord.notes || ""}
+                    onChange={(e) =>
+                      setEditingRecord((prev) =>
+                        prev ? { ...prev, notes: e.target.value } : null,
+                      )
+                    }
                     placeholder="Keterangan..."
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white"
                   />
@@ -4381,9 +5239,7 @@ export default function PresensiQR() {
                     )}
                   </button>
                 </div>
-
               </form>
-
             </div>
           </div>
         )}
@@ -4392,7 +5248,6 @@ export default function PresensiQR() {
         {isPrintModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fade-in overflow-y-auto">
             <div className="bg-white text-slate-900 rounded-3xl p-6 md:p-8 max-w-4xl w-full shadow-2xl space-y-6 my-8 max-h-[92vh] overflow-y-auto">
-              
               {/* Header Action Bar */}
               <div className="flex items-center justify-between pb-4 border-b border-slate-200 print:hidden">
                 <div className="flex items-center gap-2">
@@ -4422,14 +5277,20 @@ export default function PresensiQR() {
 
               {/* Printable Document Sheet */}
               <div className="printable-area p-6 space-y-6 border border-slate-200 rounded-2xl bg-white">
-                
                 {/* Official Kop Surat Header */}
                 <div className="text-center pb-4 border-b-2 border-slate-900 space-y-1">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">PEMERINTAH KOTA PASURUAN</h4>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">DINAS PENDIDIKAN DAN KEBUDAYAAN</h4>
-                  <h2 className="text-lg font-black uppercase text-slate-900">UPT SMP NEGERI 8 PASURUAN</h2>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                    PEMERINTAH KOTA PASURUAN
+                  </h4>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                    DINAS PENDIDIKAN DAN KEBUDAYAAN
+                  </h4>
+                  <h2 className="text-lg font-black uppercase text-slate-900">
+                    UPT SMP NEGERI 8 PASURUAN
+                  </h2>
                   <p className="text-[10px] text-slate-500">
-                    Jl. Ir. H. Juanda No. 8, Kota Pasuruan, Jawa Timur | Telp: (0343) 424108 | Web: smpn8pasuruan.sch.id
+                    Jl. Ir. H. Juanda No. 8, Kota Pasuruan, Jawa Timur | Telp:
+                    (0343) 424108 | Web: smpn8pasuruan.sch.id
                   </p>
                 </div>
 
@@ -4438,15 +5299,48 @@ export default function PresensiQR() {
                   <h3 className="text-center text-sm font-black uppercase tracking-wide text-slate-900 underline decoration-slate-400">
                     LAPORAN REKAPITULASI SCAN PRESENSI DIGITAL SISWA
                   </h3>
-                  
+
                   <div className="grid grid-cols-2 gap-4 text-xs pt-2">
                     <div>
-                      <div><strong>Periode:</strong> {logDateMode === 'today' ? 'Hari Ini' : logDateMode === 'date' ? logSelectedDate : logDateMode === 'month' ? logSelectedMonth : 'Semua Periode Database'}</div>
-                      <div><strong>Jenis Presensi:</strong> {logModeFilter ? getModeLabel(logModeFilter as PresensiMode, logEkstraFilter) : 'Semua Kegiatan'}</div>
+                      <div>
+                        <strong>Periode:</strong>{" "}
+                        {logDateMode === "today"
+                          ? "Hari Ini"
+                          : logDateMode === "date"
+                            ? logSelectedDate
+                            : logDateMode === "month"
+                              ? logSelectedMonth
+                              : "Semua Periode Database"}
+                      </div>
+                      <div>
+                        <strong>Jenis Presensi:</strong>{" "}
+                        {logModeFilter
+                          ? getModeLabel(
+                              logModeFilter as PresensiMode,
+                              logEkstraFilter,
+                            )
+                          : "Semua Kegiatan"}
+                      </div>
                     </div>
                     <div className="text-right">
-                      <div><strong>Total Siswa Tercatat:</strong> {filteredDatabaseLogs.length} Orang</div>
-                      <div><strong>Hadir Tepat Waktu:</strong> {filteredDatabaseLogs.filter(i => i.status === 'Hadir').length} | <strong>Terlambat:</strong> {filteredDatabaseLogs.filter(i => i.status === 'Terlambat').length}</div>
+                      <div>
+                        <strong>Total Siswa Tercatat:</strong>{" "}
+                        {filteredDatabaseLogs.length} Orang
+                      </div>
+                      <div>
+                        <strong>Hadir Tepat Waktu:</strong>{" "}
+                        {
+                          filteredDatabaseLogs.filter(
+                            (i) => i.status === "Hadir",
+                          ).length
+                        }{" "}
+                        | <strong>Terlambat:</strong>{" "}
+                        {
+                          filteredDatabaseLogs.filter(
+                            (i) => i.status === "Terlambat",
+                          ).length
+                        }
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -4456,40 +5350,69 @@ export default function PresensiQR() {
                   <table className="w-full text-left text-xs border border-slate-300">
                     <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300">
                       <tr>
-                        <th className="p-2 border-r border-slate-300 text-center w-10">No</th>
-                        <th className="p-2 border-r border-slate-300">Waktu & Tanggal</th>
+                        <th className="p-2 border-r border-slate-300 text-center w-10">
+                          No
+                        </th>
+                        <th className="p-2 border-r border-slate-300">
+                          Waktu & Tanggal
+                        </th>
                         <th className="p-2 border-r border-slate-300">NISN</th>
-                        <th className="p-2 border-r border-slate-300">Nama Siswa</th>
-                        <th className="p-2 border-r border-slate-300 text-center">Kelas</th>
-                        <th className="p-2 border-r border-slate-300">Kegiatan</th>
-                        <th className="p-2 border-r border-slate-300 text-center">Status</th>
+                        <th className="p-2 border-r border-slate-300">
+                          Nama Siswa
+                        </th>
+                        <th className="p-2 border-r border-slate-300 text-center">
+                          Kelas
+                        </th>
+                        <th className="p-2 border-r border-slate-300">
+                          Kegiatan
+                        </th>
+                        <th className="p-2 border-r border-slate-300 text-center">
+                          Status
+                        </th>
                         <th className="p-2">Catatan</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {filteredDatabaseLogs.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="p-4 text-center text-slate-400 italic">
+                          <td
+                            colSpan={8}
+                            className="p-4 text-center text-slate-400 italic"
+                          >
                             Tidak ada data presensi pada kriteria ini.
                           </td>
                         </tr>
                       ) : (
                         filteredDatabaseLogs.map((item, idx) => (
                           <tr key={item.id}>
-                            <td className="p-2 border-r border-slate-200 text-center font-medium">{idx + 1}</td>
-                            <td className="p-2 border-r border-slate-200 font-mono text-[11px]">
-                              {new Date(item.timestamp).toLocaleString('id-ID')}
+                            <td className="p-2 border-r border-slate-200 text-center font-medium">
+                              {idx + 1}
                             </td>
-                            <td className="p-2 border-r border-slate-200 font-mono font-bold text-purple-800">{item.nisn}</td>
-                            <td className="p-2 border-r border-slate-200 font-bold">{item.studentName}</td>
-                            <td className="p-2 border-r border-slate-200 text-center font-bold">{item.kelas}</td>
-                            <td className="p-2 border-r border-slate-200 text-[11px]">{getModeLabel(item.mode, item.subject)}</td>
+                            <td className="p-2 border-r border-slate-200 font-mono text-[11px]">
+                              {new Date(item.timestamp).toLocaleString("id-ID")}
+                            </td>
+                            <td className="p-2 border-r border-slate-200 font-mono font-bold text-purple-800">
+                              {item.nisn}
+                            </td>
+                            <td className="p-2 border-r border-slate-200 font-bold">
+                              {item.studentName}
+                            </td>
+                            <td className="p-2 border-r border-slate-200 text-center font-bold">
+                              {item.kelas}
+                            </td>
+                            <td className="p-2 border-r border-slate-200 text-[11px]">
+                              {getModeLabel(item.mode, item.subject)}
+                            </td>
                             <td className="p-2 border-r border-slate-200 text-center">
-                              <span className={`font-bold ${item.status === 'Terlambat' ? 'text-rose-700' : 'text-emerald-700'}`}>
+                              <span
+                                className={`font-bold ${item.status === "Terlambat" ? "text-rose-700" : "text-emerald-700"}`}
+                              >
                                 {item.status}
                               </span>
                             </td>
-                            <td className="p-2 text-[11px] text-slate-600">{item.notes || '-'}</td>
+                            <td className="p-2 text-[11px] text-slate-600">
+                              {item.notes || "-"}
+                            </td>
                           </tr>
                         ))
                       )}
@@ -4500,414 +5423,504 @@ export default function PresensiQR() {
                 {/* Official Signatures Footer */}
                 <div className="grid grid-cols-2 gap-8 pt-8 text-xs text-center">
                   <div>
-                    <p className="text-slate-500 mb-16">Mengetahui,<br />Guru Piket / Pembina Kegiatan</p>
-                    <p className="font-black text-slate-900 underline">( _____________________________ )</p>
-                    <p className="text-[10px] text-slate-500">NIP. .....................................................</p>
+                    <p className="text-slate-500 mb-16">
+                      Mengetahui,
+                      <br />
+                      Guru Piket / Pembina Kegiatan
+                    </p>
+                    <p className="font-black text-slate-900 underline">
+                      ( _____________________________ )
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      NIP. .....................................................
+                    </p>
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-16">Pasuruan, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}<br />Kepala UPT SMPN 8 Pasuruan</p>
-                    <p className="font-black text-slate-900 underline">( _____________________________ )</p>
-                    <p className="text-[10px] text-slate-500">NIP. .....................................................</p>
+                    <p className="text-slate-500 mb-16">
+                      Pasuruan,{" "}
+                      {new Date().toLocaleDateString("id-ID", {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                      <br />
+                      Kepala UPT SMPN 8 Pasuruan
+                    </p>
+                    <p className="font-black text-slate-900 underline">
+                      ( _____________________________ )
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      NIP. .....................................................
+                    </p>
                   </div>
                 </div>
-
               </div>
-
             </div>
           </div>
         )}
 
         {/* MODAL PENGATURAN JAM KETERLAMBATAN (KHUSUS ADMIN / OPERATOR) */}
-        {showLateTimeModal && createPortal(
-          <div className="fixed inset-0 z-[999999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden animate-scale-up">
-              
-              {/* Modal Header */}
-              <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white p-5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner">
-                    <Clock size={20} className="text-white" />
+        {showLateTimeModal &&
+          createPortal(
+            <div className="fixed inset-0 z-[999999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden animate-scale-up">
+                {/* Modal Header */}
+                <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner">
+                      <Clock size={20} className="text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black tracking-tight text-white">
+                        Pengaturan Jam Keterlambatan
+                      </h3>
+                      <p className="text-[11px] text-amber-100 font-medium">
+                        Khusus Akses Administrator & Operator Sekolah
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-base font-black tracking-tight text-white">
-                      Pengaturan Jam Keterlambatan
-                    </h3>
-                    <p className="text-[11px] text-amber-100 font-medium">
-                      Khusus Akses Administrator & Operator Sekolah
-                    </p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowLateTimeModal(false)}
+                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+                  >
+                    <X size={18} />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowLateTimeModal(false)}
-                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
-                >
-                  <X size={18} />
-                </button>
-              </div>
 
-              {/* Modal Body */}
-              <div className="p-6 space-y-6 text-slate-800 dark:text-slate-200">
-                {/* 1. KOTAK INPUT JAM & MENIT MANUAL */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                      <Sliders size={14} className="text-amber-500" />
-                      <span>Ketik Jam & Menit Manual (24 Jam):</span>
-                    </label>
-                    <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800">
-                      Format: JJ : MM WIB
-                    </span>
+                {/* Modal Body */}
+                <div className="p-6 space-y-6 text-slate-800 dark:text-slate-200">
+                  {/* 1. KOTAK INPUT JAM & MENIT MANUAL */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <Sliders size={14} className="text-amber-500" />
+                        <span>Ketik Jam & Menit Manual (24 Jam):</span>
+                      </label>
+                      <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800">
+                        Format: JJ : MM WIB
+                      </span>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-amber-50 via-amber-50/70 to-orange-50 dark:from-amber-950/40 dark:via-slate-800/80 dark:to-orange-950/30 p-5 rounded-2xl border-2 border-amber-300/80 dark:border-amber-700/60 shadow-inner">
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
+                        {/* KOLOM JAM */}
+                        <div className="flex flex-col items-center">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                            JAM (00 - 23)
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const [h] = (tempLateTime || "07:15")
+                                  .split(":")
+                                  .map(Number);
+                                handleSetLateHour((h - 1 + 24) % 24);
+                              }}
+                              className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
+                              title="Kurangi 1 Jam"
+                            >
+                              <ArrowDown size={14} />
+                            </button>
+
+                            <input
+                              type="number"
+                              min="0"
+                              max="23"
+                              value={
+                                (tempLateTime || "07:15").split(":")[0] || "07"
+                              }
+                              onChange={(e) =>
+                                handleSetLateHour(e.target.value)
+                              }
+                              className="w-20 text-center bg-white dark:bg-slate-800 border-2 border-amber-400 dark:border-amber-500 rounded-2xl py-3 text-3xl font-mono font-black text-slate-900 dark:text-white focus:ring-4 focus:ring-amber-500/20 focus:border-amber-600 outline-none shadow-md"
+                              placeholder="07"
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const [h] = (tempLateTime || "07:15")
+                                  .split(":")
+                                  .map(Number);
+                                handleSetLateHour((h + 1) % 24);
+                              }}
+                              className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
+                              title="Tambah 1 Jam"
+                            >
+                              <ArrowUp size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* PEMISAH TITIK DUA */}
+                        <div className="text-4xl font-black font-mono text-amber-500 dark:text-amber-400 select-none hidden sm:block pt-5">
+                          :
+                        </div>
+
+                        {/* KOLOM MENIT */}
+                        <div className="flex flex-col items-center">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                            MENIT (00 - 59)
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const [, m] = (tempLateTime || "07:15")
+                                  .split(":")
+                                  .map(Number);
+                                handleSetLateMinute((m - 1 + 60) % 60);
+                              }}
+                              className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
+                              title="Kurangi 1 Menit"
+                            >
+                              <ArrowDown size={14} />
+                            </button>
+
+                            <input
+                              type="number"
+                              min="0"
+                              max="59"
+                              value={
+                                (tempLateTime || "07:15").split(":")[1] || "15"
+                              }
+                              onChange={(e) =>
+                                handleSetLateMinute(e.target.value)
+                              }
+                              className="w-20 text-center bg-white dark:bg-slate-800 border-2 border-amber-400 dark:border-amber-500 rounded-2xl py-3 text-3xl font-mono font-black text-slate-900 dark:text-white focus:ring-4 focus:ring-amber-500/20 focus:border-amber-600 outline-none shadow-md"
+                              placeholder="15"
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const [, m] = (tempLateTime || "07:15")
+                                  .split(":")
+                                  .map(Number);
+                                handleSetLateMinute((m + 1) % 60);
+                              }}
+                              className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
+                              title="Tambah 1 Menit"
+                            >
+                              <ArrowUp size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* BADGE WIB */}
+                        <div className="flex flex-col items-center justify-center pt-2 sm:pt-4">
+                          <span className="text-base font-black px-3 py-1.5 rounded-xl bg-amber-500 text-white shadow-md shadow-amber-500/20">
+                            WIB
+                          </span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1">
+                            Zona Waktu Sekolah
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Quick Adjust Buttons */}
+                      <div className="mt-4 pt-3 border-t border-amber-200/60 dark:border-slate-700/80 flex flex-wrap items-center justify-center gap-1.5">
+                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mr-1">
+                          Geser Cepat:
+                        </span>
+                        {[
+                          { label: "-15m", delta: -15 },
+                          { label: "-10m", delta: -10 },
+                          { label: "-5m", delta: -5 },
+                          { label: "-1m", delta: -1 },
+                          { label: "+1m", delta: 1 },
+                          { label: "+5m", delta: 5 },
+                          { label: "+10m", delta: 10 },
+                          { label: "+15m", delta: 15 },
+                        ].map((adj) => (
+                          <button
+                            key={adj.label}
+                            type="button"
+                            onClick={() => handleAdjustLateMinutes(adj.delta)}
+                            className="px-2.5 py-1 rounded-lg text-xs font-black bg-white dark:bg-slate-700 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-slate-600 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 active:scale-95 transition-all shadow-xs"
+                          >
+                            {adj.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="bg-gradient-to-br from-amber-50 via-amber-50/70 to-orange-50 dark:from-amber-950/40 dark:via-slate-800/80 dark:to-orange-950/30 p-5 rounded-2xl border-2 border-amber-300/80 dark:border-amber-700/60 shadow-inner">
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
-                      
-                      {/* KOLOM JAM */}
-                      <div className="flex flex-col items-center">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                          JAM (00 - 23)
+                  {/* 2. INPUT TEKS LANGSUNG */}
+                  <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <label className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                        <Type size={14} className="text-blue-500" />
+                        <span>
+                          Atau Ketik Langsung Jam (Contoh: 07:15 / 07:20):
                         </span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const [h] = (tempLateTime || '07:15').split(':').map(Number);
-                              handleSetLateHour((h - 1 + 24) % 24);
-                            }}
-                            className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
-                            title="Kurangi 1 Jam"
-                          >
-                            <ArrowDown size={14} />
-                          </button>
-
-                          <input
-                            type="number"
-                            min="0"
-                            max="23"
-                            value={(tempLateTime || '07:15').split(':')[0] || '07'}
-                            onChange={(e) => handleSetLateHour(e.target.value)}
-                            className="w-20 text-center bg-white dark:bg-slate-800 border-2 border-amber-400 dark:border-amber-500 rounded-2xl py-3 text-3xl font-mono font-black text-slate-900 dark:text-white focus:ring-4 focus:ring-amber-500/20 focus:border-amber-600 outline-none shadow-md"
-                            placeholder="07"
-                          />
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const [h] = (tempLateTime || '07:15').split(':').map(Number);
-                              handleSetLateHour((h + 1) % 24);
-                            }}
-                            className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
-                            title="Tambah 1 Jam"
-                          >
-                            <ArrowUp size={14} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* PEMISAH TITIK DUA */}
-                      <div className="text-4xl font-black font-mono text-amber-500 dark:text-amber-400 select-none hidden sm:block pt-5">
-                        :
-                      </div>
-
-                      {/* KOLOM MENIT */}
-                      <div className="flex flex-col items-center">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                          MENIT (00 - 59)
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const [, m] = (tempLateTime || '07:15').split(':').map(Number);
-                              handleSetLateMinute((m - 1 + 60) % 60);
-                            }}
-                            className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
-                            title="Kurangi 1 Menit"
-                          >
-                            <ArrowDown size={14} />
-                          </button>
-
-                          <input
-                            type="number"
-                            min="0"
-                            max="59"
-                            value={(tempLateTime || '07:15').split(':')[1] || '15'}
-                            onChange={(e) => handleSetLateMinute(e.target.value)}
-                            className="w-20 text-center bg-white dark:bg-slate-800 border-2 border-amber-400 dark:border-amber-500 rounded-2xl py-3 text-3xl font-mono font-black text-slate-900 dark:text-white focus:ring-4 focus:ring-amber-500/20 focus:border-amber-600 outline-none shadow-md"
-                            placeholder="15"
-                          />
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const [, m] = (tempLateTime || '07:15').split(':').map(Number);
-                              handleSetLateMinute((m + 1) % 60);
-                            }}
-                            className="p-2 rounded-xl bg-white dark:bg-slate-700 border border-amber-300 dark:border-amber-600 text-slate-700 dark:text-slate-200 hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-slate-600 active:scale-95 transition-all shadow-xs"
-                            title="Tambah 1 Menit"
-                          >
-                            <ArrowUp size={14} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* BADGE WIB */}
-                      <div className="flex flex-col items-center justify-center pt-2 sm:pt-4">
-                        <span className="text-base font-black px-3 py-1.5 rounded-xl bg-amber-500 text-white shadow-md shadow-amber-500/20">
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={tempLateTime}
+                          onChange={(e) => setTempLateTime(e.target.value)}
+                          placeholder="07:15"
+                          maxLength={5}
+                          className="w-28 text-center bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm font-mono font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                        />
+                        <span className="text-xs font-bold text-slate-500">
                           WIB
-                        </span>
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1">
-                          Zona Waktu Sekolah
                         </span>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Quick Adjust Buttons */}
-                    <div className="mt-4 pt-3 border-t border-amber-200/60 dark:border-slate-700/80 flex flex-wrap items-center justify-center gap-1.5">
-                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mr-1">
-                        Geser Cepat:
-                      </span>
+                  {/* 3. QUICK PRESETS */}
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-2 flex items-center gap-1.5">
+                      <Clock size={13} className="text-amber-500" />
+                      <span>Pilihan Jam Masuk Standar Sekolah:</span>
+                    </span>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                       {[
-                        { label: '-15m', delta: -15 },
-                        { label: '-10m', delta: -10 },
-                        { label: '-5m', delta: -5 },
-                        { label: '-1m', delta: -1 },
-                        { label: '+1m', delta: 1 },
-                        { label: '+5m', delta: 5 },
-                        { label: '+10m', delta: 10 },
-                        { label: '+15m', delta: 15 },
-                      ].map((adj) => (
+                        "06:30",
+                        "06:45",
+                        "07:00",
+                        "07:10",
+                        "07:15",
+                        "07:20",
+                        "07:30",
+                        "07:45",
+                        "08:00",
+                      ].map((preset) => (
                         <button
-                          key={adj.label}
                           type="button"
-                          onClick={() => handleAdjustLateMinutes(adj.delta)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-black bg-white dark:bg-slate-700 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-slate-600 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 active:scale-95 transition-all shadow-xs"
+                          key={preset}
+                          onClick={() => setTempLateTime(preset)}
+                          className={`py-2 px-2.5 rounded-xl text-xs font-black transition-all border ${
+                            tempLateTime === preset
+                              ? "bg-amber-500 text-white border-amber-600 shadow-md shadow-amber-500/30 ring-2 ring-amber-400/40"
+                              : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-950/50 hover:border-amber-300"
+                          }`}
                         >
-                          {adj.label}
+                          {preset}
                         </button>
                       ))}
                     </div>
                   </div>
-                </div>
 
-                {/* 2. INPUT TEKS LANGSUNG */}
-                <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                      <Type size={14} className="text-blue-500" />
-                      <span>Atau Ketik Langsung Jam (Contoh: 07:15 / 07:20):</span>
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={tempLateTime}
-                        onChange={(e) => setTempLateTime(e.target.value)}
-                        placeholder="07:15"
-                        maxLength={5}
-                        className="w-28 text-center bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm font-mono font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
-                      />
-                      <span className="text-xs font-bold text-slate-500">WIB</span>
+                  {/* 4. ATURAN SIMULASI & PRATINJAU */}
+                  <div className="bg-slate-50 dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5 text-xs">
+                    <div className="font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <CheckCircle size={15} className="text-emerald-500" />
+                      <span>Aturan Status Otomatis Presensi Siswa:</span>
                     </div>
-                  </div>
-                </div>
-
-                {/* 3. QUICK PRESETS */}
-                <div>
-                  <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-2 flex items-center gap-1.5">
-                    <Clock size={13} className="text-amber-500" />
-                    <span>Pilihan Jam Masuk Standar Sekolah:</span>
-                  </span>
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                    {['06:30', '06:45', '07:00', '07:10', '07:15', '07:20', '07:30', '07:45', '08:00'].map((preset) => (
-                      <button
-                        type="button"
-                        key={preset}
-                        onClick={() => setTempLateTime(preset)}
-                        className={`py-2 px-2.5 rounded-xl text-xs font-black transition-all border ${
-                          tempLateTime === preset
-                            ? 'bg-amber-500 text-white border-amber-600 shadow-md shadow-amber-500/30 ring-2 ring-amber-400/40'
-                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-950/50 hover:border-amber-300'
-                        }`}
-                      >
-                        {preset}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 4. ATURAN SIMULASI & PRATINJAU */}
-                <div className="bg-slate-50 dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5 text-xs">
-                  <div className="font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                    <CheckCircle size={15} className="text-emerald-500" />
-                    <span>Aturan Status Otomatis Presensi Siswa:</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                    <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300">
-                      <div className="font-bold flex items-center gap-1 mb-1">
-                        <CheckCircle2 size={13} className="text-emerald-600" />
-                        <span>Hadir Tepat Waktu</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                      <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300">
+                        <div className="font-bold flex items-center gap-1 mb-1">
+                          <CheckCircle2
+                            size={13}
+                            className="text-emerald-600"
+                          />
+                          <span>Hadir Tepat Waktu</span>
+                        </div>
+                        <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
+                          Scan sebelum / tepat pukul{" "}
+                          <strong>{tempLateTime || "07:15"} WIB</strong>
+                        </p>
                       </div>
-                      <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
-                        Scan sebelum / tepat pukul <strong>{tempLateTime || '07:15'} WIB</strong>
-                      </p>
-                    </div>
 
-                    <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300">
-                      <div className="font-bold flex items-center gap-1 mb-1">
-                        <AlertCircle size={13} className="text-rose-600" />
-                        <span>Terlambat</span>
+                      <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300">
+                        <div className="font-bold flex items-center gap-1 mb-1">
+                          <AlertCircle size={13} className="text-rose-600" />
+                          <span>Terlambat</span>
+                        </div>
+                        <p className="text-[10px] text-rose-700 dark:text-rose-400">
+                          Scan lewat dari pukul{" "}
+                          <strong>{tempLateTime || "07:15"} WIB</strong>
+                        </p>
                       </div>
-                      <p className="text-[10px] text-rose-700 dark:text-rose-400">
-                        Scan lewat dari pukul <strong>{tempLateTime || '07:15'} WIB</strong>
-                      </p>
                     </div>
-                  </div>
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-200 dark:border-slate-700">
-                    * Pengaturan ini berlaku seketika di seluruh kamera scanner, barcode scanner gun, dan dashboard operator secara tersinkronisasi.
-                  </p>
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowLateTimeModal(false)}
-                  disabled={isSavingLateTime}
-                  className="px-4 py-2.5 rounded-xl font-bold text-xs bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 transition-all"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSaveLateTimeLimit(tempLateTime)}
-                  disabled={isSavingLateTime}
-                  className="px-5 py-2.5 rounded-xl font-extrabold text-xs bg-amber-600 hover:bg-amber-500 text-white transition-all shadow-lg shadow-amber-600/30 flex items-center gap-2 active:scale-95 disabled:opacity-50"
-                >
-                  {isSavingLateTime ? (
-                    <RefreshCw size={14} className="animate-spin" />
-                  ) : (
-                    <Save size={14} />
-                  )}
-                  <span>Simpan Batas Jam Masuk</span>
-                </button>
-              </div>
-
-            </div>
-          </div>,
-          document.body
-        )}
-
-        {/* UNSCANNED MODAL */}
-        {showUnscannedModal && createPortal(
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-100 dark:border-slate-700 flex flex-col max-h-[90vh]">
-              {/* Modal Header */}
-              <div className="p-4 md:p-6 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-amber-50 dark:bg-amber-950/20 rounded-t-3xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center border border-amber-200 dark:border-amber-800">
-                    <UserMinus size={18} className="text-amber-600 dark:text-amber-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black text-amber-900 dark:text-amber-300">
-                      Rekap Siswa Belum Scan
-                    </h3>
-                    <p className="text-xs font-bold text-amber-700/70 dark:text-amber-500/70">
-                      Daftar siswa yang belum melakukan presensi 
-                      {logDateMode === 'today' ? ' hari ini' : ' pada tanggal / periode yang dipilih'}
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-200 dark:border-slate-700">
+                      * Pengaturan ini berlaku seketika di seluruh kamera
+                      scanner, barcode scanner gun, dan dashboard operator
+                      secara tersinkronisasi.
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowUnscannedModal(false)}
-                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-sm border border-slate-200 dark:border-slate-700"
-                >
-                  <X size={16} />
-                </button>
-              </div>
 
-              {/* Modal Body */}
-              <div className="p-4 md:p-6 flex-1 overflow-y-auto custom-scrollbar bg-white dark:bg-slate-900">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-700">
-                  <div className="text-xs font-bold text-slate-600 dark:text-slate-400">
-                    Total: <span className="text-amber-600 dark:text-amber-400 font-black text-lg">{unscannedStudents.length}</span> Siswa Belum Scan
+                {/* Modal Footer */}
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowLateTimeModal(false)}
+                    disabled={isSavingLateTime}
+                    className="px-4 py-2.5 rounded-xl font-bold text-xs bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveLateTimeLimit(tempLateTime)}
+                    disabled={isSavingLateTime}
+                    className="px-5 py-2.5 rounded-xl font-extrabold text-xs bg-amber-600 hover:bg-amber-500 text-white transition-all shadow-lg shadow-amber-600/30 flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                  >
+                    {isSavingLateTime ? (
+                      <RefreshCw size={14} className="animate-spin" />
+                    ) : (
+                      <Save size={14} />
+                    )}
+                    <span>Simpan Batas Jam Masuk</span>
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )}
+
+        {/* UNSCANNED MODAL */}
+        {showUnscannedModal &&
+          createPortal(
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-100 dark:border-slate-700 flex flex-col max-h-[90vh]">
+                {/* Modal Header */}
+                <div className="p-4 md:p-6 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-amber-50 dark:bg-amber-950/20 rounded-t-3xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center border border-amber-200 dark:border-amber-800">
+                      <UserMinus
+                        size={18}
+                        className="text-amber-600 dark:text-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-amber-900 dark:text-amber-300">
+                        Rekap Siswa Belum Scan
+                      </h3>
+                      <p className="text-xs font-bold text-amber-700/70 dark:text-amber-500/70">
+                        Daftar siswa yang belum melakukan presensi
+                        {logDateMode === "today"
+                          ? " hari ini"
+                          : " pada tanggal / periode yang dipilih"}
+                      </p>
+                    </div>
                   </div>
-                  <div className="w-full sm:w-auto">
-                    <select
-                      value={unscannedClassFilter}
-                      onChange={(e) => setUnscannedClassFilter(e.target.value)}
-                      className="w-full sm:w-48 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
-                    >
-                      <option value="">Semua Kelas</option>
-                      {classes.map(c => (
-                        <option key={c} value={c}>Kelas {c}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <button
+                    onClick={() => setShowUnscannedModal(false)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-sm border border-slate-200 dark:border-slate-700"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold uppercase text-[10px] border-y border-slate-200 dark:border-slate-700">
-                      <tr>
-                        <th className="px-4 py-2.5 text-center w-12 border-r border-slate-200 dark:border-slate-700">No</th>
-                        <th className="px-4 py-2.5 border-r border-slate-200 dark:border-slate-700">Nama Siswa</th>
-                        <th className="px-4 py-2.5 border-r border-slate-200 dark:border-slate-700">NISN</th>
-                        <th className="px-4 py-2.5 text-center">Kelas</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {unscannedStudents.length > 0 ? (
-                        unscannedStudents.map((student, idx) => (
-                          <tr key={student.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                            <td className="px-4 py-2 text-center font-bold text-slate-400 border-r border-slate-100 dark:border-slate-800">{idx + 1}</td>
-                            <td className="px-4 py-2 font-bold text-slate-700 dark:text-slate-300 border-r border-slate-100 dark:border-slate-800">{student.name}</td>
-                            <td className="px-4 py-2 font-mono text-slate-500 border-r border-slate-100 dark:border-slate-800">{student.nisn}</td>
-                            <td className="px-4 py-2 text-center font-bold text-slate-600 dark:text-slate-400">
-                              {student.kelas}
+                {/* Modal Body */}
+                <div className="p-4 md:p-6 flex-1 overflow-y-auto custom-scrollbar bg-white dark:bg-slate-900">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-700">
+                    <div className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                      Total:{" "}
+                      <span className="text-amber-600 dark:text-amber-400 font-black text-lg">
+                        {unscannedStudents.length}
+                      </span>{" "}
+                      Siswa Belum Scan
+                    </div>
+                    <div className="w-full sm:w-auto">
+                      <select
+                        value={unscannedClassFilter}
+                        onChange={(e) =>
+                          setUnscannedClassFilter(e.target.value)
+                        }
+                        className="w-full sm:w-48 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                      >
+                        <option value="">Semua Kelas</option>
+                        {classes.map((c) => (
+                          <option key={c} value={c}>
+                            Kelas {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold uppercase text-[10px] border-y border-slate-200 dark:border-slate-700">
+                        <tr>
+                          <th className="px-4 py-2.5 text-center w-12 border-r border-slate-200 dark:border-slate-700">
+                            No
+                          </th>
+                          <th className="px-4 py-2.5 border-r border-slate-200 dark:border-slate-700">
+                            Nama Siswa
+                          </th>
+                          <th className="px-4 py-2.5 border-r border-slate-200 dark:border-slate-700">
+                            NISN
+                          </th>
+                          <th className="px-4 py-2.5 text-center">Kelas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {unscannedStudents.length > 0 ? (
+                          unscannedStudents.map((student, idx) => (
+                            <tr
+                              key={student.id}
+                              className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                            >
+                              <td className="px-4 py-2 text-center font-bold text-slate-400 border-r border-slate-100 dark:border-slate-800">
+                                {idx + 1}
+                              </td>
+                              <td className="px-4 py-2 font-bold text-slate-700 dark:text-slate-300 border-r border-slate-100 dark:border-slate-800">
+                                {student.name}
+                              </td>
+                              <td className="px-4 py-2 font-mono text-slate-500 border-r border-slate-100 dark:border-slate-800">
+                                {student.nisn}
+                              </td>
+                              <td className="px-4 py-2 text-center font-bold text-slate-600 dark:text-slate-400">
+                                {student.kelas}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td
+                              colSpan={4}
+                              className="px-4 py-10 text-center text-slate-400 italic"
+                            >
+                              Semua siswa{" "}
+                              {unscannedClassFilter
+                                ? `di Kelas ${unscannedClassFilter}`
+                                : ""}{" "}
+                              sudah melakukan presensi.
                             </td>
                           </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={4} className="px-4 py-10 text-center text-slate-400 italic">
-                            Semua siswa {unscannedClassFilter ? `di Kelas ${unscannedClassFilter}` : ''} sudah melakukan presensi.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-4 bg-slate-50 dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 rounded-b-3xl flex justify-end gap-2">
+                  <button
+                    onClick={exportUnscannedToCSV}
+                    className="px-4 py-2 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center gap-2 shadow-sm"
+                  >
+                    <Download size={14} />
+                    <span>Unduh CSV</span>
+                  </button>
+                  <button
+                    onClick={() => window.print()}
+                    className="px-4 py-2 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-900 text-white transition-all flex items-center gap-2 shadow-sm"
+                  >
+                    <Printer size={14} />
+                    <span>Cetak (Print)</span>
+                  </button>
+                  <button
+                    onClick={() => setShowUnscannedModal(false)}
+                    className="px-5 py-2 rounded-xl font-bold text-xs bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all shadow-sm"
+                  >
+                    Tutup
+                  </button>
                 </div>
               </div>
-
-              {/* Modal Footer */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700 rounded-b-3xl flex justify-end gap-2">
-                <button
-                  onClick={exportUnscannedToCSV}
-                  className="px-4 py-2 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center gap-2 shadow-sm"
-                >
-                  <Download size={14} />
-                  <span>Unduh CSV</span>
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-900 text-white transition-all flex items-center gap-2 shadow-sm"
-                >
-                  <Printer size={14} />
-                  <span>Cetak (Print)</span>
-                </button>
-                <button
-                  onClick={() => setShowUnscannedModal(false)}
-                  className="px-5 py-2 rounded-xl font-bold text-xs bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all shadow-sm"
-                >
-                  Tutup
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+            </div>,
+            document.body,
+          )}
       </div>
     </Layout>
   );

@@ -1,0 +1,25 @@
+          if (payload.eventType === 'INSERT' && payload.new) {
+            const newRow = payload.new;
+            const newRecord: QRScanRecord = {
+              id: newRow.id || `${Date.now()}`,
+              nisn: newRow.nisn || '-',
+              studentName: newRow.student_name || '-',
+              kelas: newRow.kelas || '-',
+              timestamp: newRow.scanned_at || newRow.created_at,
+              mode: newRow.mode || 'harian',
+              status: newRow.status || 'Hadir',
+              subject: newRow.subject || undefined,
+            };
+
+            if (newRow.scanned_at && isDateToday(newRow.scanned_at)) {
+              setScanHistory(prev => {
+                const key = `${newRecord.nisn.trim()}_${newRecord.mode}_${newRecord.subject || ''}_${newRecord.timestamp.substring(0, 16)}`;
+                const exists = prev.some(item => item.id === newRecord.id || `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key);
+                if (exists) return prev.map(item => item.id === newRecord.id ? newRecord : item);
+                return [newRecord, ...prev];
+              });
+            }
+
+            setDatabaseLogs(prev => {
+              const key = `${newRecord.nisn.trim()}_${newRecord.mode}_${newRecord.subject || ''}_${newRecord.timestamp.substring(0, 16)}`;
+              const exists = prev.some(item => item.id === newRecord.id || `${item.nisn.trim()}_${item.mode}_${item.subject || ''}_${item.timestamp.substring(0, 16)}` === key);

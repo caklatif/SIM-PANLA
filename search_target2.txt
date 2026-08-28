@@ -1,0 +1,25 @@
+                {/* Left Scanner & Controls (7 Cols) */}
+                <div className="lg:col-span-7 space-y-6">
+                  
+                  {/* Activity Selector Card (Redundant Top Sound Button Removed) */}
+                  <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-extrabold text-slate-800 dark:text-white text-sm flex items-center gap-2">
+                        <Sparkles size={16} className="text-purple-600" />
+                        <span>Pilih Kegiatan Presensi</span>
+                      </h3>
+                      <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                        {getModeLabel(presensiMode, selectedEkstra)}
+                      </span>
+                    </div>
+
+                    {/* Activity Buttons Grid (4 Modes: Harian, Dhuha, Dzuhur, Ekstra) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <button
+                        onClick={() => handleSelectMode('harian')}
+                        className={`p-3 rounded-2xl border text-left transition-all ${
+                          presensiMode === 'harian'
+                            ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-500 dark:border-purple-600 text-purple-900 dark:text-purple-200 shadow-sm ring-2 ring-purple-500/20'
+                            : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
