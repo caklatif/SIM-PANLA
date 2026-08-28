@@ -1044,18 +1044,41 @@ export default function PresensiQR() {
         const now = ctx.currentTime + 0.02;
 
         if (type === "success") {
-          // Suara nyaring seperti lonceng (Clear Bell/Chime)
+          // Suara kompleks seperti lonceng asli (FM Synthesis sederhana)
+          // Oscillator utama (Fundamental)
           osc.type = "sine";
-          // Frekuensi tinggi dan jernih (Nada G6)
-          osc.frequency.setValueAtTime(1567.98, now); 
-          
-          // Envelope lonceng: Pukulan keras di awal, bergema perlahan di akhir
+          osc.frequency.setValueAtTime(1046.5, now); // C6
           gain.gain.setValueAtTime(0, now);
-          gain.gain.linearRampToValueAtTime(1.0, now + 0.02); // Attack (pukulan lonceng)
-          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.8); // Decay (gema lonceng)
-          
+          gain.gain.linearRampToValueAtTime(1.0, now + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
           osc.start(now);
-          osc.stop(now + 0.8);
+          osc.stop(now + 1.2);
+
+          // Oscillator kedua (Harmonic 1 - agar terdengar seperti logam/bel)
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.connect(gain2);
+          gain2.connect(ctx.destination);
+          osc2.type = "sine";
+          osc2.frequency.setValueAtTime(2093.0, now); // C7 (oktaf di atasnya)
+          gain2.gain.setValueAtTime(0, now);
+          gain2.gain.linearRampToValueAtTime(0.6, now + 0.02);
+          gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.8);
+          osc2.start(now);
+          osc2.stop(now + 0.8);
+
+          // Oscillator ketiga (Harmonic 2 - untuk dentingan tajam)
+          const osc3 = ctx.createOscillator();
+          const gain3 = ctx.createGain();
+          osc3.connect(gain3);
+          gain3.connect(ctx.destination);
+          osc3.type = "sine";
+          osc3.frequency.setValueAtTime(3139.5, now); // G7
+          gain3.gain.setValueAtTime(0, now);
+          gain3.gain.linearRampToValueAtTime(0.3, now + 0.01);
+          gain3.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+          osc3.start(now);
+          osc3.stop(now + 0.5);
         } else if (type === "warning") {
           osc.type = "triangle";
           osc.frequency.setValueAtTime(523.25, now);
@@ -3180,6 +3203,17 @@ export default function PresensiQR() {
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {/* Test Bell Button */}
+                        <button
+                          type="button"
+                          onClick={() => playBeep("success", true)}
+                          title="Test Suara Lonceng Sukses"
+                          className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border bg-amber-950/80 text-amber-300 border-amber-700 hover:bg-amber-900"
+                        >
+                          <Volume2 size={14} />
+                          <span className="hidden sm:inline">Test Lonceng</span>
+                        </button>
+
                         {/* Sound Beep Toggle */}
                         <button
                           type="button"
