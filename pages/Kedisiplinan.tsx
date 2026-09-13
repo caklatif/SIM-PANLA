@@ -3,7 +3,27 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/Layout';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { ShieldAlert, Loader2, Save, Plus, Trash2, Check, ChevronDown, X, Filter, Search, Gavel, User, Calendar, ChevronUp, Printer, Download, FileSpreadsheet } from 'lucide-react';
+import { 
+  ShieldAlert, 
+  Loader2, 
+  Save, 
+  Plus, 
+  Trash2, 
+  Check, 
+  ChevronDown, 
+  X, 
+  Filter, 
+  Search, 
+  Gavel, 
+  User, 
+  Calendar, 
+  ChevronUp, 
+  Printer, 
+  Download, 
+  FileSpreadsheet,
+  Edit3,
+  AlertCircle
+} from 'lucide-react';
 import { Student } from '../types';
 import { getWIBISOString, formatDateIndo, formatDateSignature } from '../utils/dateUtils';
 import { showAlert, showConfirm } from '../utils/alert';
@@ -15,17 +35,30 @@ interface NoteItem {
     note?: string;
 }
 
+export interface AlpaDetail {
+    id?: string;
+    date: string; // YYYY-MM-DD
+    displayDate: string;
+    source: string;
+    table: 'homeroom_attendance' | 'attendance_logs';
+}
+
+export interface ViolationItem {
+    id: string;
+    rawDate: string;
+    date: string;
+    category: string;
+    followUp?: string;
+    note: string;
+    reporter: string;
+}
+
 interface DisciplineData {
     student: Student;
     alpaCount: number;
     alpaDates: string[];
-    violations: {
-        id: string;
-        date: string;
-        category: string;
-        note: string;
-        reporter: string;
-    }[];
+    alpaDetails: AlpaDetail[];
+    violations: ViolationItem[];
 }
 
 interface KedisiplinanProps {
@@ -33,10 +66,33 @@ interface KedisiplinanProps {
 }
 
 export const Kedisiplinan: React.FC<KedisiplinanProps> = ({ embedded = false }) => {
-  const { profile, academicYear, semester , semesterStart, semesterEnd } = useAuth();
+  const { profile, isAdmin, isOperator, academicYear, semester , semesterStart, semesterEnd } = useAuth();
   const [loading, setLoading] = useState(false);
   
-  const isHeadmaster = profile?.mengajar_mapel === 'Kepala Sekolah' || profile?.role === 'admin';
+  const isUserAdmin = Boolean(isAdmin || isOperator || profile?.role === 'admin' || profile?.role === 'operator' || profile?.mengajar_mapel === 'Kepala Sekolah');
+  const isHeadmaster = profile?.mengajar_mapel === 'Kepala Sekolah';
+
+  // Admin Management Modal State
+  const [manageDisciplineStudent, setManageDisciplineStudent] = useState<DisciplineData | null>(null);
+  const [editingViolation, setEditingViolation] = useState<{
+    id?: string;
+    student_id: string;
+    student_name: string;
+    category: string;
+    follow_up: string;
+    note: string;
+    date: string;
+    isNew: boolean;
+  } | null>(null);
+  const [editingAlpa, setEditingAlpa] = useState<{
+    id?: string;
+    student_id: string;
+    student_name: string;
+    date: string;
+    table: 'homeroom_attendance' | 'attendance_logs';
+    isNew: boolean;
+  } | null>(null);
+  const [isSavingAction, setIsSavingAction] = useState(false);
 
   // Filters
   const [classes, setClasses] = useState<string[]>([]);
@@ -178,11 +234,11 @@ useEffect(() => {
           // 2. DATA ALPA (Logic Rapor: Aggregasi Wali Kelas & Guru Mapel)
           // Fetch data only for target IDs to be efficient
           const [hLogsRes, tLogsRes, violationNotesRes] = await Promise.all([
-              supabase.from('homeroom_attendance').select('student_id, date, status').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('date', semesterStart ? `${semesterStart}` : '2000-01-01').lte('date', semesterEnd ? `${semesterEnd}` : '2100-01-01')
+              supabase.from('homeroom_attendance').select('id, student_id, date, status').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('date', semesterStart ? `${semesterStart}` : '2000-01-01').lte('date', semesterEnd ? `${semesterEnd}` : '2100-01-01')
                 .in('student_id', targetStudentIds).gte('date', startDate).lte('date', endDate),
-              supabase.from('attendance_logs').select('student_id, created_at, status').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00')
+              supabase.from('attendance_logs').select('id, student_id, created_at, status').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00')
                 .in('student_id', targetStudentIds).in('status', ['S', 'I', 'A']).gte('created_at', start).lte('created_at', end),
-              supabase.from('journal_notes').select('id, student_id, category, note, created_at, journal_id').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00')
+              supabase.from('journal_notes').select('id, student_id, category, follow_up, note, created_at, journal_id').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00')
                 .in('student_id', targetStudentIds).eq('type', 'kedisiplinan').gte('created_at', start).lte('created_at', end)
           ]);
 
@@ -218,14 +274,21 @@ useEffect(() => {
               const uniqueDates = Array.from(new Set([...hDates, ...tDates])).sort();
 
               const alpaDatesList: string[] = [];
+              const alpaDetailsList: AlpaDetail[] = [];
 
               uniqueDates.forEach(date => {
                   let finalStatus = '';
+                  let foundId = '';
+                  let foundTable: 'homeroom_attendance' | 'attendance_logs' = 'homeroom_attendance';
+                  let foundSource = '';
                   
                   // Priority 1: Homeroom Teacher Input
                   const hLog = studentHLogs.find(l => l.date === date);
                   if (hLog) {
                       finalStatus = hLog.status;
+                      foundId = hLog.id;
+                      foundTable = 'homeroom_attendance';
+                      foundSource = 'Wali Kelas';
                   } else {
                       // Priority 2: Teacher Logs Aggregation (S > I > A)
                       const dailyLogs = studentTLogs.filter(l => l.created_at.startsWith(date));
@@ -233,7 +296,12 @@ useEffect(() => {
                           const statuses = dailyLogs.map(l => l.status);
                           if (statuses.includes('S')) finalStatus = 'S';
                           else if (statuses.includes('I')) finalStatus = 'I';
-                          else if (statuses.includes('A')) finalStatus = 'A';
+                          else if (statuses.includes('A')) {
+                            finalStatus = 'A';
+                            foundId = dailyLogs[0].id;
+                            foundTable = 'attendance_logs';
+                            foundSource = 'Guru Mapel';
+                          }
                       }
                   }
 
@@ -241,18 +309,27 @@ useEffect(() => {
                       const dateObj = new Date(date);
                       const dateStr = new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short' }).format(dateObj);
                       alpaDatesList.push(dateStr);
+                      alpaDetailsList.push({
+                          id: foundId,
+                          date,
+                          displayDate: dateStr,
+                          source: foundSource,
+                          table: foundTable
+                      });
                   }
               });
 
               // --- PROCESS VIOLATIONS ---
-              const myViolations = violationNotes.filter(n => n.student_id === student.id).map(n => {
+              const myViolations: ViolationItem[] = violationNotes.filter(n => n.student_id === student.id).map(n => {
                   const date = new Date(n.created_at);
                   const dateStr = new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short' }).format(date);
                   const reporter = journalMap[n.journal_id] || 'Admin/Guru';
                   return {
                       id: n.id,
+                      rawDate: n.created_at ? n.created_at.split('T')[0] : '',
                       date: dateStr,
                       category: n.category,
+                      followUp: n.follow_up || '',
                       note: n.note,
                       reporter
                   };
@@ -262,6 +339,7 @@ useEffect(() => {
                   student,
                   alpaCount: alpaDatesList.length, // Total Days Alpha
                   alpaDates: alpaDatesList,
+                  alpaDetails: alpaDetailsList,
                   violations: myViolations
               };
           });
@@ -276,6 +354,170 @@ useEffect(() => {
       } finally {
           setLoading(false);
       }
+  };
+
+  // Handler for Deleting Violation
+  const handleDeleteViolation = async (violationId: string, studentName: string, category: string) => {
+    const ok = await showConfirm(
+      `Hapus catatan pelanggaran "${category}" untuk siswa ${studentName}?`,
+      "Hapus Pelanggaran?"
+    );
+    if (!ok) return;
+
+    try {
+      const { error } = await supabase.from('journal_notes').delete().eq('id', violationId);
+      if (error) throw error;
+      showAlert("Catatan pelanggaran berhasil dihapus.", "Berhasil");
+      await fetchReportData();
+      if (manageDisciplineStudent) {
+        setManageDisciplineStudent(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            violations: prev.violations.filter(v => v.id !== violationId)
+          };
+        });
+      }
+    } catch (err: any) {
+      showAlert(`Gagal menghapus: ${err.message || err}`, "Gagal");
+    }
+  };
+
+  // Handler for Saving Violation (Edit / Add)
+  const handleSaveViolation = async () => {
+    if (!editingViolation) return;
+    if (!editingViolation.category) {
+      showAlert("Pilih Jenis Pelanggaran.");
+      return;
+    }
+    setIsSavingAction(true);
+    try {
+      const { id, student_id, student_name, category, follow_up, note, date, isNew } = editingViolation;
+      const createdAt = `${date}T08:00:00+07:00`;
+
+      if (!isNew && id) {
+        const { error } = await supabase
+          .from('journal_notes')
+          .update({
+            category,
+            follow_up: follow_up || '',
+            note: note || '',
+            created_at: createdAt
+          })
+          .eq('id', id);
+        if (error) throw error;
+        showAlert("Data pelanggaran berhasil diperbarui.", "Berhasil");
+      } else {
+        const { error } = await supabase
+          .from('journal_notes')
+          .insert([{
+            student_id,
+            student_name,
+            type: 'kedisiplinan',
+            category,
+            follow_up: follow_up || '',
+            note: note || `Catatan Kedisiplinan oleh ${profile?.full_name}`,
+            created_at: createdAt,
+            academic_year: academicYear || '2025/2026',
+            semester: semester || 'Ganjil'
+          }]);
+        if (error) throw error;
+        showAlert("Data pelanggaran berhasil ditambahkan.", "Berhasil");
+      }
+
+      setEditingViolation(null);
+      await fetchReportData();
+    } catch (err: any) {
+      showAlert(`Gagal menyimpan: ${err.message || err}`, "Gagal");
+    } finally {
+      setIsSavingAction(false);
+    }
+  };
+
+  // Handler for Deleting Alpa
+  const handleDeleteAlpa = async (alpa: AlpaDetail, studentName: string) => {
+    const ok = await showConfirm(
+      `Hapus catatan Alpa tanggal ${formatDateIndo(alpa.date)} untuk siswa ${studentName}? Tindakan ini akan membatalkan status Alpa pada tanggal tersebut.`,
+      "Hapus Catatan Alpa?"
+    );
+    if (!ok) return;
+
+    try {
+      if (alpa.table === 'homeroom_attendance') {
+        if (alpa.id) {
+          await supabase.from('homeroom_attendance').delete().eq('id', alpa.id);
+        } else {
+          await supabase.from('homeroom_attendance').delete().eq('date', alpa.date);
+        }
+      } else {
+        if (alpa.id) {
+          await supabase.from('attendance_logs').delete().eq('id', alpa.id);
+        }
+      }
+
+      showAlert("Catatan Alpa berhasil dihapus.", "Berhasil");
+      await fetchReportData();
+      if (manageDisciplineStudent) {
+        setManageDisciplineStudent(prev => {
+          if (!prev) return null;
+          const updatedAlpas = prev.alpaDetails.filter(a => a.date !== alpa.date);
+          return {
+            ...prev,
+            alpaCount: updatedAlpas.length,
+            alpaDates: updatedAlpas.map(a => a.displayDate),
+            alpaDetails: updatedAlpas
+          };
+        });
+      }
+    } catch (err: any) {
+      showAlert(`Gagal menghapus: ${err.message || err}`, "Gagal");
+    }
+  };
+
+  // Handler for Saving Alpa (Edit date / Add new)
+  const handleSaveAlpa = async () => {
+    if (!editingAlpa) return;
+    setIsSavingAction(true);
+    try {
+      const { id, student_id, date, table, isNew } = editingAlpa;
+
+      if (!isNew && id) {
+        if (table === 'homeroom_attendance') {
+          const { error } = await supabase
+            .from('homeroom_attendance')
+            .update({ date })
+            .eq('id', id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('attendance_logs')
+            .update({ created_at: `${date}T07:00:00+07:00` })
+            .eq('id', id);
+          if (error) throw error;
+        }
+        showAlert("Tanggal Alpa berhasil diperbarui.", "Berhasil");
+      } else {
+        const { error } = await supabase
+          .from('homeroom_attendance')
+          .insert([{
+            student_id,
+            date,
+            status: 'A',
+            academic_year: academicYear || '2025/2026',
+            semester: semester || 'Ganjil',
+            recorded_by: profile?.id || null
+          }]);
+        if (error) throw error;
+        showAlert("Catatan Alpa berhasil ditambahkan.", "Berhasil");
+      }
+
+      setEditingAlpa(null);
+      await fetchReportData();
+    } catch (err: any) {
+      showAlert(`Gagal menyimpan: ${err.message || err}`, "Gagal");
+    } finally {
+      setIsSavingAction(false);
+    }
   };
 
   // --- INPUT FORM LOGIC ---
@@ -724,13 +966,16 @@ useEffect(() => {
                              <th className="px-6 py-4 w-64">Nama Murid</th>
                              <th className="px-6 py-4 w-24 text-center">Kelas</th>
                              <th className="px-6 py-4">Detail Kedisiplinan</th>
+                             {isUserAdmin && (
+                                 <th className="px-6 py-4 w-28 text-center print:hidden">Aksi</th>
+                             )}
                          </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-100">
                          {loading ? (
-                             <tr><td colSpan={4} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-orange-500" /></td></tr>
+                             <tr><td colSpan={isUserAdmin ? 5 : 4} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-orange-500" /></td></tr>
                          ) : reportData.length === 0 ? (
-                             <tr><td colSpan={4} className="p-8 text-center text-slate-400 italic">Tidak ada data pelanggaran atau Alpa pada periode ini.</td></tr>
+                             <tr><td colSpan={isUserAdmin ? 5 : 4} className="p-8 text-center text-slate-400 italic">Tidak ada data pelanggaran atau Alpa pada periode ini.</td></tr>
                          ) : (
                              reportData.map((item, idx) => (
                                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
@@ -745,27 +990,95 @@ useEffect(() => {
                                      <td className="px-6 py-4 align-top space-y-2">
                                          {/* 1. ALPA */}
                                          {item.alpaCount > 0 && (
-                                             <div className="flex flex-wrap items-start gap-1 text-sm leading-relaxed mb-2">
-                                                 <span className="font-bold text-red-600 bg-red-50 px-1.5 rounded border border-red-100 whitespace-nowrap">
+                                             <div className="flex flex-wrap items-start gap-1.5 text-sm leading-relaxed mb-2 p-2.5 bg-red-50/70 rounded-xl border border-red-100">
+                                                 <span className="font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-lg border border-red-200 text-xs whitespace-nowrap">
                                                      • Alpa ({item.alpaCount} Hari):
                                                  </span>
-                                                 <span className="text-slate-600">
-                                                     {item.alpaDates.join(', ')}
-                                                 </span>
+                                                 <div className="flex flex-wrap gap-1.5 items-center">
+                                                     {item.alpaDetails.map((a, aIdx) => (
+                                                         <span key={aIdx} className="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded-md border border-red-200 text-xs text-slate-700 shadow-2xs">
+                                                             <span>{a.displayDate}</span>
+                                                             <span className="text-[10px] text-slate-400">({a.source})</span>
+                                                             {isUserAdmin && (
+                                                                 <button
+                                                                     type="button"
+                                                                     onClick={() => handleDeleteAlpa(a, item.student.name)}
+                                                                     className="text-red-400 hover:text-red-700 p-0.5 rounded transition-colors"
+                                                                     title="Hapus status Alpa tanggal ini"
+                                                                 >
+                                                                     <X size={12} />
+                                                                 </button>
+                                                             )}
+                                                         </span>
+                                                     ))}
+                                                 </div>
                                              </div>
                                          )}
 
                                          {/* 2. VIOLATIONS */}
                                          {item.violations.map((v) => (
-                                             <div key={v.id} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm leading-tight text-slate-700">
-                                                 <span className="font-bold text-slate-800">• {v.category}</span>
-                                                 <span className="hidden sm:inline text-slate-300">-</span>
-                                                 <span>{v.date}</span>
-                                                 <span className="text-xs text-slate-400 italic">({v.reporter})</span>
-                                                 {v.note && <span className="text-xs text-slate-500 bg-slate-50 px-1 rounded truncate max-w-xs block sm:inline mt-1 sm:mt-0">"{v.note}"</span>}
+                                             <div key={v.id} className="group flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 text-sm leading-tight text-slate-700 p-2 rounded-xl hover:bg-orange-50/60 border border-transparent hover:border-orange-100 transition-colors">
+                                                 <div className="flex flex-wrap items-baseline gap-1.5">
+                                                     <span className="font-bold text-slate-800">• {v.category}</span>
+                                                     <span className="hidden sm:inline text-slate-300">-</span>
+                                                     <span className="font-medium text-slate-600">{v.date}</span>
+                                                     <span className="text-xs text-slate-400 italic">({v.reporter})</span>
+                                                     {v.followUp && (
+                                                         <span className="text-xs font-semibold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-md">
+                                                             {v.followUp}
+                                                         </span>
+                                                     )}
+                                                     {v.note && (
+                                                         <span className="text-xs text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-md truncate max-w-xs block sm:inline mt-1 sm:mt-0">
+                                                             "{v.note}"
+                                                         </span>
+                                                     )}
+                                                 </div>
+                                                 {isUserAdmin && (
+                                                     <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity print:hidden">
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => setEditingViolation({
+                                                                 id: v.id,
+                                                                 student_id: item.student.id,
+                                                                 student_name: item.student.name,
+                                                                 category: v.category,
+                                                                 follow_up: v.followUp || '',
+                                                                 note: v.note,
+                                                                 date: v.rawDate || getWIBISOString(),
+                                                                 isNew: false
+                                                             })}
+                                                             className="p-1 hover:bg-white rounded-lg text-slate-600 hover:text-orange-600 transition-colors"
+                                                             title="Edit Pelanggaran"
+                                                         >
+                                                             <Edit3 size={13} />
+                                                         </button>
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => handleDeleteViolation(v.id, item.student.name, v.category)}
+                                                             className="p-1 hover:bg-white rounded-lg text-slate-400 hover:text-red-600 transition-colors"
+                                                             title="Hapus Pelanggaran"
+                                                         >
+                                                             <Trash2 size={13} />
+                                                         </button>
+                                                     </div>
+                                                 )}
                                              </div>
                                          ))}
                                      </td>
+                                     {isUserAdmin && (
+                                         <td className="px-6 py-4 text-center align-top print:hidden">
+                                             <button
+                                                 type="button"
+                                                 onClick={() => setManageDisciplineStudent(item)}
+                                                 className="px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold text-xs rounded-xl border border-orange-200 inline-flex items-center gap-1.5 transition-colors shadow-2xs"
+                                                 title="Kelola Pelanggaran & Alpa Siswa"
+                                             >
+                                                 <Edit3 size={13} />
+                                                 <span>Kelola</span>
+                                             </button>
+                                         </td>
+                                     )}
                                  </tr>
                              ))
                          )}
@@ -776,6 +1089,398 @@ useEffect(() => {
                  Menampilkan {reportData.length} siswa dengan catatan kedisiplinan.
              </div>
          </div>
+
+         {/* MODAL KELOLA KEDISIPLINAN SISWA (ADMIN) */}
+         {manageDisciplineStudent && (
+           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+             <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+               <div className="p-5 bg-gradient-to-r from-orange-600 to-red-600 text-white flex items-center justify-between">
+                 <div>
+                   <h3 className="font-bold text-base">Kelola Catatan Kedisiplinan & Alpa</h3>
+                   <p className="text-xs text-orange-100">
+                     {manageDisciplineStudent.student.name} • {manageDisciplineStudent.student.kelas} (NISN: {manageDisciplineStudent.student.nisn || '-'})
+                   </p>
+                 </div>
+                 <button
+                   type="button"
+                   onClick={() => setManageDisciplineStudent(null)}
+                   className="p-1.5 hover:bg-white/20 rounded-xl transition-colors text-white"
+                 >
+                   <X size={18} />
+                 </button>
+               </div>
+
+               <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
+                 {/* Summary Stats */}
+                 <div className="grid grid-cols-2 gap-3">
+                   <div className="p-3 bg-orange-50 dark:bg-orange-950/40 rounded-2xl border border-orange-200 dark:border-orange-800/60 flex items-center justify-between">
+                     <div>
+                       <span className="text-[11px] font-bold text-orange-700 dark:text-orange-400 block">Pelanggaran BK</span>
+                       <span className="text-xl font-black text-orange-800 dark:text-orange-300">
+                         {manageDisciplineStudent.violations.length} Catatan
+                       </span>
+                     </div>
+                     <button
+                       type="button"
+                       onClick={() => setEditingViolation({
+                         student_id: manageDisciplineStudent.student.id,
+                         student_name: manageDisciplineStudent.student.name,
+                         category: disciplineTypes[0] || 'Terlambat',
+                         follow_up: followUpTypes[0] || 'Teguran Lisan',
+                         note: '',
+                         date: getWIBISOString(),
+                         isNew: true
+                       })}
+                       className="px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-1 shadow-sm transition-all"
+                     >
+                       <Plus size={13} />
+                       <span>Tambah</span>
+                     </button>
+                   </div>
+
+                   <div className="p-3 bg-red-50 dark:bg-red-950/40 rounded-2xl border border-red-200 dark:border-red-800/60 flex items-center justify-between">
+                     <div>
+                       <span className="text-[11px] font-bold text-red-700 dark:text-red-400 block">Total Hari Alpa</span>
+                       <span className="text-xl font-black text-red-800 dark:text-red-300">
+                         {manageDisciplineStudent.alpaCount} Hari
+                       </span>
+                     </div>
+                     <button
+                       type="button"
+                       onClick={() => setEditingAlpa({
+                         student_id: manageDisciplineStudent.student.id,
+                         student_name: manageDisciplineStudent.student.name,
+                         date: getWIBISOString(),
+                         table: 'homeroom_attendance',
+                         isNew: true
+                       })}
+                       className="px-2.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-1 shadow-sm transition-all"
+                     >
+                       <Plus size={13} />
+                       <span>Tambah</span>
+                     </button>
+                   </div>
+                 </div>
+
+                 {/* SECTION 1: PELANGGARAN */}
+                 <div className="space-y-2">
+                   <div className="flex items-center justify-between">
+                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                       <ShieldAlert size={14} className="text-orange-500" />
+                       <span>Daftar Pelanggaran BK ({manageDisciplineStudent.violations.length})</span>
+                     </h4>
+                   </div>
+
+                   {manageDisciplineStudent.violations.length === 0 ? (
+                     <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl text-center text-xs text-slate-400 italic">
+                       Tidak ada catatan pelanggaran.
+                     </div>
+                   ) : (
+                     <div className="space-y-2">
+                       {manageDisciplineStudent.violations.map((v) => (
+                         <div
+                           key={v.id}
+                           className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3"
+                         >
+                           <div className="space-y-1">
+                             <div className="flex items-center gap-2">
+                               <span className="font-bold text-xs text-slate-800 dark:text-slate-100">
+                                 {v.category}
+                               </span>
+                               <span className="text-[11px] font-mono text-slate-400">
+                                 ({v.date})
+                               </span>
+                               {v.followUp && (
+                                 <span className="text-[10px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded">
+                                   {v.followUp}
+                                 </span>
+                               )}
+                             </div>
+                             {v.note && (
+                               <p className="text-xs text-slate-600 dark:text-slate-300 italic">
+                                 "{v.note}"
+                               </p>
+                             )}
+                             <p className="text-[10px] text-slate-400">
+                               Pencatat: {v.reporter}
+                             </p>
+                           </div>
+
+                           <div className="flex items-center gap-1 shrink-0">
+                             <button
+                               type="button"
+                               onClick={() => setEditingViolation({
+                                 id: v.id,
+                                 student_id: manageDisciplineStudent.student.id,
+                                 student_name: manageDisciplineStudent.student.name,
+                                 category: v.category,
+                                 follow_up: v.followUp || '',
+                                 note: v.note,
+                                 date: v.rawDate || getWIBISOString(),
+                                 isNew: false
+                               })}
+                               className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors"
+                               title="Edit"
+                             >
+                               <Edit3 size={14} />
+                             </button>
+                             <button
+                               type="button"
+                               onClick={() => handleDeleteViolation(v.id, manageDisciplineStudent.student.name, v.category)}
+                               className="p-1.5 hover:bg-red-100 dark:hover:bg-red-950/40 rounded-lg text-red-600 transition-colors"
+                               title="Hapus"
+                             >
+                               <Trash2 size={14} />
+                             </button>
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   )}
+                 </div>
+
+                 {/* SECTION 2: ALPA */}
+                 <div className="space-y-2">
+                   <div className="flex items-center justify-between">
+                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                       <AlertCircle size={14} className="text-red-500" />
+                       <span>Daftar Ketidakhadiran Alpa ({manageDisciplineStudent.alpaDetails.length})</span>
+                     </h4>
+                   </div>
+
+                   {manageDisciplineStudent.alpaDetails.length === 0 ? (
+                     <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl text-center text-xs text-slate-400 italic">
+                       Tidak ada catatan Alpa.
+                     </div>
+                   ) : (
+                     <div className="space-y-2">
+                       {manageDisciplineStudent.alpaDetails.map((a, aIdx) => (
+                         <div
+                           key={aIdx}
+                           className="p-3 bg-red-50/50 dark:bg-red-950/20 rounded-xl border border-red-200 dark:border-red-900/50 flex items-center justify-between gap-3"
+                         >
+                           <div className="flex items-center gap-2.5">
+                             <span className="w-7 h-7 rounded-lg bg-red-100 text-red-700 flex items-center justify-center font-black text-xs">
+                               A
+                             </span>
+                             <div>
+                               <div className="font-bold text-xs text-slate-800 dark:text-slate-100 font-mono">
+                                 {formatDateIndo(a.date)}
+                               </div>
+                               <div className="text-[10px] text-slate-400">
+                                 Sumber: {a.source} ({a.table})
+                               </div>
+                             </div>
+                           </div>
+
+                           <div className="flex items-center gap-1">
+                             <button
+                               type="button"
+                               onClick={() => setEditingAlpa({
+                                 id: a.id,
+                                 student_id: manageDisciplineStudent.student.id,
+                                 student_name: manageDisciplineStudent.student.name,
+                                 date: a.date,
+                                 table: a.table,
+                                 isNew: false
+                               })}
+                               className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors"
+                               title="Edit Tanggal"
+                             >
+                               <Edit3 size={14} />
+                             </button>
+                             <button
+                               type="button"
+                               onClick={() => handleDeleteAlpa(a, manageDisciplineStudent.student.name)}
+                               className="p-1.5 hover:bg-red-100 dark:hover:bg-red-950/40 rounded-lg text-red-600 transition-colors"
+                               title="Hapus"
+                             >
+                               <Trash2 size={14} />
+                             </button>
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   )}
+                 </div>
+               </div>
+
+               <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex justify-end">
+                 <button
+                   type="button"
+                   onClick={() => setManageDisciplineStudent(null)}
+                   className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-colors"
+                 >
+                   Tutup
+                 </button>
+               </div>
+             </div>
+           </div>
+         )}
+
+         {/* SUB-MODAL FORM EDIT/TAMBAH PELANGGARAN */}
+         {editingViolation && (
+           <div className="fixed inset-0 z-60 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+             <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+               <div className="p-4 bg-orange-600 text-white flex items-center justify-between">
+                 <h4 className="font-bold text-sm flex items-center gap-2">
+                   <ShieldAlert size={16} />
+                   <span>{editingViolation.isNew ? 'Tambah Catatan Pelanggaran' : 'Edit Catatan Pelanggaran'}</span>
+                 </h4>
+                 <button
+                   type="button"
+                   onClick={() => setEditingViolation(null)}
+                   className="p-1 hover:bg-white/20 rounded-lg text-white"
+                 >
+                   <X size={16} />
+                 </button>
+               </div>
+
+               <div className="p-5 space-y-3.5">
+                 <div className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                   <span className="text-slate-400 block text-[10px]">Siswa:</span>
+                   <span className="font-bold text-slate-700 dark:text-slate-200">{editingViolation.student_name}</span>
+                 </div>
+
+                 <div>
+                   <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                     Tanggal Kejadian
+                   </label>
+                   <input
+                     type="date"
+                     value={editingViolation.date}
+                     onChange={e => setEditingViolation({ ...editingViolation, date: e.target.value })}
+                     className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 bg-white dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-orange-500"
+                   />
+                 </div>
+
+                 <div>
+                   <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                     Jenis Pelanggaran
+                   </label>
+                   <select
+                     value={editingViolation.category}
+                     onChange={e => setEditingViolation({ ...editingViolation, category: e.target.value })}
+                     className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 bg-white dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-orange-500"
+                   >
+                     {disciplineTypes.map((t, idx) => (
+                       <option key={idx} value={t}>{t}</option>
+                     ))}
+                   </select>
+                 </div>
+
+                 <div>
+                   <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                     Tindak Lanjut
+                   </label>
+                   <select
+                     value={editingViolation.follow_up}
+                     onChange={e => setEditingViolation({ ...editingViolation, follow_up: e.target.value })}
+                     className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 bg-white dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-orange-500"
+                   >
+                     <option value="">- Belum ada tindak lanjut -</option>
+                     {followUpTypes.map((t, idx) => (
+                       <option key={idx} value={t}>{t}</option>
+                     ))}
+                   </select>
+                 </div>
+
+                 <div>
+                   <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                     Keterangan / Kronologi
+                   </label>
+                   <textarea
+                     rows={3}
+                     value={editingViolation.note}
+                     onChange={e => setEditingViolation({ ...editingViolation, note: e.target.value })}
+                     placeholder="Tuliskan keterangan kejadian..."
+                     className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-orange-500"
+                   />
+                 </div>
+               </div>
+
+               <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-2">
+                 <button
+                   type="button"
+                   onClick={() => setEditingViolation(null)}
+                   disabled={isSavingAction}
+                   className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-colors"
+                 >
+                   Batal
+                 </button>
+                 <button
+                   type="button"
+                   onClick={handleSaveViolation}
+                   disabled={isSavingAction}
+                   className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-1.5 disabled:opacity-50 transition-all"
+                 >
+                   {isSavingAction ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                   <span>Simpan</span>
+                 </button>
+               </div>
+             </div>
+           </div>
+         )}
+
+         {/* SUB-MODAL FORM EDIT/TAMBAH ALPA */}
+         {editingAlpa && (
+           <div className="fixed inset-0 z-60 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+             <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+               <div className="p-4 bg-red-600 text-white flex items-center justify-between">
+                 <h4 className="font-bold text-sm flex items-center gap-2">
+                   <AlertCircle size={16} />
+                   <span>{editingAlpa.isNew ? 'Tambah Catatan Alpa' : 'Edit Tanggal Alpa'}</span>
+                 </h4>
+                 <button
+                   type="button"
+                   onClick={() => setEditingAlpa(null)}
+                   className="p-1 hover:bg-white/20 rounded-lg text-white"
+                 >
+                   <X size={16} />
+                 </button>
+               </div>
+
+               <div className="p-5 space-y-3.5">
+                 <div className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                   <span className="text-slate-400 block text-[10px]">Siswa:</span>
+                   <span className="font-bold text-slate-700 dark:text-slate-200">{editingAlpa.student_name}</span>
+                 </div>
+
+                 <div>
+                   <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                     Tanggal Alpa
+                   </label>
+                   <input
+                     type="date"
+                     value={editingAlpa.date}
+                     onChange={e => setEditingAlpa({ ...editingAlpa, date: e.target.value })}
+                     className="w-full border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 bg-white dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-red-500"
+                   />
+                 </div>
+               </div>
+
+               <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-2">
+                 <button
+                   type="button"
+                   onClick={() => setEditingAlpa(null)}
+                   disabled={isSavingAction}
+                   className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-colors"
+                 >
+                   Batal
+                 </button>
+                 <button
+                   type="button"
+                   onClick={handleSaveAlpa}
+                   disabled={isSavingAction}
+                   className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-1.5 disabled:opacity-50 transition-all"
+                 >
+                   {isSavingAction ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                   <span>Simpan</span>
+                 </button>
+               </div>
+             </div>
+           </div>
+         )}
 
          {/* MODAL PRINT PREVIEW KEDISIPLINAN & BK */}
          {showPrintModal && (

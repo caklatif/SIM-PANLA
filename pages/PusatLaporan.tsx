@@ -9,6 +9,12 @@ import { LaporanJurnal } from "./LaporanJurnal";
 import { AbsensiRapor } from "./AbsensiRapor";
 import { Kedisiplinan } from "./Kedisiplinan";
 import {
+  checkIsPembinaEkstra,
+  fetchPembinaListFromDb,
+  getCachedPembinaList,
+  PembinaEkstraItem,
+} from "../utils/pembinaHelper";
+import {
   FileSpreadsheet,
   Sun,
   Database,
@@ -75,15 +81,44 @@ const TABS: TabItem[] = [
 ];
 
 export const PusatLaporan: React.FC = () => {
-  const { academicYear, semester } = useAuth();
+  const { academicYear, semester, profile, isAdmin, isOperator } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Load and synchronize pembina ekstra list
+  const [pembinaList, setPembinaList] = useState<PembinaEkstraItem[]>(getCachedPembinaList);
+
+  useEffect(() => {
+    fetchPembinaListFromDb().then((list) => {
+      if (list && list.length > 0) {
+        setPembinaList(list);
+      }
+    });
+  }, []);
+
+  const isUserAdmin = Boolean(isAdmin || isOperator);
+  const pembinaStatus = checkIsPembinaEkstra(profile, pembinaList);
+  const isUserPembina = pembinaStatus.isPembina;
+
+  // RULE: Admin OR Pembina Ekstra can access rekap_ekstra.
+  // If neither (bukan keduanya), hide tab Presensi QR & Ekstrakurikuler completely!
+  const canAccessEkstraTab = isUserAdmin || isUserPembina;
+
+  const availableTabs = TABS.filter((tab) => {
+    if (tab.id === "rekap_ekstra") {
+      return canAccessEkstraTab;
+    }
+    return true;
+  });
 
   // Determine initial tab from query parameter or pathname
   const getInitialTab = (): PusatLaporanTab => {
     const params = new URLSearchParams(location.search);
     const tabParam = params.get("tab") as PusatLaporanTab;
-    if (tabParam && TABS.some((t) => t.id === tabParam)) {
+    if (tabParam === "rekap_ekstra") {
+      return canAccessEkstraTab ? "rekap_ekstra" : "kelola_scan";
+    }
+    if (tabParam && availableTabs.some((t) => t.id === tabParam)) {
       return tabParam;
     }
     if (
@@ -102,17 +137,21 @@ export const PusatLaporan: React.FC = () => {
     if (location.pathname.includes("kedisiplinan")) {
       return "kedisiplinan";
     }
-    return "kelola_scan";
+    return availableTabs[0]?.id || "kelola_scan";
   };
 
   const [activeTab, setActiveTab] = useState<PusatLaporanTab>(getInitialTab);
   const [scanCount, setScanCount] = useState<number | null>(null);
 
-  // Sync tab state when URL changes
+  // Sync tab state when URL changes or access permissions load
   useEffect(() => {
     const nextTab = getInitialTab();
-    setActiveTab(nextTab);
-  }, [location.search, location.pathname]);
+    if (nextTab === "rekap_ekstra" && !canAccessEkstraTab) {
+      setActiveTab("kelola_scan");
+    } else {
+      setActiveTab(nextTab);
+    }
+  }, [location.search, location.pathname, canAccessEkstraTab]);
 
   const handleTabChange = (tabId: PusatLaporanTab) => {
     setActiveTab(tabId);
@@ -159,7 +198,7 @@ export const PusatLaporan: React.FC = () => {
             {/* TAB SELECTOR (SCROLLABLE ON MOBILE, WRAP ON DESKTOP) */}
             <div className="pt-4 border-t border-white/10">
               <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/20">
-                {TABS.map((tab) => {
+                {availableTabs.map((tab) => {
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;
                   return (
@@ -217,7 +256,7 @@ export const PusatLaporan: React.FC = () => {
         )}
 
         {/* TAB 5: PRESENSI QR & EKSTRAKURIKULER */}
-        {activeTab === "rekap_ekstra" && (
+        {activeTab === "rekap_ekstra" && canAccessEkstraTab && (
           <div className="space-y-6">
             <RekapEkstraTab />
           </div>

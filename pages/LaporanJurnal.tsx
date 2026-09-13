@@ -6,10 +6,17 @@ import {
     Printer, Download, Trash2, Edit3, Search, Filter, RefreshCw, X, 
     AlertTriangle, BookOpen, CheckSquare, Square, Calendar, Check, 
     Loader2, User, Sparkles, ChevronDown, CheckCircle2,
-    FileSpreadsheet, Eye, Info, Clock, AlertCircle
+    FileSpreadsheet, Eye, Info, Clock, AlertCircle, Users, UserCheck, CheckCheck
 } from 'lucide-react';
+import { Student } from '../types';
 import { formatDateIndo, formatDateSignature, getWIBISOString } from '../utils/dateUtils';
 import { isOfficialTeacher } from '../utils/teacherUtils';
+
+const CLASS_OPTIONS = [
+    '7A', '7B', '7C', '7D', '7E', '7F', '7G', '7H',
+    '8A', '8B', '8C', '8D', '8E', '8F', '8G', '8H',
+    '9A', '9B', '9C', '9D', '9E', '9F', '9G', '9H'
+];
 
 interface JournalItem {
     id: string;
@@ -33,7 +40,7 @@ interface JournalItem {
         id: string;
         student_id: string;
         student_name: string;
-        status: 'S' | 'I' | 'A' | 'H';
+        status: 'S' | 'I' | 'A' | 'D' | 'H';
     }[];
     journal_notes?: {
         id: string;
@@ -85,8 +92,9 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
     const [journalToDelete, setJournalToDelete] = useState<JournalItem | null>(null);
     const [isDeletingSingle, setIsDeletingSingle] = useState(false);
 
-    // Single Edit
+    // Single Edit & Attendance Management State
     const [journalToEdit, setJournalToEdit] = useState<JournalItem | null>(null);
+    const [editTab, setEditTab] = useState<'kbm' | 'presensi'>('kbm');
     const [editFormData, setEditFormData] = useState({
         created_at: '',
         hours: '',
@@ -94,8 +102,13 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
         subject: '',
         material: '',
         cleanliness: 'sudah_bersih',
-        notes: ''
+        notes: '',
+        teacher_id: ''
     });
+    const [editStudents, setEditStudents] = useState<Student[]>([]);
+    const [editAttendanceMap, setEditAttendanceMap] = useState<Record<string, 'H' | 'S' | 'I' | 'A' | 'D'>>({});
+    const [loadingEditStudents, setLoadingEditStudents] = useState(false);
+    const [studentSearchInEdit, setStudentSearchInEdit] = useState('');
     const [isSavingEdit, setIsSavingEdit] = useState(false);
 
     // Feedback Alert
@@ -456,10 +469,107 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
         }
     };
 
+    // Load Students for Edit Modal
+    const loadStudentsForEdit = async (targetClass: string, existingLogs: any[] = []) => {
+        if (!targetClass) return;
+        setLoadingEditStudents(true);
+        try {
+            let stdList: Student[] = [];
+            const { data } = await supabase
+                .from('students')
+                .select('*')
+                .eq('kelas', targetClass)
+                .order('no_absen', { ascending: true });
+
+            if (data && data.length > 0) {
+                stdList = data as Student[];
+            } else {
+                try {
+                    const saved = localStorage.getItem('simpanla_students_cache');
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        if (Array.isArray(parsed)) {
+                            stdList = parsed.filter((s: any) => s.kelas === targetClass);
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            // Ensure any student in existingLogs is in stdList
+            const stdMap = new Map<string, Student>();
+            stdList.forEach(s => stdMap.set(s.id, s));
+
+            existingLogs.forEach(log => {
+                if (log.student_id && !stdMap.has(log.student_id)) {
+                    const fallbackStd: Student = {
+                        id: log.student_id,
+                        nisn: '',
+                        name: log.student_name || 'Siswa',
+                        kelas: targetClass
+                    };
+                    stdMap.set(log.student_id, fallbackStd);
+                    stdList.push(fallbackStd);
+                } else if (!log.student_id && log.student_name) {
+                    const found = stdList.find(s => s.name?.toLowerCase() === log.student_name?.toLowerCase());
+                    if (!found) {
+                        const customId = `custom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+                        const fallbackStd: Student = {
+                            id: customId,
+                            nisn: '',
+                            name: log.student_name,
+                            kelas: targetClass
+                        };
+                        stdMap.set(customId, fallbackStd);
+                        stdList.push(fallbackStd);
+                    }
+                }
+            });
+
+            // Sort stdList by no_absen, then by name
+            stdList.sort((a, b) => {
+                if (a.no_absen != null && b.no_absen != null) return a.no_absen - b.no_absen;
+                if (a.no_absen != null) return -1;
+                if (b.no_absen != null) return 1;
+                return (a.name || '').localeCompare(b.name || '');
+            });
+
+            setEditStudents(stdList);
+
+            // Populate attendance map - Default all to 'H'
+            const attMap: Record<string, 'H' | 'S' | 'I' | 'A' | 'D'> = {};
+            stdList.forEach(s => {
+                attMap[s.id] = 'H';
+            });
+
+            // Overlay existing logs
+            existingLogs.forEach(log => {
+                const rawStatus = (log.status || '').toUpperCase();
+                if (['S', 'I', 'A', 'D', 'H'].includes(rawStatus)) {
+                    if (log.student_id && attMap[log.student_id] !== undefined) {
+                        attMap[log.student_id] = rawStatus as any;
+                    } else if (log.student_name) {
+                        const found = stdList.find(s => s.name?.toLowerCase() === log.student_name?.toLowerCase());
+                        if (found) {
+                            attMap[found.id] = rawStatus as any;
+                        }
+                    }
+                }
+            });
+
+            setEditAttendanceMap(attMap);
+        } catch (err) {
+            console.error("Error loading students for edit:", err);
+        } finally {
+            setLoadingEditStudents(false);
+        }
+    };
+
     // Open Edit Modal
     const handleOpenEdit = (journal: JournalItem) => {
         if (journal.is_unfilled) return;
         setJournalToEdit(journal);
+        setEditTab('kbm');
+        setStudentSearchInEdit('');
         const dateStr = journal.created_at ? journal.created_at.split('T')[0] : getWIBISOString();
         setEditFormData({
             created_at: dateStr,
@@ -468,8 +578,11 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
             subject: journal.subject || '',
             material: journal.material || '',
             cleanliness: journal.cleanliness || 'sudah_bersih',
-            notes: journal.notes || ''
+            notes: journal.notes || '',
+            teacher_id: journal.teacher_id || ''
         });
+
+        loadStudentsForEdit(journal.kelas, journal.attendance_logs || []);
     };
 
     // Save Edit
@@ -480,22 +593,79 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
             const timePart = journalToEdit.created_at ? journalToEdit.created_at.split('T')[1] : '07:00:00+07:00';
             const updatedCreatedAt = `${editFormData.created_at}T${timePart}`;
 
-            const { error } = await supabase
+            const updatePayload: any = {
+                created_at: updatedCreatedAt,
+                hours: editFormData.hours,
+                kelas: editFormData.kelas,
+                subject: editFormData.subject,
+                material: editFormData.material,
+                cleanliness: editFormData.cleanliness,
+                notes: editFormData.notes
+            };
+
+            if (isAdmin || isOperator) {
+                if (editFormData.teacher_id) {
+                    updatePayload.teacher_id = editFormData.teacher_id;
+                }
+            }
+
+            const { error: jErr } = await supabase
                 .from('journals')
-                .update({
-                    created_at: updatedCreatedAt,
-                    hours: editFormData.hours,
-                    kelas: editFormData.kelas,
-                    subject: editFormData.subject,
-                    material: editFormData.material,
-                    cleanliness: editFormData.cleanliness,
-                    notes: editFormData.notes
-                })
+                .update(updatePayload)
                 .eq('id', journalToEdit.id);
 
-            if (error) throw error;
+            if (jErr) throw jErr;
 
-            setAlertMsg({ type: 'success', text: 'Data jurnal berhasil diperbarui.' });
+            // 1. Delete prior attendance_logs for this journal
+            const { error: delErr } = await supabase
+                .from('attendance_logs')
+                .delete()
+                .eq('journal_id', journalToEdit.id);
+            if (delErr) {
+                console.warn("Warning deleting prior attendance_logs:", delErr);
+            }
+
+            // 2. Identify teacher name
+            let effectiveTeacherName = journalToEdit.teacher_name || '';
+            if (editFormData.teacher_id) {
+                const tObj = teachersList.find(t => t.id === editFormData.teacher_id);
+                if (tObj) effectiveTeacherName = tObj.full_name;
+            }
+
+            // 3. Filter non-Hadir students (S, I, A, D)
+            const nonHadirStudents = editStudents.filter(s => {
+                const st = editAttendanceMap[s.id];
+                return st && st !== 'H';
+            });
+
+            if (nonHadirStudents.length > 0) {
+                const attInserts = nonHadirStudents.map(s => ({
+                    journal_id: journalToEdit.id,
+                    student_id: s.id,
+                    student_name: s.name,
+                    status: editAttendanceMap[s.id],
+                    teacher_name: effectiveTeacherName,
+                    subject: editFormData.subject,
+                    academic_year: academicYear || '2025/2026',
+                    semester: semester || 'Ganjil'
+                }));
+
+                let { error: insErr } = await supabase
+                    .from('attendance_logs')
+                    .insert(attInserts);
+
+                if (insErr && (insErr.code === '42703' || insErr.message?.includes('academic_year') || insErr.message?.includes('semester'))) {
+                    const fallbackAtts = attInserts.map(({ academic_year, semester, ...rest }) => rest);
+                    const { error: fbErr } = await supabase
+                        .from('attendance_logs')
+                        .insert(fallbackAtts);
+                    if (fbErr) throw fbErr;
+                } else if (insErr) {
+                    throw insErr;
+                }
+            }
+
+            setAlertMsg({ type: 'success', text: 'Data jurnal dan status kehadiran siswa berhasil disimpan.' });
             
             await loadJournals();
             setJournalToEdit(null);
@@ -516,7 +686,7 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
         const headers = ["No", "Tanggal", "Jam Ke", "Nama Guru", "NIP Guru", "Kelas", "Mata Pelajaran", "Materi Pembelajaran", "Kebersihan Kelas", "Ketidakhadiran Siswa", "Status Jadwal", "Catatan"];
         const rows = filteredJournals.map((j, idx) => {
             const absents = (j.attendance_logs || [])
-                .filter(l => ['S', 'I', 'A'].includes(l.status))
+                .filter(l => ['S', 'I', 'A', 'D'].includes(l.status))
                 .map(l => `${l.student_name} (${l.status})`)
                 .join('; ');
 
@@ -700,15 +870,25 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
     const renderAttendanceBadge = (logs: any[], isUnfilled?: boolean) => {
         if (isUnfilled) return <span className="text-xs text-slate-400 italic">-</span>;
 
-        const absents = (logs || []).filter(l => ['S', 'I', 'A'].includes(l.status));
+        const absents = (logs || []).filter(l => ['S', 'I', 'A', 'D'].includes(l.status));
         if (absents.length === 0) {
             return <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">Nihil (Hadir Semua)</span>;
         }
 
+        const getBadgeColor = (status: string) => {
+            switch (status) {
+                case 'S': return 'bg-amber-50 text-amber-700 border-amber-200';
+                case 'I': return 'bg-blue-50 text-blue-700 border-blue-200';
+                case 'A': return 'bg-rose-50 text-rose-700 border-rose-200';
+                case 'D': return 'bg-purple-50 text-purple-700 border-purple-200';
+                default: return 'bg-slate-50 text-slate-700 border-slate-200';
+            }
+        };
+
         return (
             <div className="space-y-1">
                 {absents.map((a, i) => (
-                    <div key={i} className="text-xs flex items-center gap-1.5 bg-red-50 text-red-700 px-2 py-0.5 rounded border border-red-100">
+                    <div key={i} className={`text-xs flex items-center gap-1.5 px-2 py-0.5 rounded border ${getBadgeColor(a.status)}`}>
                         <span className="font-bold">{a.status}:</span>
                         <span className="truncate max-w-[150px]">{a.student_name}</span>
                     </div>
@@ -1373,109 +1553,379 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                     </div>
                 )}
 
-                {/* MODAL EDIT JURNAL */}
+                {/* MODAL EDIT JURNAL & PRESENSI SISWA */}
                 {journalToEdit && (
-                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-4 pt-6 sm:pt-10 overflow-y-auto animate-fade-in">
-                        <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4 my-0">
-                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
-                                <h3 className="font-bold text-base text-slate-800 dark:text-white flex items-center gap-2">
-                                    <Edit3 size={18} className="text-purple-600" /> Edit Data Jurnal KBM
-                                </h3>
-                                <button onClick={() => setJournalToEdit(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-400">
-                                    <X size={18} />
-                                </button>
-                            </div>
-
-                            <div className="space-y-3 text-xs">
-                                <div>
-                                    <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Tanggal</label>
-                                    <input
-                                        type="date"
-                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
-                                        value={editFormData.created_at}
-                                        onChange={e => setEditFormData({ ...editFormData, created_at: e.target.value })}
-                                    />
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Jam Ke</label>
-                                        <input
-                                            type="text"
-                                            className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
-                                            value={editFormData.hours}
-                                            onChange={e => setEditFormData({ ...editFormData, hours: e.target.value })}
-                                        />
+                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-3 sm:p-4 pt-4 sm:pt-8 overflow-y-auto animate-fade-in">
+                        <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col my-2 max-h-[92vh]">
+                            {/* MODAL HEADER */}
+                            <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/80">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
+                                        <Edit3 size={20} />
                                     </div>
                                     <div>
-                                        <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Kelas</label>
-                                        <input
-                                            type="text"
-                                            className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
-                                            value={editFormData.kelas}
-                                            onChange={e => setEditFormData({ ...editFormData, kelas: e.target.value })}
-                                        />
+                                        <h3 className="font-extrabold text-base text-slate-800 dark:text-white flex items-center gap-2">
+                                            Edit Data Jurnal & Presensi Siswa
+                                        </h3>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                                            Kelas <strong className="text-purple-600 dark:text-purple-400">{editFormData.kelas}</strong> • {editFormData.subject || 'Mata Pelajaran'} • {formatDateIndo(editFormData.created_at)}
+                                        </p>
                                     </div>
                                 </div>
-
-                                <div>
-                                    <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Mata Pelajaran</label>
-                                    <input
-                                        type="text"
-                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
-                                        value={editFormData.subject}
-                                        onChange={e => setEditFormData({ ...editFormData, subject: e.target.value })}
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Materi Pembelajaran</label>
-                                    <textarea
-                                        rows={3}
-                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
-                                        value={editFormData.material}
-                                        onChange={e => setEditFormData({ ...editFormData, material: e.target.value })}
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Kebersihan Kelas</label>
-                                    <select
-                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
-                                        value={editFormData.cleanliness}
-                                        onChange={e => setEditFormData({ ...editFormData, cleanliness: e.target.value })}
-                                    >
-                                        <option value="sudah_bersih">Sudah Bersih</option>
-                                        <option value="perlu_dibersihkan">Perlu Dibersihkan</option>
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Catatan Tambahan</label>
-                                    <input
-                                        type="text"
-                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
-                                        value={editFormData.notes}
-                                        onChange={e => setEditFormData({ ...editFormData, notes: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-2">
                                 <button
                                     onClick={() => setJournalToEdit(null)}
-                                    className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-xl"
+                                    className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl text-slate-400 hover:text-slate-600 transition-colors"
                                 >
-                                    Batal
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* TABS NAVIGATION */}
+                            <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-100/60 dark:bg-slate-900/40 p-1.5 gap-1.5 px-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditTab('kbm')}
+                                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                                        editTab === 'kbm'
+                                            ? 'bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-300 shadow-sm border border-slate-200 dark:border-slate-700'
+                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                    }`}
+                                >
+                                    <BookOpen size={15} /> Detail Jurnal KBM
                                 </button>
                                 <button
-                                    onClick={handleSaveEdit}
-                                    disabled={isSavingEdit}
-                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md"
+                                    type="button"
+                                    onClick={() => setEditTab('presensi')}
+                                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                                        editTab === 'presensi'
+                                            ? 'bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-300 shadow-sm border border-slate-200 dark:border-slate-700'
+                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                    }`}
                                 >
-                                    {isSavingEdit && <Loader2 size={14} className="animate-spin" />}
-                                    Simpan Perubahan
+                                    <Users size={15} /> Presensi Siswa ({editStudents.length})
+                                    {(() => {
+                                        const nonHadirCount = Object.values(editAttendanceMap).filter(st => st !== 'H').length;
+                                        return nonHadirCount > 0 ? (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 font-extrabold">
+                                                {nonHadirCount} Absen
+                                            </span>
+                                        ) : (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 font-extrabold">
+                                                Nihil
+                                            </span>
+                                        );
+                                    })()}
                                 </button>
+                            </div>
+
+                            {/* TAB CONTENT (Scrollable) */}
+                            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                                {editTab === 'kbm' ? (
+                                    <div className="space-y-3.5 text-xs">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Tanggal KBM</label>
+                                                <input
+                                                    type="date"
+                                                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                                    value={editFormData.created_at}
+                                                    onChange={e => setEditFormData({ ...editFormData, created_at: e.target.value })}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Jam Ke</label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Contoh: 1-2, 3-4"
+                                                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                                    value={editFormData.hours}
+                                                    onChange={e => setEditFormData({ ...editFormData, hours: e.target.value })}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Guru Pengampu (Admin / Operator can change) */}
+                                        {(isAdmin || isOperator) && (
+                                            <div>
+                                                <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Guru Pengampu</label>
+                                                <select
+                                                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                                    value={editFormData.teacher_id}
+                                                    onChange={e => setEditFormData({ ...editFormData, teacher_id: e.target.value })}
+                                                >
+                                                    <option value="">-- Tetap Guru Sebelumnya ({journalToEdit.teacher_name || 'Guru'}) --</option>
+                                                    {teachersList.map(t => (
+                                                        <option key={t.id} value={t.id}>
+                                                            {t.full_name} {t.nip ? `(NIP. ${t.nip})` : ''}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <label className="font-bold text-slate-600 dark:text-slate-300">Kelas</label>
+                                                    {editFormData.kelas !== journalToEdit.kelas && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => loadStudentsForEdit(editFormData.kelas, [])}
+                                                            className="text-[10px] text-purple-600 font-bold hover:underline"
+                                                        >
+                                                            Muat Siswa Kelas Baru
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <select
+                                                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                                    value={editFormData.kelas}
+                                                    onChange={e => {
+                                                        const newK = e.target.value;
+                                                        setEditFormData({ ...editFormData, kelas: newK });
+                                                        loadStudentsForEdit(newK, []);
+                                                    }}
+                                                >
+                                                    {CLASS_OPTIONS.map(c => (
+                                                        <option key={c} value={c}>{c}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Mata Pelajaran</label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Nama Mapel..."
+                                                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                                    value={editFormData.subject}
+                                                    onChange={e => setEditFormData({ ...editFormData, subject: e.target.value })}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Materi Pembelajaran</label>
+                                            <textarea
+                                                rows={3}
+                                                placeholder="Uraian materi pokok KBM..."
+                                                className="w-full p-2.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                                value={editFormData.material}
+                                                onChange={e => setEditFormData({ ...editFormData, material: e.target.value })}
+                                            />
+                                        </div>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Kebersihan Kelas</label>
+                                                <select
+                                                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                                    value={editFormData.cleanliness}
+                                                    onChange={e => setEditFormData({ ...editFormData, cleanliness: e.target.value })}
+                                                >
+                                                    <option value="sudah_bersih">Sudah Bersih</option>
+                                                    <option value="perlu_dibersihkan">Perlu Dibersihkan</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">Catatan Tambahan</label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Catatan kejadian khusus / tugas..."
+                                                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                                    value={editFormData.notes}
+                                                    onChange={e => setEditFormData({ ...editFormData, notes: e.target.value })}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    /* TAB 2: PRESENSI SISWA */
+                                    <div className="space-y-3">
+                                        {/* Attendance Summary Bar */}
+                                        <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                                <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                                    Presensi Siswa Kelas {editFormData.kelas} ({editStudents.length} Anak)
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const newMap = { ...editAttendanceMap };
+                                                        editStudents.forEach(s => { newMap[s.id] = 'H'; });
+                                                        setEditAttendanceMap(newMap);
+                                                    }}
+                                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-sm transition-all"
+                                                >
+                                                    <CheckCheck size={13} /> Set Semua Hadir (H)
+                                                </button>
+                                            </div>
+
+                                            {/* Badges Count */}
+                                            {(() => {
+                                                const hCount = editStudents.filter(s => (editAttendanceMap[s.id] || 'H') === 'H').length;
+                                                const sCount = editStudents.filter(s => editAttendanceMap[s.id] === 'S').length;
+                                                const iCount = editStudents.filter(s => editAttendanceMap[s.id] === 'I').length;
+                                                const aCount = editStudents.filter(s => editAttendanceMap[s.id] === 'A').length;
+                                                const dCount = editStudents.filter(s => editAttendanceMap[s.id] === 'D').length;
+
+                                                return (
+                                                    <div className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-bold">
+                                                        <div className="bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 p-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                                                            Hadir: <span className="font-extrabold text-xs">{hCount}</span>
+                                                        </div>
+                                                        <div className="bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 p-1.5 rounded-xl border border-amber-200 dark:border-amber-800">
+                                                            Sakit: <span className="font-extrabold text-xs">{sCount}</span>
+                                                        </div>
+                                                        <div className="bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 p-1.5 rounded-xl border border-blue-200 dark:border-blue-800">
+                                                            Izin: <span className="font-extrabold text-xs">{iCount}</span>
+                                                        </div>
+                                                        <div className="bg-rose-50 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300 p-1.5 rounded-xl border border-rose-200 dark:border-rose-800">
+                                                            Alpa: <span className="font-extrabold text-xs">{aCount}</span>
+                                                        </div>
+                                                        <div className="bg-purple-50 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300 p-1.5 rounded-xl border border-purple-200 dark:border-purple-800">
+                                                            Dispen: <span className="font-extrabold text-xs">{dCount}</span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+
+                                        {/* Search in Modal */}
+                                        <div className="relative">
+                                            <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                                            <input
+                                                type="text"
+                                                placeholder="Cari nama atau nomor absen siswa..."
+                                                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                                value={studentSearchInEdit}
+                                                onChange={e => setStudentSearchInEdit(e.target.value)}
+                                            />
+                                        </div>
+
+                                        {/* Student list */}
+                                        {loadingEditStudents ? (
+                                            <div className="py-12 text-center text-slate-400 flex items-center justify-center gap-2">
+                                                <Loader2 size={16} className="animate-spin text-purple-600" /> Memuat data siswa kelas {editFormData.kelas}...
+                                            </div>
+                                        ) : editStudents.length === 0 ? (
+                                            <div className="py-8 text-center text-slate-400 text-xs italic bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                                                Tidak ada data siswa di kelas {editFormData.kelas}.
+                                            </div>
+                                        ) : (
+                                            <div className="max-h-[340px] overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100 dark:divide-slate-700/60">
+                                                {editStudents
+                                                    .filter(s => {
+                                                        if (!studentSearchInEdit.trim()) return true;
+                                                        const q = studentSearchInEdit.toLowerCase();
+                                                        return (
+                                                            s.name?.toLowerCase().includes(q) ||
+                                                            String(s.no_absen || '').includes(q) ||
+                                                            s.nisn?.includes(q)
+                                                        );
+                                                    })
+                                                    .map((std, idx) => {
+                                                        const currentStatus = editAttendanceMap[std.id] || 'H';
+                                                        const displayNo = std.no_absen != null ? String(std.no_absen).padStart(2, '0') : String(idx + 1).padStart(2, '0');
+
+                                                        return (
+                                                            <div
+                                                                key={std.id}
+                                                                className="pt-2 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/80 dark:hover:bg-slate-700/30 p-2 rounded-xl transition-colors"
+                                                            >
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    <span className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-700 font-mono text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
+                                                                        {displayNo}
+                                                                    </span>
+                                                                    <div className="truncate">
+                                                                        <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate block">
+                                                                            {std.name}
+                                                                        </span>
+                                                                        {std.nisn && (
+                                                                            <span className="text-[10px] text-slate-400">NISN: {std.nisn}</span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Segmented Status Selector */}
+                                                                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl shrink-0 self-end sm:self-center">
+                                                                    {[
+                                                                        { key: 'H', label: 'Hadir', activeClass: 'bg-emerald-600 text-white shadow-sm' },
+                                                                        { key: 'S', label: 'Sakit', activeClass: 'bg-amber-500 text-white shadow-sm' },
+                                                                        { key: 'I', label: 'Izin', activeClass: 'bg-blue-600 text-white shadow-sm' },
+                                                                        { key: 'A', label: 'Alpa', activeClass: 'bg-rose-600 text-white shadow-sm' },
+                                                                        { key: 'D', label: 'Dispen', activeClass: 'bg-purple-600 text-white shadow-sm' }
+                                                                    ].map(st => {
+                                                                        const isSelected = currentStatus === st.key;
+                                                                        return (
+                                                                            <button
+                                                                                key={st.key}
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    setEditAttendanceMap(prev => ({
+                                                                                        ...prev,
+                                                                                        [std.id]: st.key as any
+                                                                                    }));
+                                                                                }}
+                                                                                className={`px-2 py-1 rounded-lg text-[10px] font-extrabold transition-all ${
+                                                                                    isSelected
+                                                                                        ? st.activeClass
+                                                                                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                                                                }`}
+                                                                            >
+                                                                                {st.key}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* MODAL FOOTER */}
+                            <div className="p-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/80 flex items-center justify-between gap-2">
+                                <div>
+                                    {editTab === 'kbm' ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditTab('presensi')}
+                                            className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1"
+                                        >
+                                            Ke Presensi Siswa <ChevronDown size={14} className="-rotate-90" />
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditTab('kbm')}
+                                            className="text-xs font-bold text-slate-500 hover:text-slate-700 flex items-center gap-1"
+                                        >
+                                            <ChevronDown size={14} className="rotate-90" /> Ke Detail Jurnal
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setJournalToEdit(null)}
+                                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-xl transition-colors"
+                                    >
+                                        Batal
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveEdit}
+                                        disabled={isSavingEdit}
+                                        className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-purple-200 dark:shadow-none transition-all disabled:opacity-50"
+                                    >
+                                        {isSavingEdit && <Loader2 size={14} className="animate-spin" />}
+                                        Simpan Perubahan
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>

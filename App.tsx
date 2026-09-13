@@ -193,7 +193,9 @@ const App: React.FC = () => {
 
             <Route path="/rekap-sholat" element={
                <ProtectedRoute>
-                  <PusatLaporan />
+                  <RestrictedKbmRoute>
+                     <PusatLaporan />
+                  </RestrictedKbmRoute>
                </ProtectedRoute>
             } />
 

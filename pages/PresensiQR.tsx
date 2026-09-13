@@ -1330,54 +1330,77 @@ export default function PresensiQR() {
       }
     >();
 
-    // Process logs
+    // Process logs with deduplication for ekstra: 1x sehari ambil scan terakhir
+    const studentLogsMap = new Map<string, any[]>();
     rekapLogs.forEach((log) => {
       const key = (log.nisn || log.student_name || "").trim();
       if (!key) return;
+      if (!studentLogsMap.has(key)) studentLogsMap.set(key, []);
+      studentLogsMap.get(key)!.push(log);
+    });
 
-      if (!summaryMap.has(key)) {
-        const std = students.find(
-          (s) => s.nisn === log.nisn || s.name === log.student_name,
+    studentLogsMap.forEach((logs, key) => {
+      const std = students.find(
+        (s) => s.nisn === logs[0].nisn || s.name === logs[0].student_name,
+      );
+      const item = {
+        nisn: logs[0].nisn || std?.nisn || std?.nis || "-",
+        name: logs[0].student_name || std?.name || "Siswa",
+        kelas: logs[0].kelas || std?.kelas || "-",
+        totalHadir: 0,
+        totalTerlambat: 0,
+        totalKehadiran: 0,
+        datesSet: new Set<string>(),
+        datesFormattedList: [] as string[],
+        lastScannedAt: logs[0].scanned_at,
+      };
+
+      // Group by date
+      const dateMap = new Map<string, any[]>();
+      logs.forEach((log) => {
+        const d = new Date(log.scanned_at);
+        const dKey = !isNaN(d.getTime())
+          ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+          : log.scanned_at?.substring(0, 10);
+        if (!dateMap.has(dKey)) dateMap.set(dKey, []);
+        dateMap.get(dKey)!.push(log);
+      });
+
+      const sortedDates = Array.from(dateMap.keys()).sort();
+      sortedDates.forEach((dKey) => {
+        const dayLogs = dateMap.get(dKey)!;
+        // Sort ascending by time: last one is latest scan
+        dayLogs.sort(
+          (a, b) => new Date(a.scanned_at).getTime() - new Date(b.scanned_at).getTime(),
         );
-        summaryMap.set(key, {
-          nisn: log.nisn || std?.nisn || std?.nis || "-",
-          name: log.student_name || std?.name || "Siswa",
-          kelas: log.kelas || std?.kelas || "-",
-          totalHadir: 0,
-          totalTerlambat: 0,
-          totalKehadiran: 0,
-          datesSet: new Set<string>(),
-          datesFormattedList: [],
-          lastScannedAt: log.scanned_at,
+        const latestScan = dayLogs[dayLogs.length - 1];
+
+        if (latestScan.status === "Terlambat") {
+          item.totalTerlambat += 1;
+        } else {
+          item.totalHadir += 1;
+        }
+        item.totalKehadiran += 1; // 1x per hari
+
+        const d = new Date(latestScan.scanned_at);
+        const dateOnly = d.toLocaleDateString("id-ID", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
         });
-      }
+        const timeOnly = d.toLocaleTimeString("id-ID", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        item.datesSet.add(dKey);
+        item.datesFormattedList.push(`${dateOnly} (${timeOnly})`);
 
-      const item = summaryMap.get(key)!;
-      if (log.status === "Terlambat") {
-        item.totalTerlambat += 1;
-      } else {
-        item.totalHadir += 1;
-      }
-      item.totalKehadiran += 1;
-
-      const d = new Date(log.scanned_at);
-      const dateOnly = d.toLocaleDateString("id-ID", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      });
-      const timeOnly = d.toLocaleTimeString("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
+        if (new Date(latestScan.scanned_at) > new Date(item.lastScannedAt)) {
+          item.lastScannedAt = latestScan.scanned_at;
+        }
       });
 
-      const dayStr = d.toISOString().substring(0, 10);
-      item.datesSet.add(dayStr);
-      item.datesFormattedList.push(`${dateOnly} (${timeOnly})`);
-
-      if (new Date(log.scanned_at) > new Date(item.lastScannedAt)) {
-        item.lastScannedAt = log.scanned_at;
-      }
+      summaryMap.set(key, item);
     });
 
     let resultList = Array.from(summaryMap.values());

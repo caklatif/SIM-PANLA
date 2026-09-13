@@ -21,8 +21,12 @@ import {
   AlertCircle,
   HelpCircle,
   Users,
+  Edit3,
+  Trash2,
+  Plus,
+  Loader2,
 } from "lucide-react";
-import { showAlert } from "../utils/alert";
+import { showAlert, showConfirm } from "../utils/alert";
 import { formatDateIndo, formatDateSignature } from "../utils/dateUtils";
 
 interface RekapSholatMatrixProps {
@@ -66,6 +70,35 @@ export const RekapSholatMatrix: React.FC<RekapSholatMatrixProps> = ({
   const [classesList, setClassesList] = useState<string[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [prayerLogs, setPrayerLogs] = useState<any[]>([]);
+
+  // Admin Check
+  const isUserAdmin = profile?.role === "admin" || profile?.role === "operator" || profile?.mengajar_mapel === "Kepala Sekolah";
+
+  // Manage / Edit Modal States
+  const [manageStudent, setManageStudent] = useState<Student | null>(null);
+  const [quickCellModal, setQuickCellModal] = useState<{
+    student: Student;
+    day: number;
+    logId?: string;
+    date: string;
+    time: string;
+    mode: "dhuha" | "dzuhur";
+    status: "Hadir" | "Terlambat";
+    isNew: boolean;
+  } | null>(null);
+
+  // Edit / Add in Manage Modal
+  const [editingModalLog, setEditingModalLog] = useState<{
+    id?: string;
+    student: Student;
+    date: string;
+    time: string;
+    mode: "dhuha" | "dzuhur";
+    status: "Hadir" | "Terlambat";
+    isNew: boolean;
+  } | null>(null);
+
+  const [savingAction, setSavingAction] = useState<boolean>(false);
 
   // Print Modal
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
@@ -240,6 +273,180 @@ export const RekapSholatMatrix: React.FC<RekapSholatMatrixProps> = ({
   useEffect(() => {
     fetchMatrixData();
   }, [selectedMonth, selectedClass, selectedMode, academicYear]);
+
+  // Handle clicking a day cell (Admin quick edit/add)
+  const handleCellClick = (student: Student, day: number) => {
+    if (!isUserAdmin) return;
+    const existingLog = prayerLogs.find((l) => {
+      const d = new Date(l.scanned_at);
+      if (d.getDate() !== day) return false;
+      if (l.student_id && student.id && l.student_id === student.id) return true;
+      if (l.nisn && student.nisn && l.nisn.trim() === student.nisn.trim()) return true;
+      if (l.student_name && student.name && l.student_name.trim().toLowerCase() === student.name.trim().toLowerCase()) return true;
+      return false;
+    });
+
+    const dayStr = String(day).padStart(2, "0");
+    const targetDate = `${selectedMonth}-${dayStr}`;
+
+    if (existingLog) {
+      const d = new Date(existingLog.scanned_at);
+      const timeStr = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", hour12: false });
+      setQuickCellModal({
+        student,
+        day,
+        logId: existingLog.id,
+        date: existingLog.scanned_at ? existingLog.scanned_at.split("T")[0] : targetDate,
+        time: timeStr && timeStr.length === 5 ? timeStr : "07:00",
+        mode: (existingLog.mode === "dzuhur" ? "dzuhur" : "dhuha"),
+        status: (existingLog.status === "Terlambat" ? "Terlambat" : "Hadir"),
+        isNew: false,
+      });
+    } else {
+      setQuickCellModal({
+        student,
+        day,
+        date: targetDate,
+        time: selectedMode === "dzuhur" ? "12:00" : "07:00",
+        mode: selectedMode === "dzuhur" ? "dzuhur" : "dhuha",
+        status: "Hadir",
+        isNew: true,
+      });
+    }
+  };
+
+  // Save quick cell modal
+  const handleSaveQuickCell = async () => {
+    if (!quickCellModal) return;
+    setSavingAction(true);
+    try {
+      const isoTimestamp = new Date(`${quickCellModal.date}T${quickCellModal.time}:00+07:00`).toISOString();
+
+      if (!quickCellModal.isNew && quickCellModal.logId) {
+        // Update existing log
+        const { error } = await supabase
+          .from("qr_presensi_logs")
+          .update({
+            scanned_at: isoTimestamp,
+            mode: quickCellModal.mode,
+            status: quickCellModal.status,
+          })
+          .eq("id", quickCellModal.logId);
+
+        if (error) throw error;
+        showAlert(`Presensi sholat tanggal ${quickCellModal.day} untuk ${quickCellModal.student.name} berhasil diperbarui.`, "Berhasil");
+      } else {
+        // Create new log
+        const newId = `qr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const { error } = await supabase.from("qr_presensi_logs").insert([
+          {
+            id: newId,
+            student_id: quickCellModal.student.id,
+            student_name: quickCellModal.student.name,
+            nisn: quickCellModal.student.nisn || quickCellModal.student.nis || "-",
+            kelas: quickCellModal.student.kelas || selectedClass,
+            mode: quickCellModal.mode,
+            status: quickCellModal.status,
+            scanned_at: isoTimestamp,
+            academic_year: academicYear || "2025/2026",
+            notes: "[Edit Admin Rekap Sholat]",
+          },
+        ]);
+        if (error) throw error;
+        showAlert(`Presensi sholat tanggal ${quickCellModal.day} untuk ${quickCellModal.student.name} berhasil ditambahkan.`, "Berhasil");
+      }
+
+      setQuickCellModal(null);
+      await fetchMatrixData();
+    } catch (err: any) {
+      console.error(err);
+      showAlert(`Gagal menyimpan presensi sholat: ${err.message || err}`, "Gagal");
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
+  // Delete prayer log
+  const handleDeletePrayerLog = async (logId: string, studentName: string, dateLabel?: string) => {
+    const ok = await showConfirm(
+      `Hapus data presensi sholat ${studentName}${dateLabel ? ` tanggal ${dateLabel}` : ""}? Tindakan ini akan memperbarui total kehadiran siswa.`,
+      "Hapus Presensi Sholat?"
+    );
+    if (!ok) return;
+
+    try {
+      await supabase.from("qr_presensi_logs").delete().eq("id", logId);
+      await supabase.from("journal_notes").delete().eq("id", logId);
+      showAlert(`Presensi sholat berhasil dihapus.`, "Data Dihapus");
+      if (quickCellModal) setQuickCellModal(null);
+      await fetchMatrixData();
+    } catch (err: any) {
+      showAlert(`Gagal menghapus presensi sholat: ${err.message || err}`, "Gagal");
+    }
+  };
+
+  // Get student's prayer logs in this month
+  const getStudentLogs = (student: Student) => {
+    return prayerLogs.filter((l) => {
+      if (l.student_id && student.id && l.student_id === student.id) return true;
+      if (l.nisn && student.nisn && l.nisn.trim() === student.nisn.trim()) return true;
+      if (l.student_name && student.name && l.student_name.trim().toLowerCase() === student.name.trim().toLowerCase()) return true;
+      return false;
+    }).sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
+  };
+
+  // Open Manage Student
+  const handleOpenManageStudent = (student: Student) => {
+    setManageStudent(student);
+    setEditingModalLog(null);
+  };
+
+  // Save or Add in Manage Student Modal
+  const handleSaveManageLog = async () => {
+    if (!editingModalLog || !manageStudent) return;
+    setSavingAction(true);
+    try {
+      const isoTimestamp = new Date(`${editingModalLog.date}T${editingModalLog.time}:00+07:00`).toISOString();
+
+      if (!editingModalLog.isNew && editingModalLog.id) {
+        const { error } = await supabase
+          .from("qr_presensi_logs")
+          .update({
+            scanned_at: isoTimestamp,
+            mode: editingModalLog.mode,
+            status: editingModalLog.status,
+          })
+          .eq("id", editingModalLog.id);
+        if (error) throw error;
+        showAlert(`Presensi sholat berhasil diperbarui.`, "Berhasil");
+      } else {
+        const newId = `qr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const { error } = await supabase.from("qr_presensi_logs").insert([
+          {
+            id: newId,
+            student_id: manageStudent.id,
+            student_name: manageStudent.name,
+            nisn: manageStudent.nisn || manageStudent.nis || "-",
+            kelas: manageStudent.kelas || selectedClass,
+            mode: editingModalLog.mode,
+            status: editingModalLog.status,
+            scanned_at: isoTimestamp,
+            academic_year: academicYear || "2025/2026",
+            notes: "[Tambah Manual Admin]",
+          },
+        ]);
+        if (error) throw error;
+        showAlert(`Presensi sholat berhasil ditambahkan (total scan bertambah).`, "Berhasil");
+      }
+
+      setEditingModalLog(null);
+      await fetchMatrixData();
+    } catch (err: any) {
+      showAlert(`Gagal menyimpan: ${err.message || err}`, "Gagal");
+    } finally {
+      setSavingAction(false);
+    }
+  };
 
   // Identify which days had prayer activity
   const activeDaysSet = useMemo(() => {
@@ -753,6 +960,11 @@ export const RekapSholatMatrix: React.FC<RekapSholatMatrixProps> = ({
                   <th className="py-3.5 px-3 text-center bg-slate-950 text-white min-w-[80px]">
                     % Hadir
                   </th>
+                  {isUserAdmin && (
+                    <th className="py-3.5 px-3 text-center bg-purple-950 text-purple-200 border-l border-purple-900 w-20" title="Kelola Riwayat Scan Siswa">
+                      Aksi
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700 font-medium">
@@ -790,9 +1002,13 @@ export const RekapSholatMatrix: React.FC<RekapSholatMatrixProps> = ({
                         return (
                           <td
                             key={day}
+                            onClick={() => isUserAdmin && handleCellClick(row.student, day)}
                             className={`py-2 px-1 text-center font-mono text-[10px] border-r border-slate-100 dark:border-slate-700/40 ${
+                              isUserAdmin ? "cursor-pointer hover:bg-purple-100/60 dark:hover:bg-purple-900/40 transition-colors" : ""
+                            } ${
                               info.isSunday ? "bg-rose-50/40 dark:bg-rose-950/20 text-rose-300" : "text-slate-300 dark:text-slate-600"
                             }`}
+                            title={isUserAdmin ? `Tanggal ${day}: Belum ada scan. Klik untuk Tambah Presensi.` : undefined}
                           >
                             -
                           </td>
@@ -803,8 +1019,11 @@ export const RekapSholatMatrix: React.FC<RekapSholatMatrixProps> = ({
                         return (
                           <td
                             key={day}
-                            className="py-1 px-1 text-center border-r border-slate-100 dark:border-slate-700/40 bg-emerald-50/60 dark:bg-emerald-950/30"
-                            title={`Tanggal ${day}: Hadir (${record.time || ""}) - ${record.mode || ""}`}
+                            onClick={() => isUserAdmin && handleCellClick(row.student, day)}
+                            className={`py-1 px-1 text-center border-r border-slate-100 dark:border-slate-700/40 bg-emerald-50/60 dark:bg-emerald-950/30 ${
+                              isUserAdmin ? "cursor-pointer hover:ring-2 hover:ring-purple-500 hover:scale-105 transition-all" : ""
+                            }`}
+                            title={`Tanggal ${day}: Hadir (${record.time || ""}) - ${record.mode || ""}${isUserAdmin ? " (Klik untuk Edit / Hapus)" : ""}`}
                           >
                             <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-600 text-white font-black text-[10px] shadow-xs">
                               ✓
@@ -816,8 +1035,11 @@ export const RekapSholatMatrix: React.FC<RekapSholatMatrixProps> = ({
                       return (
                         <td
                           key={day}
-                          className="py-1 px-1 text-center border-r border-slate-100 dark:border-slate-700/40 bg-amber-50/60 dark:bg-amber-950/30"
-                          title={`Tanggal ${day}: Terlambat (${record.time || ""}) - ${record.mode || ""}`}
+                          onClick={() => isUserAdmin && handleCellClick(row.student, day)}
+                          className={`py-1 px-1 text-center border-r border-slate-100 dark:border-slate-700/40 bg-amber-50/60 dark:bg-amber-950/30 ${
+                            isUserAdmin ? "cursor-pointer hover:ring-2 hover:ring-purple-500 hover:scale-105 transition-all" : ""
+                          }`}
+                          title={`Tanggal ${day}: Terlambat (${record.time || ""}) - ${record.mode || ""}${isUserAdmin ? " (Klik untuk Edit / Hapus)" : ""}`}
                         >
                           <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-amber-500 text-white font-black text-[10px] shadow-xs">
                             T
@@ -851,6 +1073,21 @@ export const RekapSholatMatrix: React.FC<RekapSholatMatrixProps> = ({
                         </span>
                       </div>
                     </td>
+
+                    {/* Admin Action Column */}
+                    {isUserAdmin && (
+                      <td className="py-2.5 px-2 text-center border-l border-slate-100 dark:border-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenManageStudent(row.student)}
+                          className="px-2.5 py-1 rounded-lg bg-purple-100 hover:bg-purple-200 dark:bg-purple-950/60 dark:hover:bg-purple-900/80 text-purple-800 dark:text-purple-300 font-bold transition-all text-[11px] inline-flex items-center gap-1 shadow-2xs border border-purple-200 dark:border-purple-800"
+                          title="Kelola & Edit Semua Scan Sholat Siswa"
+                        >
+                          <Edit3 size={12} />
+                          <span>Kelola</span>
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1010,6 +1247,399 @@ export const RekapSholatMatrix: React.FC<RekapSholatMatrixProps> = ({
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK CELL EDIT / ADD MODAL */}
+      {quickCellModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                  {quickCellModal.isNew ? "Tambah Presensi Sholat" : "Edit Presensi Sholat"}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {quickCellModal.student.name} ({quickCellModal.student.kelas}) • Tanggal {quickCellModal.day}
+                </p>
+              </div>
+              <button
+                onClick={() => setQuickCellModal(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-4">
+              {/* Tanggal */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Tanggal Presensi
+                </label>
+                <input
+                  type="date"
+                  value={quickCellModal.date}
+                  onChange={(e) => setQuickCellModal({ ...quickCellModal, date: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-purple-500 outline-hidden"
+                />
+              </div>
+
+              {/* Jam */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Jam Scan (WIB)
+                </label>
+                <input
+                  type="time"
+                  value={quickCellModal.time}
+                  onChange={(e) => setQuickCellModal({ ...quickCellModal, time: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-purple-500 outline-hidden"
+                />
+              </div>
+
+              {/* Mode Sholat */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Jenis Sholat
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setQuickCellModal({ ...quickCellModal, mode: "dhuha" })}
+                    className={`py-2 px-3 rounded-xl font-bold text-xs border transition-all ${
+                      quickCellModal.mode === "dhuha"
+                        ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                        : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                    }`}
+                  >
+                    Sholat Dhuha
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickCellModal({ ...quickCellModal, mode: "dzuhur" })}
+                    className={`py-2 px-3 rounded-xl font-bold text-xs border transition-all ${
+                      quickCellModal.mode === "dzuhur"
+                        ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                        : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                    }`}
+                  >
+                    Sholat Dzuhur
+                  </button>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Status Presensi
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setQuickCellModal({ ...quickCellModal, status: "Hadir" })}
+                    className={`py-2 px-3 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-1.5 ${
+                      quickCellModal.status === "Hadir"
+                        ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                        : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                    }`}
+                  >
+                    <CheckCircle2 size={14} />
+                    <span>Hadir (Tepat Waktu)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickCellModal({ ...quickCellModal, status: "Terlambat" })}
+                    className={`py-2 px-3 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-1.5 ${
+                      quickCellModal.status === "Terlambat"
+                        ? "bg-amber-500 text-white border-amber-500 shadow-xs"
+                        : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                    }`}
+                  >
+                    <Clock size={14} />
+                    <span>Terlambat</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700 gap-2">
+              {!quickCellModal.isNew && quickCellModal.logId ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    quickCellModal.logId &&
+                    handleDeletePrayerLog(
+                      quickCellModal.logId,
+                      quickCellModal.student.name,
+                      String(quickCellModal.day)
+                    )
+                  }
+                  className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 dark:text-rose-400 font-bold text-xs flex items-center gap-1.5 transition-colors"
+                >
+                  <Trash2 size={14} />
+                  <span>Hapus Scan</span>
+                </button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickCellModal(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={savingAction}
+                  onClick={handleSaveQuickCell}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-600/20 flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+                >
+                  {savingAction ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  <span>{quickCellModal.isNew ? "Simpan Presensi" : "Perbarui"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MANAGE ALL PRAYER SCANS FOR A STUDENT MODAL */}
+      {manageStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-150">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700 shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <Edit3 size={18} className="text-purple-600" />
+                  <span>Kelola Presensi Sholat Siswa</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <span className="font-bold text-slate-700 dark:text-slate-200">{manageStudent.name}</span> • Kelas {manageStudent.kelas || selectedClass} • NISN: {manageStudent.nisn || "-"}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setManageStudent(null);
+                  setEditingModalLog(null);
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Sub-form: Add / Edit Log */}
+            {editingModalLog ? (
+              <div className="p-4 my-3 bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-xl space-y-3 shrink-0">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-purple-900 dark:text-purple-200">
+                    {editingModalLog.isNew ? "+ Tambah Presensi Sholat (Menambah Jumlah Scan)" : "Edit Data Scan Sholat"}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setEditingModalLog(null)}
+                    className="text-xs text-slate-400 hover:text-slate-600"
+                  >
+                    Batal Form
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Tanggal
+                    </label>
+                    <input
+                      type="date"
+                      value={editingModalLog.date}
+                      onChange={(e) => setEditingModalLog({ ...editingModalLog, date: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Jam (WIB)
+                    </label>
+                    <input
+                      type="time"
+                      value={editingModalLog.time}
+                      onChange={(e) => setEditingModalLog({ ...editingModalLog, time: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Jenis Sholat
+                    </label>
+                    <select
+                      value={editingModalLog.mode}
+                      onChange={(e) => setEditingModalLog({ ...editingModalLog, mode: e.target.value as any })}
+                      className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium"
+                    >
+                      <option value="dhuha">Dhuha</option>
+                      <option value="dzuhur">Dzuhur</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                      Status
+                    </label>
+                    <select
+                      value={editingModalLog.status}
+                      onChange={(e) => setEditingModalLog({ ...editingModalLog, status: e.target.value as any })}
+                      className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium"
+                    >
+                      <option value="Hadir">Hadir (Tepat Waktu)</option>
+                      <option value="Terlambat">Terlambat</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditingModalLog(null)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-200/50"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingAction}
+                    onClick={handleSaveManageLog}
+                    className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {savingAction && <Loader2 size={12} className="animate-spin" />}
+                    <span>{editingModalLog.isNew ? "Simpan Presensi Baru" : "Simpan Perubahan"}</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="py-3 flex items-center justify-between shrink-0">
+                <span className="text-xs text-slate-500 font-medium">
+                  Total Scan Bulan Ini: <strong className="text-purple-600">{getStudentLogs(manageStudent).length} Kali</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditingModalLog({
+                      student: manageStudent,
+                      date: `${selectedMonth}-01`,
+                      time: selectedMode === "dzuhur" ? "12:00" : "07:00",
+                      mode: selectedMode === "dzuhur" ? "dzuhur" : "dhuha",
+                      status: "Hadir",
+                      isNew: true,
+                    })
+                  }
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
+                >
+                  <Plus size={14} />
+                  <span>Tambah Presensi (Tambah Scan)</span>
+                </button>
+              </div>
+            )}
+
+            {/* List of Student's Scans */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700 border border-slate-100 dark:border-slate-700 rounded-xl my-2">
+              {getStudentLogs(manageStudent).length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400">
+                  Belum ada catatan scan sholat untuk siswa ini pada bulan terpilih.
+                </div>
+              ) : (
+                getStudentLogs(manageStudent).map((log, index) => {
+                  const d = new Date(log.scanned_at);
+                  const dateFormatted = formatDateIndo(d.toISOString().split("T")[0]);
+                  const timeFormatted = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+
+                  return (
+                    <div
+                      key={log.id || index}
+                      className="p-3 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${
+                            log.status === "Hadir"
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+                          }`}
+                        >
+                          {log.status === "Hadir" ? "✓" : "T"}
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                            <span>{dateFormatted}</span>
+                            <span className="font-mono text-[11px] text-slate-500">({timeFormatted} WIB)</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                            <span className="capitalize font-semibold text-purple-600 dark:text-purple-400">
+                              Sholat {log.mode || "Dhuha"}
+                            </span>
+                            <span>•</span>
+                            <span
+                              className={`font-semibold ${
+                                log.status === "Hadir" ? "text-emerald-600" : "text-amber-600"
+                              }`}
+                            >
+                              {log.status === "Hadir" ? "Tepat Waktu" : "Terlambat"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const dateOnly = log.scanned_at.split("T")[0];
+                            const timeOnly = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", hour12: false });
+                            setEditingModalLog({
+                              id: log.id,
+                              student: manageStudent,
+                              date: dateOnly,
+                              time: timeOnly.length === 5 ? timeOnly : "07:00",
+                              mode: log.mode === "dzuhur" ? "dzuhur" : "dhuha",
+                              status: log.status === "Terlambat" ? "Terlambat" : "Hadir",
+                              isNew: false,
+                            });
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 transition-colors"
+                          title="Edit Tanggal / Jam / Status Scan"
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePrayerLog(log.id, manageStudent.name, dateFormatted)}
+                          className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 transition-colors"
+                          title="Hapus Scan Ini (Mengurangi Total Scan)"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setManageStudent(null);
+                  setEditingModalLog(null);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-colors"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>

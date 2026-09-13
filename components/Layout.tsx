@@ -9,6 +9,7 @@ import { LogOut, Home, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, 
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TeacherLoginSplash } from './TeacherLoginSplash';
 import { AnimatePresence } from 'motion/react';
+import { checkIsPembinaEkstra, fetchPembinaListFromDb, getCachedPembinaList } from '../utils/pembinaHelper';
 
 // CHANGED: Default collapsed is now true for all pages
 export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; collapsed?: boolean }> = ({ children, showNav = true, collapsed = true }) => {
@@ -44,21 +45,17 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
   // Logic to identify Dhuha Teacher
   const isDhuhaTeacher = profile?.mengajar_mapel?.toLowerCase().includes('dhuha');
   // Logic to identify Pembina Ekstra
-  const isPembinaEkstra = profile?.role === 'pembina_ekstra' || (() => {
-    try {
-      const saved = localStorage.getItem("simpanla_pembina_ekstra_list");
-      if (!saved) return false;
-      const list = JSON.parse(saved);
-      const nip = profile?.nip?.trim();
-      const name = profile?.full_name?.trim()?.toLowerCase();
-      return list.some((item: any) => 
-        (nip && item.nip && item.nip.trim() === nip) ||
-        (name && item.nama && item.nama.trim().toLowerCase() === name)
-      );
-    } catch (e) {
-      return false;
-    }
-  })();
+  const [pembinaList, setPembinaList] = useState(() => getCachedPembinaList());
+
+  useEffect(() => {
+    fetchPembinaListFromDb().then((list) => {
+      if (list && list.length > 0) {
+        setPembinaList(list);
+      }
+    });
+  }, []);
+
+  const isPembinaEkstra = profile?.role === 'pembina_ekstra' || checkIsPembinaEkstra(profile, pembinaList).isPembina;
 
   useEffect(() => {
     

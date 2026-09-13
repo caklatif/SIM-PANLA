@@ -5,12 +5,13 @@ import { Layout } from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { showAlert } from '../utils/alert';
 import { 
-  ChevronRight, BookOpenText, TrendingUp, UserCheck, ShieldAlert, ScanLine, Compass, Database, UserCog, CalendarRange, GraduationCap, Settings, UserMinus, Keyboard, Sun, Lock
+  ChevronRight, BookOpenText, TrendingUp, UserCheck, ShieldAlert, ScanLine, Compass, Database, UserCog, CalendarRange, GraduationCap, Settings, UserMinus, Keyboard, Sun, Lock, FileSpreadsheet
 } from 'lucide-react';
 
 const AppsMenu: React.FC = () => {
   const navigate = useNavigate();
   const { isAdmin, profile, isKbmRestricted } = useAuth();
+  const isPembinaRole = profile?.role === 'pembina_ekstra' || isKbmRestricted;
 
   // Logic to identify Dhuha Teacher
   const isDhuhaTeacher = profile?.mengajar_mapel?.toLowerCase().includes('dhuha');
@@ -20,7 +21,7 @@ const AppsMenu: React.FC = () => {
     <button
       onClick={() => {
         if (isLocked) {
-          showAlert(`Menu ${label} dikunci. Akun NIP ${profile?.nip || '801-810'} hanya dapat mengakses Presensi QR.`);
+          showAlert(`Menu ${label} dikunci. Akun role Pembina Ekstra / NIP ${profile?.nip || '801-810'} hanya dapat mengakses Presensi QR.`);
           return;
         }
         navigate(path);
@@ -118,14 +119,14 @@ const AppsMenu: React.FC = () => {
                         icon={BookOpenText} 
                         path="/jurnal" 
                         gradientClass="bg-gradient-to-br from-purple-500 to-purple-700" 
-                        isLocked={isKbmRestricted}
+                        isLocked={isPembinaRole}
                     />
                     <AppCard 
                         label="Jadwalku" subLabel="JADWAL\nMENGAJAR" shadowColor="shadow-[0_8px_16px_rgba(99,102,241,0.3)]"
                         icon={Compass} 
                         path="/jadwal" 
                         gradientClass="bg-gradient-to-br from-indigo-400 to-indigo-600" 
-                        isLocked={isKbmRestricted}
+                        isLocked={isPembinaRole}
                     />
                     {isDhuhaTeacher && (
                       <AppCard 
@@ -133,7 +134,7 @@ const AppsMenu: React.FC = () => {
                           icon={Sun} 
                           path="/rekap-dhuha" 
                           gradientClass="bg-gradient-to-br from-purple-500 to-purple-700" 
-                          isLocked={isKbmRestricted}
+                          isLocked={isPembinaRole}
                       />
                     )}
                     <AppCard 
@@ -141,28 +142,28 @@ const AppsMenu: React.FC = () => {
                         icon={UserCheck} 
                         path="/rekap-absensi" 
                         gradientClass="bg-gradient-to-br from-emerald-400 to-green-600" 
-                        isLocked={isKbmRestricted}
+                        isLocked={isPembinaRole}
                     />
                      <AppCard 
                         label="Ketidakhadiran" subLabel="UNTUK\nRAPOR" shadowColor="shadow-[0_8px_16px_rgba(244,63,94,0.3)]"
                         icon={UserMinus} 
                         path="/absensi-rapor" 
                         gradientClass="bg-gradient-to-br from-red-400 to-rose-600" 
-                        isLocked={isKbmRestricted}
+                        isLocked={isPembinaRole}
                     />
                     <AppCard 
-                        label="Laporan" subLabel="CETAK\nJURNAL" shadowColor="shadow-[0_8px_16px_rgba(245,158,11,0.3)]"
-                        icon={TrendingUp} 
-                        path="/laporan" 
+                        label="Pusat Laporan" subLabel="REKAP &\nCETAK" shadowColor="shadow-[0_8px_16px_rgba(245,158,11,0.3)]"
+                        icon={FileSpreadsheet} 
+                        path="/pusat-laporan" 
                         gradientClass="bg-gradient-to-br from-amber-400 to-orange-500" 
-                        isLocked={isKbmRestricted}
+                        isLocked={isPembinaRole}
                     />
                     <AppCard 
                         label="Pelanggaran" subLabel="TEMUAN DI\nLUAR KBM" shadowColor="shadow-[0_8px_16px_rgba(239,68,68,0.3)]"
                         icon={ShieldAlert} 
                         path="/kedisiplinan" 
                         gradientClass="bg-gradient-to-br from-orange-500 to-red-600" 
-                        isLocked={isKbmRestricted}
+                        isLocked={isPembinaRole}
                     />
                     <AppCard 
                         label="Presensi QR" subLabel="SCAN\nKARTU" shadowColor="shadow-[0_8px_16px_rgba(71,85,105,0.3)]"

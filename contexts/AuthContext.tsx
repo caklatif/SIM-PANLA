@@ -5,6 +5,10 @@ import { Session } from '@supabase/supabase-js';
 import { Profile } from '../types';
 
 export const isKbmRestrictedUser = (profile?: Profile | null, sessionEmail?: string | null): boolean => {
+  if (profile?.role === 'pembina_ekstra') {
+    return true;
+  }
+
   if (profile?.nip) {
     const cleanNip = profile.nip.toString().replace(/[^0-9]/g, '');
     const num = parseInt(cleanNip, 10);
