@@ -4,7 +4,7 @@ import { Layout } from '../components/Layout';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Student } from '../types';
-import { Search, GraduationCap, Edit, UserPlus, UserMinus, Trash2, Save, X, Loader2, Filter, ArrowRight , TrendingUp } from 'lucide-react';
+import { Search, GraduationCap, Edit, UserPlus, UserMinus, Trash2, Save, X, Loader2, Filter, ArrowRight, ListOrdered } from 'lucide-react';
 import { showAlert, showConfirm } from '../utils/alert';
 
 const StudentsData: React.FC = () => {
@@ -20,6 +20,7 @@ const StudentsData: React.FC = () => {
   const [targetYear, setTargetYear] = useState('');
   const [kenaikanLoading, setKenaikanLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isAutoGenerating, setIsAutoGenerating] = useState(false);
   
   const [formData, setFormData] = useState({
     nisn: '',
@@ -27,7 +28,8 @@ const StudentsData: React.FC = () => {
     name: '',
     kelas: '',
     gender: 'L',
-    jenjang: '7'
+    jenjang: '7',
+    no_absen: ''
   });
 
   const [mutasiKeluarData, setMutasiKeluarData] = useState({
@@ -45,13 +47,18 @@ const StudentsData: React.FC = () => {
   useEffect(() => {
     if (modalType === 'keluar' && mutasiKeluarData.kelas) {
         const fetchClassStudents = async () => {
-             let { data, error } = await supabase.from('students').select('*').eq('academic_year', academicYear || '2025/2026').eq('kelas', mutasiKeluarData.kelas).eq('academic_year', academicYear || '2025/2026').order('name');
+             let { data, error } = await supabase.from('students').select('*').eq('academic_year', academicYear || '2025/2026').eq('kelas', mutasiKeluarData.kelas);
           if (error && (error.code === '42703' || error.message?.includes('academic_year'))) {
-              const res = await supabase.from('students').select('*').eq('academic_year', academicYear || '2025/2026').eq('kelas', mutasiKeluarData.kelas).order('name');
-              if (academicYear === '2025/2026') data = res.data;
-              else data = [];
+              const res = await supabase.from('students').select('*').eq('kelas', mutasiKeluarData.kelas);
+              data = res.data;
           }
-             setStudentsForDropdown(data || []);
+             const sorted = (data || []).sort((a: any, b: any) => {
+                 if (a.no_absen != null && b.no_absen != null) return a.no_absen - b.no_absen;
+                 if (a.no_absen != null) return -1;
+                 if (b.no_absen != null) return 1;
+                 return (a.name || '').localeCompare(b.name || '');
+             });
+             setStudentsForDropdown(sorted);
         };
         fetchClassStudents();
     }
@@ -78,7 +85,15 @@ const StudentsData: React.FC = () => {
           error = res.error;
       }
       if (error) throw error;
-      setStudents(data || []);
+      const sorted = (data || []).sort((a: any, b: any) => {
+          const classCmp = (a.kelas || '').localeCompare(b.kelas || '');
+          if (classCmp !== 0) return classCmp;
+          if (a.no_absen != null && b.no_absen != null) return a.no_absen - b.no_absen;
+          if (a.no_absen != null) return -1;
+          if (b.no_absen != null) return 1;
+          return (a.name || '').localeCompare(b.name || '');
+      });
+      setStudents(sorted);
     } catch (err: any) {
       showAlert('Gagal mengambil data murid: ' + err.message);
     } finally {
@@ -91,7 +106,7 @@ const StudentsData: React.FC = () => {
   const handleMutasiSelection = (type: 'masuk' | 'keluar') => {
       setModalType(type);
       setEditingId(null);
-      setFormData({ nisn: '', nis: '', name: '', kelas: filterClass || '7A', gender: 'L', jenjang: '7' });
+      setFormData({ nisn: '', nis: '', name: '', kelas: filterClass || '7A', gender: 'L', jenjang: '7', no_absen: '' });
       setMutasiKeluarData({ kelas: '', studentId: '', status: 'aktif' });
   };
 
@@ -103,10 +118,52 @@ const StudentsData: React.FC = () => {
           name: s.name,
           kelas: s.kelas,
           gender: (s.gender as any) || 'L',
-          jenjang: s.jenjang || '7'
+          jenjang: s.jenjang || '7',
+          no_absen: s.no_absen != null ? String(s.no_absen) : ''
       });
       setModalType('masuk');
       setIsModalOpen(true);
+  };
+
+  const handleAutoGenerateNoAbsen = async () => {
+      if (!filterClass) {
+          showAlert("Silakan pilih filter kelas terlebih dahulu di bagian atas!");
+          return;
+      }
+      const classStudents = students.filter(s => s.kelas === filterClass);
+      if (classStudents.length === 0) {
+          showAlert(`Tidak ada data murid di kelas ${filterClass}.`);
+          return;
+      }
+      const confirm = await showConfirm(`Apakah Anda ingin mengurutkan dan membuat No. Absen otomatis (1 s.d. ${classStudents.length}) secara alfabetis (A-Z) untuk seluruh murid kelas ${filterClass}?`);
+      if (!confirm) return;
+
+      setIsAutoGenerating(true);
+      try {
+          const sortedAlphabetically = [...classStudents].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          let errorCount = 0;
+
+          for (let i = 0; i < sortedAlphabetically.length; i++) {
+              const stu = sortedAlphabetically[i];
+              const newNoAbsen = i + 1;
+              const { error } = await supabase.from('students').update({ no_absen: newNoAbsen }).eq('id', stu.id);
+              if (error) {
+                  errorCount++;
+              }
+          }
+
+          if (errorCount > 0) {
+              showAlert(`Selesai diproses dengan catatan: ${errorCount} data tidak dapat diperbarui. Pastikan kolom no_absen sudah ada di database Supabase.`);
+          } else {
+              showAlert(`Berhasil membuat No. Absen otomatis untuk ${classStudents.length} murid di kelas ${filterClass}!`);
+          }
+
+          await fetchStudents();
+      } catch (err: any) {
+          showAlert("Gagal membuat No. Absen otomatis: " + err.message);
+      } finally {
+          setIsAutoGenerating(false);
+      }
   };
 
   
@@ -194,30 +251,56 @@ const StudentsData: React.FC = () => {
       }
       setSaving(true);
       try {
-          const payload = { 
+          const payload: any = { 
                 nisn: formData.nisn, 
                 nis: formData.nis, 
                 name: formData.name, 
                 kelas: formData.kelas,
                 gender: formData.gender,
                 jenjang: formData.jenjang,
-                academic_year: academicYear || '2025/2026'
+                academic_year: academicYear || '2025/2026',
+                no_absen: formData.no_absen && !isNaN(Number(formData.no_absen)) ? Number(formData.no_absen) : null
             };
 
           if (editingId) {
-              const { error } = await supabase.from('students').update(payload).eq('id', editingId);
-              if (error) throw error;
-              setStudents(prev => prev.map(s => s.id === editingId ? { ...s, ...payload } as Student : s));
-          } else {
-              let { data, error } = await supabase.from('students').insert(payload).select().single();
-              if (error && (error.code === '42703' || error.message?.includes('academic_year'))) {
-                  const { academic_year, ...rest } = payload as any;
-                  const res = await supabase.from('students').insert(rest).select().single();
-                  data = res.data;
+              let { error } = await supabase.from('students').update(payload).eq('id', editingId);
+              if (error && (error.code === '42703' || error.message?.includes('no_absen'))) {
+                  const { no_absen, ...fallbackPayload } = payload;
+                  const res = await supabase.from('students').update(fallbackPayload).eq('id', editingId);
                   error = res.error;
               }
               if (error) throw error;
-              if (data) setStudents(prev => [...prev, data].sort((a,b) => a.kelas.localeCompare(b.kelas) || a.name.localeCompare(b.name)));
+              setStudents(prev => prev.map(s => s.id === editingId ? { ...s, ...payload } as Student : s).sort((a, b) => {
+                  const classCmp = (a.kelas || '').localeCompare(b.kelas || '');
+                  if (classCmp !== 0) return classCmp;
+                  if (a.no_absen != null && b.no_absen != null) return a.no_absen - b.no_absen;
+                  if (a.no_absen != null) return -1;
+                  if (b.no_absen != null) return 1;
+                  return (a.name || '').localeCompare(b.name || '');
+              }));
+          } else {
+              let { data, error } = await supabase.from('students').insert(payload).select().single();
+              if (error && (error.code === '42703' || error.message?.includes('no_absen') || error.message?.includes('academic_year'))) {
+                  const { no_absen, ...restPayload } = payload;
+                  let { data: resData, error: resErr } = await supabase.from('students').insert(restPayload).select().single();
+                  if (resErr && (resErr.code === '42703' || resErr.message?.includes('academic_year'))) {
+                      const { academic_year, ...minimalPayload } = restPayload;
+                      const res = await supabase.from('students').insert(minimalPayload).select().single();
+                      resData = res.data;
+                      resErr = res.error;
+                  }
+                  data = resData;
+                  error = resErr;
+              }
+              if (error) throw error;
+              if (data) setStudents(prev => [...prev, data].sort((a, b) => {
+                  const classCmp = (a.kelas || '').localeCompare(b.kelas || '');
+                  if (classCmp !== 0) return classCmp;
+                  if (a.no_absen != null && b.no_absen != null) return a.no_absen - b.no_absen;
+                  if (a.no_absen != null) return -1;
+                  if (b.no_absen != null) return 1;
+                  return (a.name || '').localeCompare(b.name || '');
+              }));
           }
           setIsModalOpen(false);
       } catch (err: any) {
@@ -313,13 +396,26 @@ const StudentsData: React.FC = () => {
                 <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
                 <input type="text" placeholder="Cari Nama / NISN..." className="w-full pl-11 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm font-medium" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
-            <div className="w-full md:w-64 relative">
-                 <Filter className="absolute left-4 top-3.5 text-slate-400" size={18} />
-                 <select className="w-full pl-11 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-sm font-bold text-slate-700 appearance-none" value={filterClass} onChange={e => setFilterClass(e.target.value)}>
-                    <option value="">Semua Kelas</option>
-                    {availableClasses.map(c => <option key={c} value={c}>{c}</option>)}
-                 </select>
-                 <ArrowRight className="absolute right-4 top-3.5 text-slate-400 rotate-90" size={14} />
+            <div className="w-full md:w-auto flex flex-col sm:flex-row gap-2 items-center">
+                <div className="w-full sm:w-56 relative">
+                     <Filter className="absolute left-4 top-3.5 text-slate-400" size={18} />
+                     <select className="w-full pl-11 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-sm font-bold text-slate-700 appearance-none" value={filterClass} onChange={e => setFilterClass(e.target.value)}>
+                        <option value="">Semua Kelas</option>
+                        {availableClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                     </select>
+                     <ArrowRight className="absolute right-4 top-3.5 text-slate-400 rotate-90" size={14} />
+                </div>
+                {filterClass && (
+                    <button
+                        onClick={handleAutoGenerateNoAbsen}
+                        disabled={isAutoGenerating}
+                        className="w-full sm:w-auto px-4 py-3 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer"
+                        title={`Buat No. Absen otomatis 1-${filteredStudents.length} berdasar nama A-Z untuk kelas ${filterClass}`}
+                    >
+                        {isAutoGenerating ? <Loader2 size={15} className="animate-spin" /> : <ListOrdered size={16} />}
+                        <span>Auto No. Absen (A-Z)</span>
+                    </button>
+                )}
             </div>
         </div>
 
@@ -329,6 +425,7 @@ const StudentsData: React.FC = () => {
              <table className="w-full text-sm text-left">
                <thead className="bg-slate-50/80 text-slate-500 font-bold uppercase text-xs border-b border-slate-100">
                  <tr>
+                   <th className="px-4 py-5 text-center w-20">No. Absen</th>
                    <th className="px-6 py-5">Nama Murid</th>
                    <th className="px-6 py-5">NISN / NIS</th>
                    <th className="px-6 py-5 text-center">Kelas</th>
@@ -337,10 +434,19 @@ const StudentsData: React.FC = () => {
                  </tr>
                </thead>
                <tbody className="divide-y divide-slate-50">
-                 {loading ? <tr><td colSpan={5} className="px-6 py-12 text-center"><Loader2 className="animate-spin mx-auto text-purple-500"/></td></tr> : filteredStudents.length === 0 ? <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">Tidak ada data murid ditemukan.</td></tr> : (
-                   filteredStudents.map((s) => (
+                 {loading ? <tr><td colSpan={6} className="px-6 py-12 text-center"><Loader2 className="animate-spin mx-auto text-purple-500"/></td></tr> : filteredStudents.length === 0 ? <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">Tidak ada data murid ditemukan.</td></tr> : (
+                   filteredStudents.map((s, idx) => (
                      <tr key={s.id} className="hover:bg-purple-50/30 transition-colors group">
-                       <td className="px-6 py-4 font-bold text-slate-700">{s.name}</td>
+                       <td className="px-4 py-4 text-center">
+                         {s.no_absen != null ? (
+                           <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 bg-purple-100 text-purple-700 font-mono text-xs font-extrabold rounded-md border border-purple-200">
+                             {String(s.no_absen).padStart(2, '0')}
+                           </span>
+                         ) : (
+                           <span className="text-slate-300 font-mono text-xs">{String(idx + 1).padStart(2, '0')}</span>
+                         )}
+                       </td>
+                       <td className="px-6 py-4 font-bold text-slate-700 break-words whitespace-normal leading-snug max-w-xs sm:max-w-md">{s.name}</td>
                        <td className="px-6 py-4 text-slate-500 font-mono text-xs">{s.nisn} <span className="text-slate-300">{s.nis ? `/ ${s.nis}` : ''}</span></td>
                         <td className="px-6 py-4 text-center"><span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg font-bold text-xs">{s.kelas}</span></td>
                        <td className="px-6 py-4 text-center"><span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${s.gender === 'P' ? 'bg-pink-50 text-pink-600 border border-pink-100' : 'bg-purple-50 text-purple-600 border border-purple-100'}`}>{s.gender || 'L'}</span></td>
@@ -404,12 +510,26 @@ const StudentsData: React.FC = () => {
                                         <select className="w-full border border-slate-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-purple-500" value={formData.kelas} onChange={e => setFormData({...formData, kelas: e.target.value})}>{availableClasses.map(c => <option key={c} value={c}>{c}</option>)}</select>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Jenis Kelamin</label>
-                                        <div className="flex gap-2">
-                                            <label className={`flex-1 text-center py-3 rounded-xl cursor-pointer border font-bold text-sm transition-all ${formData.gender === 'L' ? 'bg-purple-100 border-purple-300 text-purple-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><input type="radio" className="hidden" name="gender" value="L" checked={formData.gender === 'L'} onChange={() => setFormData({...formData, gender: 'L'})} /> L</label>
-                                            <label className={`flex-1 text-center py-3 rounded-xl cursor-pointer border font-bold text-sm transition-all ${formData.gender === 'P' ? 'bg-pink-100 border-pink-300 text-pink-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><input type="radio" className="hidden" name="gender" value="P" checked={formData.gender === 'P'} onChange={() => setFormData({...formData, gender: 'P'})} /> P</label>
-                                        </div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">No. Absen (Opsional)</label>
+                                        <input 
+                                            type="number" 
+                                            min="1"
+                                            className="w-full border border-slate-200 rounded-xl p-3 font-mono focus:ring-2 focus:ring-purple-500" 
+                                            value={formData.no_absen} 
+                                            onChange={e => setFormData({...formData, no_absen: e.target.value})} 
+                                            placeholder="Contoh: 33" 
+                                        />
                                     </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1.5 ml-1">Jenis Kelamin</label>
+                                    <div className="flex gap-2">
+                                        <label className={`flex-1 text-center py-3 rounded-xl cursor-pointer border font-bold text-sm transition-all ${formData.gender === 'L' ? 'bg-purple-100 border-purple-300 text-purple-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><input type="radio" className="hidden" name="gender" value="L" checked={formData.gender === 'L'} onChange={() => setFormData({...formData, gender: 'L'})} /> L (Laki-laki)</label>
+                                        <label className={`flex-1 text-center py-3 rounded-xl cursor-pointer border font-bold text-sm transition-all ${formData.gender === 'P' ? 'bg-pink-100 border-pink-300 text-pink-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}><input type="radio" className="hidden" name="gender" value="P" checked={formData.gender === 'P'} onChange={() => setFormData({...formData, gender: 'P'})} /> P (Perempuan)</label>
+                                    </div>
+                                </div>
+                                <div className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                    💡 <strong>Tips Nomor Absen:</strong> Untuk siswa baru pindahan, isi No. Absen dengan nomor terakhir (misal: 33) agar namanya tetap berada di posisi paling akhir kelas.
                                 </div>
                                 <button onClick={handleSaveMasuk} disabled={saving} className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 mt-4 shadow-lg shadow-purple-200 disabled:opacity-50 transition-all">{saving ? <Loader2 className="animate-spin" /> : <Save size={20} />} Simpan Data</button>
                             </div>

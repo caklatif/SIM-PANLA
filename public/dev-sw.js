@@ -1,4 +1,4 @@
-// Self-destroying Service Worker
+// Self-destroying Dev Service Worker
 self.addEventListener('install', function(e) {
   self.skipWaiting();
 });

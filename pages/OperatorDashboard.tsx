@@ -426,9 +426,10 @@ const OperatorDashboard: React.FC = () => {
           }),
         supabase
           .from("attendance_logs")
-          .select("student_id, student_name, status, created_at")
+          .select("student_id, student_name, status, created_at, subject, teacher_name")
           .gte("created_at", startOfDay)
-          .lte("created_at", endOfDay),
+          .lte("created_at", endOfDay)
+          .order("created_at", { ascending: true }),
         supabase
           .from("students")
           .select("id, kelas, name")
@@ -626,8 +627,12 @@ const OperatorDashboard: React.FC = () => {
         if (isBambangPJOK && log.status === "A") {
           return;
         }
-        if (!uniqueAbsenceMap[log.student_id]) {
-          if (["S", "I", "A", "D"].includes(log.status)) {
+        if (["S", "I", "A", "D"].includes(log.status)) {
+          const existing = uniqueAbsenceMap[log.student_id];
+          // Smart Priority:
+          // 1. Wali & TU punya prioritas tertinggi
+          // 2. Guru jam berikutnya menimpa input guru sebelumnya
+          if (!existing) {
             uniqueAbsenceMap[log.student_id] = {
               name:
                 log.student_name || studentNameMap[log.student_id] || "Siswa",
@@ -635,6 +640,11 @@ const OperatorDashboard: React.FC = () => {
               kelas: studentClassMap[log.student_id] || "?",
               source: "Guru",
             };
+          } else if (existing.source === "Guru") {
+            // Guru jam berikutnya menimpa status guru jam sebelumnya
+            existing.status = log.status;
+            if (log.student_name) existing.name = log.student_name;
+            if (studentClassMap[log.student_id]) existing.kelas = studentClassMap[log.student_id];
           }
         }
       });
@@ -1151,6 +1161,9 @@ const OperatorDashboard: React.FC = () => {
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300">
                             D (Dispen)
                           </span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                            A (Alpa)
+                          </span>
                         </div>
                         <button
                           onClick={() => setOperatorAttendance({})}
@@ -1179,10 +1192,11 @@ const OperatorDashboard: React.FC = () => {
                           <div className="flex-1">
                             NAMA MURID (KELAS {selectedOperatorClass})
                           </div>
-                          <div className="flex gap-1.5 w-24 justify-end">
+                          <div className="flex gap-1.5 w-32 justify-end">
                             <span className="w-7 text-center">S</span>
                             <span className="w-7 text-center">I</span>
                             <span className="w-7 text-center">D</span>
+                            <span className="w-7 text-center">A</span>
                           </div>
                         </div>
                         <div className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -1196,8 +1210,8 @@ const OperatorDashboard: React.FC = () => {
                                   {student.name}
                                 </p>
                               </div>
-                              <div className="flex gap-1.5 w-24 justify-end">
-                                {(["S", "I", "D"] as const).map((status) => (
+                              <div className="flex gap-1.5 w-32 justify-end">
+                                {(["S", "I", "D", "A"] as const).map((status) => (
                                   <button
                                     key={status}
                                     onClick={() =>
@@ -1212,7 +1226,9 @@ const OperatorDashboard: React.FC = () => {
                                           ? "bg-yellow-500 border-yellow-600 text-white"
                                           : status === "I"
                                             ? "bg-blue-500 border-blue-600 text-white"
-                                            : "bg-purple-600 border-purple-700 text-white"
+                                            : status === "D"
+                                              ? "bg-purple-600 border-purple-700 text-white"
+                                              : "bg-rose-600 border-rose-700 text-white"
                                         : "border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
                                     }`}
                                   >

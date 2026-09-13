@@ -9,6 +9,7 @@ import {
     FileSpreadsheet, Eye, Info, Clock, AlertCircle
 } from 'lucide-react';
 import { formatDateIndo, formatDateSignature, getWIBISOString } from '../utils/dateUtils';
+import { isOfficialTeacher } from '../utils/teacherUtils';
 
 interface JournalItem {
     id: string;
@@ -56,7 +57,7 @@ interface ScheduleItem {
     teacher_nip?: string;
 }
 
-export const LaporanJurnal: React.FC = () => {
+export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
     const { profile, isAdmin, isOperator, academicYear, semester } = useAuth();
     const [loading, setLoading] = useState(false);
     const [journals, setJournals] = useState<JournalItem[]>([]);
@@ -104,8 +105,9 @@ export const LaporanJurnal: React.FC = () => {
     const [settings, setSettings] = useState({
         academic_year: '2025/2026',
         semester: 'Ganjil',
-        headmaster: 'H. Suwandi, S.Pd., M.Pd.',
-        headmaster_nip: '197001011995031002'
+        headmaster: 'ARIF SYAIFURROHMAN, S.Pd',
+        headmaster_nip: '198106202009041003',
+        school_address: 'Jl. KH Mansyur No. 162, Sekargadung, Kec. Purworejo, Kota Pasuruan, Jawa Timur 67127 | Telp: (0343) 422108'
     });
 
     useEffect(() => {
@@ -129,9 +131,9 @@ export const LaporanJurnal: React.FC = () => {
             if (isAdmin || isOperator) {
                 const { data: teachers } = await supabase
                     .from('profiles')
-                    .select('id, full_name, nip')
+                    .select('id, full_name, nip, role, mengajar_mapel')
                     .order('full_name', { ascending: true });
-                setTeachersList(teachers || []);
+                setTeachersList((teachers || []).filter(isOfficialTeacher));
             }
 
             await loadJournals();
@@ -551,9 +553,148 @@ export const LaporanJurnal: React.FC = () => {
         document.body.removeChild(link);
     };
 
-    // Print Execution
+    // Print Execution with dedicated clean print engine
     const handlePrintExecution = () => {
-        window.print();
+        const reportElem = document.getElementById('printable-report-area');
+        if (!reportElem) {
+            window.print();
+            return;
+        }
+
+        // Use dedicated hidden iframe for pristine printing without container clipping
+        let printFrame = document.getElementById('kbm-print-frame') as HTMLIFrameElement;
+        if (!printFrame) {
+            printFrame = document.createElement('iframe');
+            printFrame.id = 'kbm-print-frame';
+            printFrame.style.position = 'fixed';
+            printFrame.style.right = '0';
+            printFrame.style.bottom = '0';
+            printFrame.style.width = '0';
+            printFrame.style.height = '0';
+            printFrame.style.border = '0';
+            printFrame.style.visibility = 'hidden';
+            document.body.appendChild(printFrame);
+        }
+
+        const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
+        if (!frameDoc || !printFrame.contentWindow) {
+            window.print();
+            return;
+        }
+
+        frameDoc.open();
+        frameDoc.write(`
+            <!DOCTYPE html>
+            <html lang="id">
+            <head>
+                <meta charset="UTF-8">
+                <title>Laporan Jurnal KBM - UPT SMP Negeri 8 Pasuruan</title>
+                <style>
+                    @page {
+                        size: landscape;
+                        margin: 8mm 10mm 10mm 10mm;
+                    }
+                    * {
+                        box-sizing: border-box;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                        color: #000;
+                        background: #fff;
+                        margin: 0;
+                        padding: 0;
+                        font-size: 11px;
+                        line-height: 1.35;
+                    }
+                    .text-center { text-align: center; }
+                    .text-left { text-align: left; }
+                    .text-right { text-align: right; }
+                    .font-bold { font-weight: bold; }
+                    .font-extrabold { font-weight: 800; }
+                    .font-semibold { font-weight: 600; }
+                    .uppercase { text-transform: uppercase; }
+                    .underline { text-decoration: underline; }
+                    .italic { font-style: italic; }
+                    
+                    /* KOP SURAT TABLE */
+                    table.kop-table {
+                        width: 100% !important;
+                        border-collapse: collapse !important;
+                        border: none !important;
+                        border-bottom: 3px double #000 !important;
+                        padding-bottom: 10px !important;
+                        margin-bottom: 14px !important;
+                    }
+                    table.kop-table td, table.kop-table th, table.kop-table tr {
+                        border: none !important;
+                        background: transparent !important;
+                    }
+
+                    /* SIGNATURE TABLE */
+                    table.signature-table {
+                        width: 100% !important;
+                        border-collapse: collapse !important;
+                        border: none !important;
+                        margin-top: 28px !important;
+                        page-break-inside: avoid !important;
+                        break-inside: avoid !important;
+                    }
+                    table.signature-table td, table.signature-table th, table.signature-table tr {
+                        border: none !important;
+                        background: transparent !important;
+                    }
+
+                    /* DATA TABLE */
+                    table.data-table {
+                        width: 100% !important;
+                        border-collapse: collapse !important;
+                        font-size: 10px !important;
+                        margin-top: 8px !important;
+                        page-break-inside: auto !important;
+                    }
+                    table.data-table th, table.data-table td {
+                        border: 1px solid #000 !important;
+                        padding: 5px 6px !important;
+                        vertical-align: top !important;
+                    }
+                    table.data-table th {
+                        background-color: #f1f5f9 !important;
+                        font-weight: bold !important;
+                        text-align: center !important;
+                    }
+                    thead {
+                        display: table-header-group !important;
+                    }
+                    tr {
+                        page-break-inside: avoid !important;
+                        page-break-after: auto !important;
+                    }
+                    ul {
+                        margin: 0 !important;
+                        padding-left: 14px !important;
+                    }
+                    li {
+                        margin-bottom: 2px !important;
+                    }
+                    img {
+                        max-height: 75px !important;
+                        width: auto !important;
+                    }
+                </style>
+            </head>
+            <body>
+                ${reportElem.innerHTML}
+            </body>
+            </html>
+        `);
+        frameDoc.close();
+
+        setTimeout(() => {
+            printFrame.contentWindow?.focus();
+            printFrame.contentWindow?.print();
+        }, 300);
     };
 
     const renderAttendanceBadge = (logs: any[], isUnfilled?: boolean) => {
@@ -578,12 +719,56 @@ export const LaporanJurnal: React.FC = () => {
 
     const currentDateStr = formatDateSignature(new Date());
 
-    return (
-        <Layout>
+    const selectedTeacherObj = teachersList.find(t => t.id === selectedTeacherId);
+
+    const guruSubtitle = (!isAdmin && !isOperator && profile)
+        ? `Guru Pengampu: ${profile.full_name} (NIP ${profile.nip || '-'})`
+        : (selectedTeacherId !== 'ALL' && selectedTeacherObj)
+        ? `Guru Pengampu: ${selectedTeacherObj.full_name} (NIP ${selectedTeacherObj.nip || '-'})`
+        : null;
+
+    const signerTeacherName = (!isAdmin && !isOperator)
+        ? (profile?.full_name || 'Guru SIM-PANLA')
+        : (selectedTeacherId !== 'ALL' && selectedTeacherObj 
+            ? selectedTeacherObj.full_name 
+            : (profile?.full_name || 'Guru SIM-PANLA'));
+
+    const signerTeacherNip = (!isAdmin && !isOperator)
+        ? (profile?.nip || '-')
+        : (selectedTeacherId !== 'ALL' && selectedTeacherObj 
+            ? (selectedTeacherObj.nip || '-') 
+            : (profile?.nip || '-'));
+
+    const mainContent = (
+        <>
             <style>{`
                 @media print {
+                    @page {
+                        size: landscape;
+                        margin: 8mm 10mm 10mm 10mm;
+                    }
+                    html, body {
+                        overflow: visible !important;
+                        height: auto !important;
+                        min-height: auto !important;
+                        background: white !important;
+                    }
                     body * {
                         visibility: hidden !important;
+                    }
+                    .print-modal-overlay,
+                    .print-modal-container {
+                        position: static !important;
+                        display: block !important;
+                        overflow: visible !important;
+                        max-height: none !important;
+                        height: auto !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        background: transparent !important;
+                        backdrop-filter: none !important;
+                        box-shadow: none !important;
+                        border: none !important;
                     }
                     #printable-report-area, #printable-report-area * {
                         visibility: visible !important;
@@ -599,9 +784,34 @@ export const LaporanJurnal: React.FC = () => {
                         margin: 0 !important;
                         box-shadow: none !important;
                         border: none !important;
+                        display: block !important;
+                        overflow: visible !important;
+                        height: auto !important;
+                        max-height: none !important;
                     }
                     .no-print {
                         display: none !important;
+                    }
+                    table.kop-table, table.kop-table td, table.kop-table th, table.kop-table tr,
+                    table.signature-table, table.signature-table td, table.signature-table th, table.signature-table tr {
+                        border: none !important;
+                        background: transparent !important;
+                    }
+                    table.kop-table {
+                        border-bottom: 3px double #000 !important;
+                    }
+                    table.data-table {
+                        page-break-inside: auto !important;
+                    }
+                    table.data-table th, table.data-table td {
+                        border: 1px solid #000 !important;
+                    }
+                    tr {
+                        page-break-inside: avoid !important;
+                        page-break-after: auto !important;
+                    }
+                    thead {
+                        display: table-header-group !important;
                     }
                 }
             `}</style>
@@ -637,22 +847,25 @@ export const LaporanJurnal: React.FC = () => {
                             </button>
                         )}
 
-                        {/* HAPUS EXPORT EXCEL UNTUK ROLE GURU - HANYA DITAMPILKAN JIKA ADMIN / OPERATOR */}
-                        {(isAdmin || isOperator) && (
-                            <button
-                                onClick={handleExportCSV}
-                                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
-                            >
-                                <FileSpreadsheet size={16} /> Export Excel
-                            </button>
-                        )}
+                        {/* EXPORT EXCEL */}
+                        <button
+                            onClick={handleExportCSV}
+                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
+                            title="Download data jurnal KBM format Excel (CSV)"
+                        >
+                            <FileSpreadsheet size={16} /> Download Excel
+                        </button>
 
                         {/* CETAK LAPORAN DENGAN PREVIEW */}
                         <button
-                            onClick={() => setShowPrintPreview(true)}
+                            onClick={() => {
+                                setShowPrintPreview(true);
+                                window.scrollTo({ top: 0, behavior: 'instant' });
+                            }}
                             className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
+                            title="Pratinjau & Cetak Dokumen Resmi Jurnal (PDF)"
                         >
-                            <Printer size={16} /> Cetak Laporan
+                            <Printer size={16} /> Cetak / PDF
                         </button>
                     </div>
                 </div>
@@ -976,8 +1189,8 @@ export const LaporanJurnal: React.FC = () => {
 
                 {/* MODAL PRINT PREVIEW */}
                 {showPrintPreview && (
-                    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-                        <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200 flex flex-col">
+                    <div className="print-modal-overlay fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-start justify-center p-3 sm:p-6 overflow-y-auto pt-3 sm:pt-6">
+                        <div className="print-modal-container bg-white rounded-3xl w-full max-w-5xl my-2 shadow-2xl border border-slate-200 flex flex-col mb-12">
                             
                             {/* PREVIEW MODAL HEADER BAR */}
                             <div className="no-print bg-slate-900 text-white p-5 rounded-t-3xl flex items-center justify-between sticky top-0 z-10">
@@ -1009,44 +1222,46 @@ export const LaporanJurnal: React.FC = () => {
                             {/* PRINTABLE CONTENT AREA */}
                             <div id="printable-report-area" className="p-8 bg-white text-black space-y-6">
                                 
-                                {/* KOP SURAT */}
-                                <div className="border-b-4 border-double border-black pb-4 text-center">
-                                    <div className="flex items-center justify-center gap-4">
-                                        <img 
-                                            src="https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0" 
-                                            alt="Logo Sekolah" 
-                                            className="h-20 w-auto object-contain"
-                                        />
-                                        <div className="text-center">
-                                            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Pemerintah Kota Pasuruan</h2>
-                                            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Dinas Pendidikan dan Kebudayaan</h2>
-                                            <h1 className="text-xl font-extrabold uppercase tracking-widest text-black leading-tight">UPT SMP NEGERI 8 PASURUAN</h1>
-                                            <p className="text-xs text-slate-600 italic">Jl. Soekarno Hatta No. 25 Pasuruan, Jawa Timur | Telp: (0343) 424123</p>
-                                        </div>
-                                    </div>
-                                </div>
+                                {/* KOP SURAT RESMI (TABLE BASED FOR CONSISTENT PRINT & PREVIEW) */}
+                                <table className="kop-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none', borderBottom: '3px double #000', paddingBottom: '10px', marginBottom: '14px' }}>
+                                    <tbody>
+                                        <tr style={{ border: 'none' }}>
+                                            <td style={{ width: '85px', verticalAlign: 'middle', textAlign: 'center', border: 'none', padding: '0 10px 10px 0' }}>
+                                                <img 
+                                                    src="https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0" 
+                                                    alt="Logo Sekolah" 
+                                                    style={{ height: '75px', width: 'auto', display: 'block', margin: '0 auto', objectFit: 'contain' }}
+                                                />
+                                            </td>
+                                            <td style={{ verticalAlign: 'middle', textAlign: 'center', border: 'none', padding: '0 85px 10px 0' }}>
+                                                <div style={{ fontSize: '13px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#1e293b', lineHeight: '1.25' }}>PEMERINTAH KOTA PASURUAN</div>
+                                                <div style={{ fontSize: '13px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#1e293b', lineHeight: '1.25', marginTop: '2px' }}>DINAS PENDIDIKAN DAN KEBUDAYAAN</div>
+                                                <div style={{ fontSize: '18px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#000', lineHeight: '1.2', margin: '3px 0' }}>UPT SMP NEGERI 8 PASURUAN</div>
+                                                <div style={{ fontSize: '11px', fontStyle: 'italic', color: '#475569', lineHeight: '1.3' }}>
+                                                    {settings.school_address || 'Jl. KH Mansyur No. 162, Sekargadung, Kec. Purworejo, Kota Pasuruan, Jawa Timur 67127 | Telp: (0343) 422108'}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
 
                                 {/* DOCUMENT TITLE */}
-                                <div className="text-center space-y-1">
-                                    <h3 className="text-base font-extrabold uppercase tracking-wide text-black underline">
+                                <div style={{ textAlign: 'center', margin: '0 0 16px 0' }}>
+                                    <h3 style={{ fontSize: '14px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#000', textDecoration: 'underline', margin: '0 0 4px 0' }}>
                                         LAPORAN JURNAL KEGIATAN BELAJAR MENGAJAR (KBM)
                                     </h3>
-                                    <p className="text-xs font-semibold text-slate-700">
+                                    <div style={{ fontSize: '11px', fontWeight: '600', color: '#334155' }}>
                                         Semester {settings.semester} | Tahun Ajaran {settings.academic_year}
-                                    </p>
-                                    {(!isAdmin && !isOperator && profile) ? (
-                                        <p className="text-xs font-bold text-purple-900 mt-1">
-                                            Guru Pengampu: {profile.full_name} (NIP {profile.nip || '-'})
-                                        </p>
-                                    ) : selectedTeacherId !== 'ALL' ? (
-                                        <p className="text-xs font-bold text-purple-900 mt-1">
-                                            Guru Pengampu: {teachersList.find(t=>t.id===selectedTeacherId)?.full_name}
-                                        </p>
+                                    </div>
+                                    {guruSubtitle ? (
+                                        <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#581c87', marginTop: '4px' }}>
+                                            {guruSubtitle}
+                                        </div>
                                     ) : null}
                                 </div>
 
                                 {/* PRINTABLE TABLE */}
-                                <table className="w-full text-left border-collapse border border-black text-[11px]">
+                                <table className="data-table w-full text-left border-collapse border border-black text-[11px]">
                                     <thead>
                                         <tr className="bg-slate-100 text-black font-bold border-b border-black text-center">
                                             <th className="border border-black p-2 w-8">No</th>
@@ -1063,7 +1278,7 @@ export const LaporanJurnal: React.FC = () => {
                                     <tbody>
                                         {filteredJournals.length === 0 ? (
                                             <tr>
-                                                <td colSpan={9} className="border border-black p-6 text-center italic text-slate-500">
+                                                <td colSpan={(isAdmin || isOperator) ? 9 : 8} className="border border-black p-6 text-center italic text-slate-500">
                                                     Tidak ada data jurnal untuk dicetak.
                                                 </td>
                                             </tr>
@@ -1122,20 +1337,36 @@ export const LaporanJurnal: React.FC = () => {
                                     </tbody>
                                 </table>
 
-                                {/* SIGNATURE SECTION */}
-                                <div className="pt-8 flex items-center justify-between text-xs font-semibold">
-                                    <div className="text-center space-y-12">
-                                        <p>Mengetahui,<br/>Kepala UPT SMP Negeri 8 Pasuruan</p>
-                                        <p className="font-bold underline">{settings.headmaster}</p>
-                                        <p className="-mt-11 text-[11px]">NIP. {settings.headmaster_nip}</p>
-                                    </div>
-
-                                    <div className="text-center space-y-12">
-                                        <p>Kota Pasuruan, {currentDateStr}<br/>Petugas / Guru Pengampu Jurnal</p>
-                                        <p className="font-bold underline">{profile?.full_name || 'Guru SIM-PANLA'}</p>
-                                        <p className="-mt-11 text-[11px]">NIP. {profile?.nip || '-'}</p>
-                                    </div>
-                                </div>
+                                {/* SIGNATURE SECTION (RESMI & TAHAN CETAK) */}
+                                <table className="signature-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none', marginTop: '28px', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                                    <tbody>
+                                        <tr style={{ border: 'none' }}>
+                                            <td style={{ width: '45%', textAlign: 'center', verticalAlign: 'top', border: 'none', padding: '0 8px' }}>
+                                                <div style={{ fontSize: '11px', fontWeight: '600', lineHeight: '1.4' }}>Mengetahui,</div>
+                                                <div style={{ fontSize: '11px', fontWeight: '600', lineHeight: '1.4' }}>Kepala UPT SMP Negeri 8 Pasuruan</div>
+                                                <div style={{ height: '65px' }}></div>
+                                                <div style={{ fontSize: '11px', fontWeight: 'bold', textDecoration: 'underline', textTransform: 'uppercase' }}>
+                                                    {settings.headmaster || 'ARIF SYAIFURROHMAN, S.Pd'}
+                                                </div>
+                                                <div style={{ fontSize: '10px', marginTop: '2px', color: '#1e293b' }}>
+                                                    NIP. {settings.headmaster_nip || '198106202009041003'}
+                                                </div>
+                                            </td>
+                                            <td style={{ width: '10%', border: 'none' }}></td>
+                                            <td style={{ width: '45%', textAlign: 'center', verticalAlign: 'top', border: 'none', padding: '0 8px' }}>
+                                                <div style={{ fontSize: '11px', fontWeight: '600', lineHeight: '1.4' }}>Kota Pasuruan, {currentDateStr}</div>
+                                                <div style={{ fontSize: '11px', fontWeight: '600', lineHeight: '1.4' }}>Petugas / Guru Pengampu Jurnal</div>
+                                                <div style={{ height: '65px' }}></div>
+                                                <div style={{ fontSize: '11px', fontWeight: 'bold', textDecoration: 'underline' }}>
+                                                    {signerTeacherName}
+                                                </div>
+                                                <div style={{ fontSize: '10px', marginTop: '2px', color: '#1e293b' }}>
+                                                    NIP. {signerTeacherNip}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
 
                             </div>
                         </div>
@@ -1144,8 +1375,8 @@ export const LaporanJurnal: React.FC = () => {
 
                 {/* MODAL EDIT JURNAL */}
                 {journalToEdit && (
-                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-4 pt-6 sm:pt-10 overflow-y-auto animate-fade-in">
+                        <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4 my-0">
                             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
                                 <h3 className="font-bold text-base text-slate-800 dark:text-white flex items-center gap-2">
                                     <Edit3 size={18} className="text-purple-600" /> Edit Data Jurnal KBM
@@ -1252,7 +1483,7 @@ export const LaporanJurnal: React.FC = () => {
 
                 {/* MODAL HAPUS TUNGGAL */}
                 {journalToDelete && (
-                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-4 pt-6 sm:pt-12 overflow-y-auto animate-fade-in">
                         <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
                             <div className="flex items-center gap-3 text-red-600">
                                 <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center">
@@ -1285,7 +1516,7 @@ export const LaporanJurnal: React.FC = () => {
 
                 {/* MODAL HAPUS MASSAL */}
                 {showBulkDeleteModal && (
-                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="no-print fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-4 pt-6 sm:pt-12 overflow-y-auto animate-fade-in">
                         <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
                             <div className="flex items-center gap-3 text-red-600">
                                 <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center">
@@ -1317,6 +1548,16 @@ export const LaporanJurnal: React.FC = () => {
                 )}
 
             </div>
+        </>
+    );
+
+    if (embedded) {
+        return mainContent;
+    }
+
+    return (
+        <Layout>
+            {mainContent}
         </Layout>
     );
 };

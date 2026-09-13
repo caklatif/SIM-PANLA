@@ -4,6 +4,7 @@ import { Layout } from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import { Upload, FileText, CheckCircle, AlertCircle, Download, BookOpen, X, Loader2, Database, HelpCircle } from 'lucide-react';
+import { isOfficialTeacher } from '../utils/teacherUtils';
 
 const InputManual: React.FC = () => {
   const { academicYear, semester , semesterStart, semesterEnd } = useAuth();
@@ -21,10 +22,10 @@ const InputManual: React.FC = () => {
 
   useEffect(() => {
       const fetchMappings = async () => {
-          const { data: t } = await supabase.from('profiles').select('id, nip, full_name');
+          const { data: t } = await supabase.from('profiles').select('id, nip, full_name, role, mengajar_mapel');
           const tMap: Record<string, string> = {};
           const tNameMap: Record<string, string> = {};
-          t?.forEach(item => { 
+          t?.filter(isOfficialTeacher).forEach(item => { 
               if(item.nip) {
                   tMap[item.nip] = item.id; 
                   tNameMap[item.nip] = item.full_name;

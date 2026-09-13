@@ -1,24 +1,44 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 import './utils/pwaDiagnostics';
 
+// Suppress benign Chrome DevTools soft-navigation 'startTime' and Supabase refresh errors
+const isIgnorableError = (msg: string) => {
+    return (
+        msg.includes("reading 'startTime'") ||
+        msg.includes('reading "startTime"') ||
+        msg.includes('reportAllChanges') ||
+        msg.includes('Refresh Token') ||
+        msg.includes('refresh token')
+    );
+};
 
 const originalConsoleError = console.error;
 console.error = (...args) => {
-    if (args[0] && typeof args[0] === 'string' && (args[0].includes('Refresh Token') || args[0].includes('refresh token'))) {
-        return;
-    }
-    if (args[0] && args[0].message && (args[0].message.includes('Refresh Token') || args[0].message.includes('refresh token'))) {
+    const first = args[0];
+    const msg = typeof first === 'string' ? first : (first?.message || '');
+    if (isIgnorableError(msg)) {
         return;
     }
     originalConsoleError.apply(console, args);
 };
 
+window.addEventListener('error', (event) => {
+    const msg = event?.message || '';
+    if (isIgnorableError(msg)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return true;
+    }
+}, true);
+
 window.addEventListener('unhandledrejection', (event) => {
-    if (event.reason && event.reason.message && (event.reason.message.includes('Refresh Token') || event.reason.message.includes('refresh token'))) {
-        console.log('Silenced benign Supabase refresh token error');
-        event.preventDefault(); // Prevent it from appearing as an unhandled error
+    const msg = event?.reason?.message || (typeof event?.reason === 'string' ? event.reason : '');
+    if (isIgnorableError(msg)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
     }
 });
 
@@ -30,6 +50,8 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );

@@ -6,6 +6,7 @@ import { supabase } from '../services/supabase';
 import { CalendarPlus, Save, CheckCircle, AlertCircle, Loader2, User, Plus, Trash2, BookOpen, Clock, Edit, X, Database, ListChecks } from 'lucide-react';
 import { Profile, Schedule } from '../types';
 import { showAlert, showConfirm } from '../utils/alert';
+import { isOfficialTeacher } from '../utils/teacherUtils';
 
 interface ScheduleQueueItem {
     id: string; 
@@ -92,15 +93,10 @@ const InputJadwal: React.FC = () => {
   const fetchTeachers = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*').neq('nip', null).order('full_name');
+      const { data, error } = await supabase.from('profiles').select('*').order('full_name');
       if (error) throw error;
       if (data) {
-        const filtered = data.filter(t => 
-          (t.role as string) !== 'admin' && 
-          (t.role as string) !== 'administrator' && 
-          t.role?.toLowerCase() !== 'admin' &&
-          !t.full_name?.toLowerCase().includes('admin')
-        );
+        const filtered = data.filter(isOfficialTeacher);
         setTeachers(filtered);
       } 
     } catch (err) { console.error("Gagal load guru", err); } finally { setLoading(false); }
@@ -386,7 +382,7 @@ const InputJadwal: React.FC = () => {
       </div>
     
             {showNewVersionModal && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:p-4 overflow-y-auto">
                     <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-xl border border-slate-100">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-bold text-slate-800">Konfirmasi Jadwal Baru</h3>

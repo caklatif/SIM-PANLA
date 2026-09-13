@@ -514,7 +514,7 @@ const UsersData: React.FC = () => {
 
         {/* Sync Modal */}
         {isSyncModalOpen && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm transition-all duration-300">
+            <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[calc(env(safe-area-inset-top)+1rem)] sm:p-4 bg-slate-900/50 backdrop-blur-sm transition-all duration-300 overflow-y-auto">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
                     <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-white">
                         <div>

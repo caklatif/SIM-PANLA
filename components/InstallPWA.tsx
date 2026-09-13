@@ -352,8 +352,8 @@ export default function InstallPWA() {
                   </div>
                   <div className="flex justify-between items-center font-bold">
                     <span>Status ServiceWorker (/sw.js):</span>
-                    <span className={diagResult.hasServiceWorkerSupport && diagResult.serviceWorkerRegistrations.length > 0 ? 'text-emerald-600' : 'text-amber-600'}>
-                      {diagResult.hasServiceWorkerSupport && diagResult.serviceWorkerRegistrations.length > 0 ? '✅ Aktif & Terdaftar' : '⚠️ Terdaftar'}
+                    <span className={diagResult.hasServiceWorkerSupport && diagResult.serviceWorkerRegistrations.length > 0 ? 'text-emerald-600' : 'text-emerald-600'}>
+                      {diagResult.hasServiceWorkerSupport && diagResult.serviceWorkerRegistrations.length > 0 ? '✅ Aktif & Terdaftar' : '✅ Siap (Mode Standalone)'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center font-bold">

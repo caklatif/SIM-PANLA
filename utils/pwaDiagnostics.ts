@@ -75,7 +75,7 @@ export async function runPWADiagnostics(): Promise<PWADiagnosticResult> {
 
   // 3. Fetch Manifest File
   try {
-    const res = await fetch('/manifest.json', { cache: 'no-cache' });
+    const res = await fetch('/manifest.json', { cache: 'no-cache', credentials: 'include' });
     result.manifest.status = res.status;
     result.manifest.contentType = res.headers.get('content-type');
 

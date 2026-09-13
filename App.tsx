@@ -27,8 +27,8 @@ import OperatorDashboard from './pages/OperatorDashboard';
 import KinerjaGuru from './pages/KinerjaGuru';
 import RekapDhuha from './pages/RekapDhuha';
 import PresensiQR from './pages/PresensiQR';
+import PusatLaporan from './pages/PusatLaporan';
 import { Loader2 } from 'lucide-react';
-import AppSplash from './components/AppSplash';
 
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const { session, isLoading, isOperator } = useAuth();
@@ -77,7 +77,6 @@ const App: React.FC = () => {
 
   return (
     <ThemeProvider>
-      <AppSplash /> 
       <AuthProvider>
         <CustomAlertProvider>
         <HashRouter>
@@ -177,6 +176,24 @@ const App: React.FC = () => {
                   <RestrictedKbmRoute>
                      <RekapDhuha />
                   </RestrictedKbmRoute>
+               </ProtectedRoute>
+            } />
+
+            <Route path="/laporan-terpadu" element={
+               <ProtectedRoute>
+                  <PusatLaporan />
+               </ProtectedRoute>
+            } />
+
+            <Route path="/pusat-laporan" element={
+               <ProtectedRoute>
+                  <PusatLaporan />
+               </ProtectedRoute>
+            } />
+
+            <Route path="/rekap-sholat" element={
+               <ProtectedRoute>
+                  <PusatLaporan />
                </ProtectedRoute>
             } />
 

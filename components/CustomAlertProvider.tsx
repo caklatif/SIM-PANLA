@@ -39,7 +39,7 @@ export const CustomAlertProvider: React.FC<{children: React.ReactNode}> = ({ chi
     <>
       {children}
       {alertState && alertState.isOpen && (
-        <div className="fixed inset-0 z-[99999] flex justify-center items-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in" style={{ animationDuration: '0.2s' }}>
+        <div className="fixed inset-0 z-[99999] flex justify-center items-start p-4 pt-8 sm:pt-14 overflow-y-auto bg-slate-900/40 backdrop-blur-sm animate-fade-in" style={{ animationDuration: '0.2s' }}>
            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-6 w-full max-w-sm border border-slate-200 dark:border-slate-700 transform scale-100 transition-all">
               <div className="flex items-center gap-3 mb-4">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center ${alertState.type === 'confirm' ? 'bg-orange-100 text-orange-600' : 'bg-purple-100 text-purple-600'}`}>

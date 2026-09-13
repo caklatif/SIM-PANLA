@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../services/supabase";
@@ -7,6 +8,7 @@ import { Student, Profile } from "../types";
 import {
   Scan,
   Camera,
+  CameraOff,
   Keyboard,
   CheckCircle2,
   AlertCircle,
@@ -57,6 +59,7 @@ import {
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import { showAlert, showConfirm } from "../utils/alert";
+import { isOfficialTeacher } from "../utils/teacherUtils";
 
 export type PresensiMode = "harian" | "dhuha" | "dzuhur" | "ekstra";
 
@@ -133,6 +136,7 @@ if (typeof window !== "undefined") {
 }
 
 export default function PresensiQR() {
+  const navigate = useNavigate();
   const { academicYear, profile } = useAuth();
   const isAdmin = profile?.role === "admin";
   const isOperator = profile?.role === "operator";
@@ -176,6 +180,7 @@ export default function PresensiQR() {
   );
 
   const isPembina = !!assignedPembinaConfig;
+  const isPembinaRole = profile?.role === "pembina_ekstra" || isPembina;
   const canScan = true; // Presensi QR aktif untuk semua guru tanpa batasan
 
   // Allowed Ekstra list for current user (dikunci khusus untuk Pembina Ekstra yang dikelola Admin)
@@ -193,9 +198,24 @@ export default function PresensiQR() {
 
   // Mode & Tabs
   const [activeTab, setActiveTab] = useState<
-    "scan" | "history" | "rekap" | "cards" | "pembina"
-  >("scan");
-  const [presensiMode, setPresensiMode] = useState<PresensiMode>("harian");
+    "scan" | "history" | "rekap" | "rekap_sholat" | "cards" | "pembina"
+  >(() => {
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash || "";
+      if (hash.includes("tab=rekap_sholat")) return "rekap_sholat";
+      if (hash.includes("tab=rekap")) return "rekap";
+      if (hash.includes("tab=history")) return "history";
+      if (hash.includes("tab=cards")) return "cards";
+      if (hash.includes("tab=pembina")) return "pembina";
+    }
+    return "scan";
+  });
+  const [presensiMode, setPresensiMode] = useState<PresensiMode>(() => {
+    if (profile?.role === "pembina_ekstra" || isPembina) {
+      return "ekstra";
+    }
+    return "harian";
+  });
   const [selectedEkstra, setSelectedEkstra] = useState<string>(
     allowedEkstraForUser[0] || "",
   );
@@ -211,6 +231,18 @@ export default function PresensiQR() {
   useEffect(() => {
     selectedEkstraRef.current = selectedEkstra;
   }, [selectedEkstra]);
+
+  // Otomatis arahkan ke Presensi Kegiatan Ekstra saat role pembina ekstra aktif
+  useEffect(() => {
+    if (isPembinaRole) {
+      setPresensiMode("ekstra");
+      presensiModeRef.current = "ekstra";
+      if (allowedEkstraForUser.length > 0 && (!selectedEkstra || !allowedEkstraForUser.includes(selectedEkstra))) {
+        setSelectedEkstra(allowedEkstraForUser[0]);
+        selectedEkstraRef.current = allowedEkstraForUser[0];
+      }
+    }
+  }, [isPembinaRole, allowedEkstraForUser]);
 
   // Visual Activity Badge Helper for Teacher Monitoring
   const getActivityBadge = (mode: PresensiMode | string, subject?: string) => {
@@ -1188,11 +1220,11 @@ export default function PresensiQR() {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, full_name, nip, role")
+        .select("id, full_name, nip, role, mengajar_mapel")
         .order("full_name", { ascending: true });
 
       if (!error && data) {
-        setTeachers(data as Profile[]);
+        setTeachers((data as Profile[]).filter(isOfficialTeacher));
       }
     } catch (e) {
       console.error("Error fetching teachers:", e);
@@ -1579,7 +1611,19 @@ export default function PresensiQR() {
           },
           () => {},
         );
-      } catch (firstErr) {
+      } catch (firstErr: any) {
+        const errStr = String(firstErr?.message || firstErr || "").toLowerCase();
+        const isPermissionIssue =
+          errStr.includes("permission") ||
+          errStr.includes("dismissed") ||
+          errStr.includes("denied") ||
+          errStr.includes("notallowed") ||
+          firstErr?.name === "NotAllowedError";
+
+        if (isPermissionIssue) {
+          throw firstErr;
+        }
+
         console.warn(
           "Facing mode environment failed, trying available camera devices:",
           firstErr,
@@ -1607,10 +1651,25 @@ export default function PresensiQR() {
 
       setIsScanning(true);
     } catch (err: any) {
-      console.error("Camera start error:", err);
-      setCameraError(
-        "Gagal mengakses kamera. Pastikan izin kamera telah diberikan atau gunakan opsi Input Manual / Barcode Gun.",
-      );
+      const errStr = String(err?.message || err || "").toLowerCase();
+      const isPermissionIssue =
+        errStr.includes("permission") ||
+        errStr.includes("dismissed") ||
+        errStr.includes("denied") ||
+        errStr.includes("notallowed") ||
+        err?.name === "NotAllowedError";
+
+      if (isPermissionIssue) {
+        console.warn("Camera permission prompt was dismissed or denied by user/browser:", err);
+        setCameraError(
+          "Izin akses kamera belum diberikan atau ditutup. Klik tombol di bawah untuk meminta izin ulang, atau gunakan Scanner Barcode Gun / Input NISN Manual.",
+        );
+      } else {
+        console.warn("Camera start encountered an issue:", err);
+        setCameraError(
+          "Gagal mengakses kamera perangkat. Pastikan kamera tidak sedang dipakai aplikasi lain atau gunakan opsi Input Manual / Barcode Gun.",
+        );
+      }
       setIsScanning(false);
     }
   };
@@ -1675,7 +1734,7 @@ export default function PresensiQR() {
         setModeRestartNotice(null);
       }
     } catch (err) {
-      console.error("Error restarting camera for activity:", err);
+      console.warn("Notice while restarting camera for activity:", err);
       setIsRestartingCamera(false);
       setModeRestartNotice(null);
     }
@@ -2539,20 +2598,21 @@ export default function PresensiQR() {
               <span>Scanner QR Kamera / Gun</span>
             </button>
 
-            <button
-              onClick={() => {
-                setActiveTab("history");
-                stopCamera();
-              }}
-              className={`px-5 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 ${
-                activeTab === "history"
-                  ? "bg-purple-600 text-white shadow-lg shadow-purple-600/40"
-                  : "bg-white/5 hover:bg-white/10 text-slate-300"
-              }`}
-            >
-              <Database size={16} />
-              <span>Kelola Hasil Scan ({scanHistory.length})</span>
-            </button>
+            {/* Pintasan ke Pusat Laporan (Sembunyikan untuk Pembina Ekstra) */}
+            {!isPembinaRole && (
+              <button
+                type="button"
+                onClick={() => {
+                  stopCamera();
+                  navigate("/laporan-terpadu?tab=kelola_scan");
+                }}
+                className="px-5 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white"
+                title="Kelola Hasil Scan dan Rekap Matriks Sholat telah dipusatkan di Pusat Laporan"
+              >
+                <FileSpreadsheet size={16} className="text-purple-400" />
+                <span>Kelola Hasil Scan (Pusat Laporan) ↗</span>
+              </button>
+            )}
 
             {/* Rekap Laporan Ekstrakurikuler */}
             <button
@@ -2924,9 +2984,33 @@ export default function PresensiQR() {
 
                         {/* Error state */}
                         {cameraError && (
-                          <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center text-rose-400">
-                            <AlertCircle size={48} className="mb-2" />
-                            <p className="font-bold text-sm">{cameraError}</p>
+                          <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center text-rose-400 z-30 animate-fade-in">
+                            <AlertCircle size={44} className="mb-2 text-rose-500" />
+                            <p className="font-bold text-sm max-w-md text-white">{cameraError}</p>
+                            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCameraError(null);
+                                  startCamera();
+                                }}
+                                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-lg transition-all"
+                              >
+                                <RefreshCw size={14} />
+                                <span>Coba Izinkan & Nyalakan Kamera</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCameraError(null);
+                                  if (manualInputRef.current) manualInputRef.current.focus();
+                                }}
+                                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all"
+                              >
+                                <Keyboard size={14} />
+                                <span>Input Manual / Gun</span>
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -3317,24 +3401,30 @@ export default function PresensiQR() {
                           <Maximize2 size={14} />
                           <span className="hidden sm:inline">Fullscreen</span>
                         </button>
-
-                        {isScanning ? (
-                          <button
-                            onClick={stopCamera}
-                            className="px-3 py-1.5 bg-rose-100 dark:bg-rose-950/60 hover:bg-rose-200 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold transition-colors"
-                          >
-                            Matikan Kamera
-                          </button>
-                        ) : (
-                          <button
-                            onClick={startCamera}
-                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-500/20 transition-all flex items-center gap-2"
-                          >
-                            <Camera size={14} />
-                            <span>Nyalakan Kamera</span>
-                          </button>
-                        )}
                       </div>
+                    </div>
+
+                    {/* BARIS TOMBOL NYALAKAN / MATIKAN KAMERA (DIATAS AREA SCAN KAMERA AGAR PAS DI FRAME HP) */}
+                    <div className="max-w-lg mx-auto w-full px-1">
+                      {isScanning ? (
+                        <button
+                          type="button"
+                          onClick={stopCamera}
+                          className="w-full py-3 px-4 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-2xl text-sm font-bold shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-2"
+                        >
+                          <CameraOff size={18} />
+                          <span>Matikan Kamera</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={startCamera}
+                          className="w-full py-3.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-[0.99] text-white rounded-2xl text-sm font-black shadow-lg shadow-purple-600/25 transition-all flex items-center justify-center gap-2.5"
+                        >
+                          <Camera size={20} />
+                          <span>Nyalakan Kamera</span>
+                        </button>
+                      )}
                     </div>
 
                     {/* Viewfinder Frame - Clean uncropped video */}
@@ -3445,9 +3535,33 @@ export default function PresensiQR() {
                       )}
 
                       {cameraError && (
-                        <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center p-6 text-center text-rose-400">
-                          <AlertCircle size={40} className="mb-2" />
-                          <p className="font-bold text-xs">{cameraError}</p>
+                        <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center p-6 text-center text-rose-400 z-30 animate-fade-in">
+                          <AlertCircle size={38} className="mb-2 text-rose-500" />
+                          <p className="font-bold text-xs max-w-sm text-white">{cameraError}</p>
+                          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCameraError(null);
+                                startCamera();
+                              }}
+                              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-all"
+                            >
+                              <RefreshCw size={13} />
+                              <span>Izinkan Kamera Lagi</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCameraError(null);
+                                if (manualInputRef.current) manualInputRef.current.focus();
+                              }}
+                              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all"
+                            >
+                              <Keyboard size={13} />
+                              <span>Input Manual</span>
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -4924,8 +5038,8 @@ export default function PresensiQR() {
 
         {/* MODAL 1: TAMBAH PRESENSI MANUAL */}
         {showManualAddModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fade-in">
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-slate-100 dark:border-slate-700 space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-6 sm:pt-10 overflow-y-auto bg-slate-950/60 backdrop-blur-xs animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-slate-100 dark:border-slate-700 space-y-5 max-h-[90vh] overflow-y-auto my-auto sm:my-0">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-600 flex items-center justify-center font-bold">
@@ -5185,8 +5299,8 @@ export default function PresensiQR() {
 
         {/* MODAL 2: EDIT CATATAN PRESENSI */}
         {editingRecord && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fade-in">
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-slate-100 dark:border-slate-700 space-y-5">
+          <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-6 sm:pt-10 overflow-y-auto bg-slate-950/60 backdrop-blur-xs animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-slate-100 dark:border-slate-700 space-y-5 my-auto sm:my-0">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-600 flex items-center justify-center font-bold">
@@ -5364,8 +5478,8 @@ export default function PresensiQR() {
 
         {/* MODAL 3: CETAK LAPORAN RESMI (OFFICIAL PRINT PREVIEW) */}
         {isPrintModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fade-in overflow-y-auto">
-            <div className="bg-white text-slate-900 rounded-3xl p-6 md:p-8 max-w-4xl w-full shadow-2xl space-y-6 my-8 max-h-[92vh] overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-6 sm:pt-10 bg-slate-950/70 backdrop-blur-xs animate-fade-in overflow-y-auto">
+            <div className="bg-white text-slate-900 rounded-3xl p-6 md:p-8 max-w-4xl w-full shadow-2xl space-y-6 my-2 sm:my-4 max-h-[92vh] overflow-y-auto">
               {/* Header Action Bar */}
               <div className="flex items-center justify-between pb-4 border-b border-slate-200 print:hidden">
                 <div className="flex items-center gap-2">
@@ -5407,8 +5521,8 @@ export default function PresensiQR() {
                     UPT SMP NEGERI 8 PASURUAN
                   </h2>
                   <p className="text-[10px] text-slate-500">
-                    Jl. Ir. H. Juanda No. 8, Kota Pasuruan, Jawa Timur | Telp:
-                    (0343) 424108 | Web: smpn8pasuruan.sch.id
+                    Jl. KH Mansyur No. 162, Sekargadung, Kec. Purworejo, Kota Pasuruan, Jawa Timur 67127 | Telp:
+                    (0343) 422108 | Web: smpn8pasuruan.sch.id
                   </p>
                 </div>
 
@@ -5580,8 +5694,8 @@ export default function PresensiQR() {
         {/* MODAL PENGATURAN JAM KETERLAMBATAN (KHUSUS ADMIN / OPERATOR) */}
         {showLateTimeModal &&
           createPortal(
-            <div className="fixed inset-0 z-[999999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden animate-scale-up">
+            <div className="fixed inset-0 z-[999999] bg-slate-950/80 backdrop-blur-sm flex items-start justify-center p-4 pt-6 sm:pt-12 overflow-y-auto animate-fade-in">
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden animate-scale-up my-auto sm:my-0">
                 {/* Modal Header */}
                 <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white p-5 flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -5897,8 +6011,8 @@ export default function PresensiQR() {
         {/* UNSCANNED MODAL */}
         {showUnscannedModal &&
           createPortal(
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
-              <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-100 dark:border-slate-700 flex flex-col max-h-[90vh]">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-start justify-center p-4 pt-6 sm:pt-12 overflow-y-auto animate-fade-in">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-100 dark:border-slate-700 flex flex-col max-h-[90vh] my-auto sm:my-0">
                 {/* Modal Header */}
                 <div className="p-4 md:p-6 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-amber-50 dark:bg-amber-950/20 rounded-t-3xl">
                   <div className="flex items-center gap-3">

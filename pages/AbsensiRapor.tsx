@@ -4,7 +4,7 @@ import { Layout } from '../components/Layout';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Student } from '../types';
-import {  Printer, Loader2, BookX, CalendarDays, ChevronDown, ChevronUp , UserMinus } from 'lucide-react';
+import {  Printer, Loader2, BookX, CalendarDays, ChevronDown, ChevronUp , UserMinus, Download, FileSpreadsheet } from 'lucide-react';
 import { formatDateSignature, getWIBISOString, formatDateIndo } from '../utils/dateUtils';
 
 interface ReportDetail {
@@ -21,7 +21,11 @@ interface ReportStudent extends Student {
     details: ReportDetail[];
 }
 
-const AbsensiRapor: React.FC = () => {
+interface AbsensiRaporProps {
+  embedded?: boolean;
+}
+
+export const AbsensiRapor: React.FC<AbsensiRaporProps> = ({ embedded = false }) => {
   const { profile, academicYear, semester , semesterStart, semesterEnd } = useAuth();
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<ReportStudent[]>([]);
@@ -172,14 +176,34 @@ useEffect(() => {
   };
 
   const handlePrint = () => window.print();
+
+  const handleExportExcel = () => {
+    if (reportData.length === 0) {
+      alert("Tidak ada data untuk diekspor");
+      return;
+    }
+    let csv = "No,NISN,NIS,Nama Siswa,Kelas,Sakit (S),Izin (I),Alpa (A),Dispensasi (D),Total Ketidakhadiran\n";
+    reportData.forEach((s, idx) => {
+      const total = (s.s_count || 0) + (s.i_count || 0) + (s.a_count || 0) + (s.d_count || 0);
+      csv += `${idx + 1},"${s.nisn || '-'}","${s.nis || '-'}","${s.name}","${selectedClass}",${s.s_count || 0},${s.i_count || 0},${s.a_count || 0},${s.d_count || 0},${total}\n`;
+    });
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Rekap_Absensi_Buku_Rapor_Kelas_${selectedClass || 'Semua'}_${startDate}_sd_${endDate}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const currentDateStr = formatDateSignature(new Date());
 
   const toggleAccordion = (studentId: string) => {
       setExpandedStudentId(prev => prev === studentId ? null : studentId);
   };
 
-  return (
-    <Layout>
+  const mainContent = (
+    <div className="space-y-6">
       <div className="print:hidden space-y-6">
         <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-400 to-rose-600 text-white flex items-center justify-center shadow-sm">
@@ -192,7 +216,7 @@ useEffect(() => {
             </div>
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-            <div className="grid md:grid-cols-4 gap-4 items-end">
+            <div className="grid md:grid-cols-5 gap-4 items-end">
                 <div>
                     <label className="block text-xs font-bold text-gray-500 mb-1">Kelas</label>
                     <select 
@@ -224,11 +248,24 @@ useEffect(() => {
                 </div>
                 <div>
                     <button 
+                        type="button"
+                        onClick={handleExportExcel}
+                        disabled={loading || reportData.length === 0}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 transition-all text-xs md:text-sm active:scale-95"
+                        title="Download Rekap Absensi Buku Rapor format Excel (CSV)"
+                    >
+                        <FileSpreadsheet size={18} /> Download Excel
+                    </button>
+                </div>
+                <div>
+                    <button 
+                        type="button"
                         onClick={handlePrint}
                         disabled={loading || reportData.length === 0}
-                        className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 transition-all"
+                        className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 transition-all text-xs md:text-sm active:scale-95"
+                        title="Cetak Dokumen Resmi Rekap Rapor (PDF)"
                     >
-                        <Printer size={20} /> Cetak / PDF
+                        <Printer size={18} /> Cetak / PDF
                     </button>
                 </div>
             </div>
@@ -348,6 +385,16 @@ useEffect(() => {
 
           </div>
       )}
+    </div>
+  );
+
+  if (embedded) {
+    return mainContent;
+  }
+
+  return (
+    <Layout>
+      {mainContent}
     </Layout>
   );
 };

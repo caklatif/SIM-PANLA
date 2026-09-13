@@ -10,6 +10,7 @@ import {
 import { getWIBDate, getWIBISOString, formatDateIndo } from '../utils/dateUtils';
 import { Student, Profile } from '../types';
 import { showAlert, showConfirm } from '../utils/alert';
+import { isOfficialTeacher } from '../utils/teacherUtils';
 
 interface MonthlyStats {
     totalJp: number;
@@ -126,8 +127,7 @@ const Dashboard: React.FC = () => {
               supabase.from('journals').select('*').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', startOfDay).lte('created_at', endOfDay)
           ]);
 
-          const excludedNames = ['Guru Baru', 'Agung Budiartati, M.Pd.', 'Dra.Laily Asriyah, M.Pd.I.'];
-          const allTeachers = (profilesRes.data || []).filter(t => !excludedNames.includes(t.full_name));
+          const allTeachers = (profilesRes.data || []).filter(isOfficialTeacher);
           const todaysSchedules = schedulesRes.data || [];
           const todaysJournals = journalsRes.data || [];
 
@@ -729,8 +729,11 @@ const Dashboard: React.FC = () => {
                                 </div>
                                 <div className="flex-1 w-full">
                                     <h3 className="font-extrabold text-slate-800 dark:text-white text-xs uppercase tracking-wide leading-relaxed">
-                                        Rekap Absensi <br className="hidden md:block"/>Kelas {activeWaliKelas}
+                                        Rekap Absensi Kelas <br className="hidden md:block"/>(Absen Berkelompok) {activeWaliKelas}
                                     </h3>
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-medium leading-tight">
+                                        Level Operator: Bebas pilih kelas untuk kunci absensi murid di jurnal KBM.
+                                    </p>
                                     
                                     {(isOperator || isAdmin || !profile?.wali_kelas) && (
                                         <div className="mt-1.5">
@@ -774,25 +777,36 @@ const Dashboard: React.FC = () => {
                                 {/* ACCORDION INPUT FORM (Moved Here, above Date Picker) */}
                                 {showInputForm && (
                                     <div className="mb-2 p-4 border-2 border-purple-100 dark:border-slate-600 rounded-2xl bg-white dark:bg-slate-800 animate-fade-in shadow-sm">
-                                        <div className="flex justify-between items-center mb-3">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-100 dark:border-slate-700">
                                             <h4 className="font-bold text-slate-700 dark:text-white text-xs flex items-center gap-2">
                                                 <Edit2 size={14} className="text-purple-500"/> Input Absensi: {formatDateIndo(filterDate)}
                                             </h4>
-                                            <button 
-                                                onClick={() => setModalAttendance({})}
-                                                className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 px-2 py-1 rounded transition-colors"
-                                            >
-                                                Reset
-                                            </button>
+                                            
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="text-[10px] text-slate-400 font-bold">Pilihan Cepat Status:</span>
+                                                <div className="flex gap-1">
+                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">S (Sakit)</span>
+                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">I (Izin)</span>
+                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300">D (Dispen)</span>
+                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">A (Alpa)</span>
+                                                </div>
+                                                <button 
+                                                    onClick={() => setModalAttendance({})}
+                                                    className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 px-2 py-1 rounded transition-colors"
+                                                >
+                                                    Reset
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <div className="max-h-[300px] overflow-y-auto custom-scrollbar border border-slate-100 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-700/30">
                                             <div className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600 px-3 py-2 flex items-center text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase">
                                                 <div className="flex-1">NAMA MURID</div>
-                                                <div className="flex gap-1.5 w-24 justify-end">
+                                                <div className="flex gap-1.5 w-32 justify-end">
                                                     <span className="w-7 text-center">S</span>
                                                     <span className="w-7 text-center">I</span>
                                                     <span className="w-7 text-center">D</span> 
+                                                    <span className="w-7 text-center">A</span> 
                                                 </div>
                                             </div>
                                             <div className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -801,14 +815,20 @@ const Dashboard: React.FC = () => {
                                                         <div className="flex-1 pr-2">
                                                             <p className="text-xs font-bold text-slate-700 dark:text-slate-200 line-clamp-1">{student.name}</p>
                                                         </div>
-                                                        <div className="flex gap-1.5 w-24 justify-end">
-                                                            {(['S', 'I', 'D'] as const).map(status => (
+                                                        <div className="flex gap-1.5 w-32 justify-end">
+                                                            {(['S', 'I', 'D', 'A'] as const).map(status => (
                                                                 <button 
                                                                     key={status}
                                                                     onClick={() => toggleModalStatus(student.id, status)}
                                                                     className={`w-7 h-7 rounded-md flex items-center justify-center border transition-all text-[10px] font-bold ${
                                                                         modalAttendance[student.id] === status
-                                                                        ? (status === 'S' ? 'bg-yellow-500 border-yellow-600 text-white' : status === 'I' ? 'bg-blue-500 border-blue-600 text-white' : 'bg-purple-600 border-purple-700 text-white')
+                                                                        ? (status === 'S' 
+                                                                            ? 'bg-yellow-500 border-yellow-600 text-white' 
+                                                                            : status === 'I' 
+                                                                              ? 'bg-blue-500 border-blue-600 text-white' 
+                                                                              : status === 'D' 
+                                                                                ? 'bg-purple-600 border-purple-700 text-white' 
+                                                                                : 'bg-rose-600 border-rose-700 text-white')
                                                                         : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                                                                     }`}
                                                                 >
@@ -821,14 +841,17 @@ const Dashboard: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        <div className="mt-3 flex justify-end">
+                                        <div className="mt-3 flex justify-between items-center">
+                                            <span className="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                                                {Object.keys(modalAttendance).length} murid ditandai tidak hadir.
+                                            </span>
                                             <button 
                                                 onClick={handleSaveHomeroomAttendance}
                                                 disabled={savingAttendance}
                                                 className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-md shadow-purple-200 dark:shadow-none disabled:opacity-50 transition-all text-xs"
                                             >
                                                 {savingAttendance ? <Loader2 className="animate-spin" size={14}/> : <Save size={14} />} 
-                                                Simpan
+                                                Simpan (Kunci Absensi Jurnal KBM)
                                             </button>
                                         </div>
                                     </div>

@@ -12,7 +12,8 @@ const SettingsPage: React.FC = () => {
     semester: 'Ganjil',
     headmaster: '',
     headmaster_nip: '',
-    late_time_limit: '07:15'
+    late_time_limit: '07:15',
+    school_address: 'Jl. KH Mansyur No. 162, Sekargadung, Kec. Purworejo, Kota Pasuruan, Jawa Timur 67127 | Telp: (0343) 422108'
   });
   const [nonEffectiveDays, setNonEffectiveDays] = useState<NonEffectiveDay[]>([]);
   const [availableYears, setAvailableYears] = useState<string[]>(['2025/2026']);
@@ -284,6 +285,18 @@ const SettingsPage: React.FC = () => {
                                     placeholder="NIP otomatis..."
                                 />
                             </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-gray-700 mb-1">Alamat & Kontak Kop Surat</label>
+                            <textarea 
+                                rows={3}
+                                className="w-full border border-gray-300 rounded-lg p-3 text-xs font-medium text-gray-800 focus:ring-2 focus:ring-purple-500 outline-none" 
+                                value={settings['school_address'] !== undefined ? settings['school_address'] : 'Jl. KH Mansyur No. 162, Sekargadung, Kec. Purworejo, Kota Pasuruan, Jawa Timur 67127 | Telp: (0343) 422108'}
+                                onChange={(e) => setSettings(prev => ({ ...prev, school_address: e.target.value }))}
+                                placeholder="Contoh: Jl. KH Mansyur No. 162, Sekargadung, Kec. Purworejo, Kota Pasuruan, Jawa Timur 67127 | Telp: (0343) 422108"
+                            />
+                            <p className="text-[10px] text-gray-400 mt-1">* Baris alamat dan kontak resmi yang tercetak pada Kop Surat laporan & jurnal</p>
                         </div>
                     </div>
                 </div>

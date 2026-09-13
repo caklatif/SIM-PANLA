@@ -102,7 +102,7 @@ const PublicDashboard: React.FC = () => {
         
         const [journalsRes, attendanceRes, homeroomRes, profilesRes] = await Promise.all([
             supabase.from('journals').select('hours, kelas').gte('created_at', startOfDay).lte('created_at', endOfDay),
-            supabase.from('attendance_logs').select('student_id, student_name, status, created_at, subject').gte('created_at', startOfDay).lte('created_at', endOfDay),
+            supabase.from('attendance_logs').select('student_id, student_name, status, created_at, subject, teacher_name').gte('created_at', startOfDay).lte('created_at', endOfDay).order('created_at', { ascending: true }),
             supabase.from('homeroom_attendance').select('student_id, status, kelas, created_by').eq('date', todayStr),
             supabase.from('profiles').select('id, role, nip, full_name')
         ]);
@@ -191,11 +191,19 @@ const PublicDashboard: React.FC = () => {
                     return;
                 }
                 if (['S', 'I', 'A', 'D'].includes(log.status)) {
-                    if (!combinedAttendance[log.student_id]) {
+                    const existing = combinedAttendance[log.student_id];
+                    // Smart Priority:
+                    // 1. Status dari Wali Kelas / TU memiliki otoritas tertinggi (tidak ditimpa oleh Guru mapel)
+                    // 2. Jika belum ada atau status sebelumnya dari Guru, input guru jam pelajaran berikutnya menimpa input guru sebelumnya
+                    if (!existing) {
                         const studentName = log.student_name || sNameMap[log.student_id] || 'Siswa';
                         combinedAttendance[log.student_id] = { name: studentName, status: log.status, source: 'Guru' };
-                    } else if ((combinedAttendance[log.student_id].name === 'Loading...' || !combinedAttendance[log.student_id].name) && log.student_name) {
-                        combinedAttendance[log.student_id].name = log.student_name;
+                    } else if (existing.source === 'Guru') {
+                        // Guru jam berikutnya menimpa status jam sebelumnya
+                        existing.status = log.status;
+                        if (log.student_name) existing.name = log.student_name;
+                    } else if ((existing.name === 'Loading...' || !existing.name) && log.student_name) {
+                        existing.name = log.student_name;
                     }
                 }
             });
@@ -253,7 +261,9 @@ const PublicDashboard: React.FC = () => {
             unfilledKbm: [],
             classesWithJournals: Array.from(classesWithJournalsSet)
         });
-    } catch (err: any) { console.error('FETCH ERROR:', err); alert('Fetch error: ' + (err.message || JSON.stringify(err))); }
+    } catch (err: any) { 
+        console.error('FETCH ERROR:', err); 
+    }
   };
 
   

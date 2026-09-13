@@ -1,7 +1,15 @@
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
-      console.warn('Service worker registration fallback:', err);
-    });
-  });
+  navigator.serviceWorker.getRegistrations().then(function(registrations) {
+    for (var i = 0; i < registrations.length; i++) {
+      registrations[i].unregister();
+    }
+  }).catch(function() {});
+  if ('caches' in window) {
+    caches.keys().then(function(keys) {
+      for (var j = 0; j < keys.length; j++) {
+        caches.delete(keys[j]);
+      }
+    }).catch(function() {});
+  }
 }
+

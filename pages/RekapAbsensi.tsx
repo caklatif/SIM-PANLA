@@ -17,7 +17,11 @@ interface AttendanceSummary {
   percentage: string;
 }
 
-const RekapAbsensi: React.FC = () => {
+interface RekapAbsensiProps {
+  embedded?: boolean;
+}
+
+export const RekapAbsensi: React.FC<RekapAbsensiProps> = ({ embedded = false }) => {
   const { profile, academicYear, semester , semesterStart, semesterEnd } = useAuth();
   const [loading, setLoading] = useState(false);
   
@@ -184,8 +188,8 @@ const RekapAbsensi: React.FC = () => {
   // Updated Date Format: "20 Januari 2026"
   const currentDateStr = formatDateSignature(new Date());
 
-  return (
-    <Layout>
+  const mainContent = (
+    <div className="space-y-6">
       <div className="print:hidden space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-3">
@@ -308,6 +312,16 @@ const RekapAbsensi: React.FC = () => {
             </div>
         </div>
       )}
+    </div>
+  );
+
+  if (embedded) {
+    return mainContent;
+  }
+
+  return (
+    <Layout>
+      {mainContent}
     </Layout>
   );
 };

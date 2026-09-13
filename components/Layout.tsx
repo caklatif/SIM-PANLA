@@ -5,7 +5,7 @@ import { getWIBISOString } from '../utils/dateUtils';
 import { showAlert } from '../utils/alert';
 import {  Bell, CheckCircle2, XCircle, X , LayoutGrid } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { LogOut, Home, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, Activity, Sunset, ArrowUp, AlertCircle, Settings, Database, Users, GraduationCap, Upload, Edit3, Calendar, Scan, Download, BookOpen } from 'lucide-react';
+import { LogOut, Home, Grid, User, ChevronRight, MonitorPlay, Moon, Sun, Siren, Activity, Sunset, ArrowUp, AlertCircle, Settings, Database, Users, GraduationCap, Upload, Edit3, Calendar, Scan, Download, BookOpen, ExternalLink, FileSpreadsheet } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TeacherLoginSplash } from './TeacherLoginSplash';
 import { AnimatePresence } from 'motion/react';
@@ -43,6 +43,22 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
   const isHeadmaster = profile?.mengajar_mapel === 'Kepala Sekolah';
   // Logic to identify Dhuha Teacher
   const isDhuhaTeacher = profile?.mengajar_mapel?.toLowerCase().includes('dhuha');
+  // Logic to identify Pembina Ekstra
+  const isPembinaEkstra = profile?.role === 'pembina_ekstra' || (() => {
+    try {
+      const saved = localStorage.getItem("simpanla_pembina_ekstra_list");
+      if (!saved) return false;
+      const list = JSON.parse(saved);
+      const nip = profile?.nip?.trim();
+      const name = profile?.full_name?.trim()?.toLowerCase();
+      return list.some((item: any) => 
+        (nip && item.nip && item.nip.trim() === nip) ||
+        (name && item.nama && item.nama.trim().toLowerCase() === name)
+      );
+    } catch (e) {
+      return false;
+    }
+  })();
 
   useEffect(() => {
     
@@ -273,7 +289,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                         <NavItem path="/dashboard" label="Beranda" icon={Home} />
                         <NavItem path="/operator-dashboard" label="Monitor KBM" icon={MonitorPlay} />
                         <NavItem path="/qr" label="Presensi QR" icon={Scan} />
-                        <NavItem path="/data-jurnal" label="Data Jurnal" icon={BookOpen} />
+                        <NavItem path="/laporan-terpadu" label="Pusat Laporan" icon={FileSpreadsheet} />
                         <NavItem path="/penyimpanan" label="Buat T.A" icon={Database} />
                         <NavItem path="/settings" label="Pengaturan" icon={Settings} />
                         <div className="pt-4 pb-1">
@@ -291,7 +307,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                         <NavItem path="/dashboard" label="Beranda" icon={Home} />
                         <NavItem path="/operator-dashboard" label="Dashboard KBM" icon={MonitorPlay} />
                         <NavItem path="/qr" label="Presensi QR" icon={Scan} />
-                        <NavItem path="/data-jurnal" label="Data Jurnal" icon={BookOpen} />
+                        <NavItem path="/laporan-terpadu" label="Pusat Laporan" icon={FileSpreadsheet} />
                         <NavItem path="/profile" label="Profil Saya" icon={User} />
                     </>
                 ) : (
@@ -300,7 +316,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                         {isHeadmaster && <NavItem path="/kinerja" label="Kinerja" icon={Activity} />}
                         {!isHeadmaster && <NavItem path="/apps" label="KBM" icon={Grid} />}
                         <NavItem path="/qr" label="Presensi QR" icon={Scan} />
-                        <NavItem path="/data-jurnal" label="Data Jurnal" icon={BookOpen} />
+                        {!isPembinaEkstra && <NavItem path="/laporan-terpadu" label="Pusat Laporan" icon={FileSpreadsheet} />}
                         {isHeadmaster && <NavItem path="/kedisiplinan" label="Kedisiplinan" icon={Siren} />}
                         {isDhuhaTeacher && <NavItem path="/rekap-dhuha" label="Rekap Dhuha" icon={Sunset} />}
                         <NavItem path="/profile" label="Profil Saya" icon={User} />
@@ -405,6 +421,15 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                             <Bell size={18} />
                         </button>
                     )}
+                     <a 
+                       href={window.location.origin} 
+                       target="_blank" 
+                       rel="noopener noreferrer" 
+                       className="w-9 h-9 bg-purple-50 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 rounded-full flex items-center justify-center border border-purple-200 dark:border-purple-800 transition-transform active:scale-95 flex-shrink-0"
+                       title="Buka Aplikasi di Tab Baru"
+                     >
+                         <ExternalLink size={16}/>
+                     </a>
                      <button onClick={handleLogoutClick} className="w-9 h-9 bg-slate-50 dark:bg-slate-700 rounded-full flex items-center justify-center text-gray-500 dark:text-slate-300 active:bg-gray-100 border border-slate-200 dark:border-slate-600 flex-shrink-0">
                          <LogOut size={18}/>
                      </button>
@@ -459,6 +484,15 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                   >
                     <Download size={17} />
                   </button>
+                  <a 
+                    href={window.location.origin}
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="w-9 h-9 bg-purple-50 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 rounded-full flex items-center justify-center border border-purple-200 dark:border-purple-800 transition-transform hover:scale-105 active:scale-95 shadow-sm"
+                    title="Buka Aplikasi di Tab Baru (Luar Preview)"
+                  >
+                    <ExternalLink size={17} />
+                  </a>
                   <button onClick={handleLogoutClick} className="w-9 h-9 ml-1 bg-slate-50 dark:bg-slate-700 rounded-full flex items-center justify-center text-gray-500 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors border border-slate-200 dark:border-slate-600 flex-shrink-0">
                       <LogOut size={18}/>
                   </button>
@@ -563,8 +597,8 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
 
     
       {showNotifModal && (
-        <div className="fixed inset-0 z-[9999] flex justify-center items-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in" onClick={() => setShowNotifModal(false)}>
-           <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl w-full max-w-sm rounded-3xl shadow-2xl p-5 transform scale-100 transition-all border border-white/50 dark:border-slate-700/50 relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[9999] flex justify-center items-start pt-14 md:pt-12 p-4 overflow-y-auto bg-slate-900/40 backdrop-blur-sm animate-fade-in" onClick={() => setShowNotifModal(false)}>
+           <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl w-full max-w-sm rounded-3xl shadow-2xl p-5 transform scale-100 transition-all border border-white/50 dark:border-slate-700/50 relative overflow-hidden my-auto sm:my-0" onClick={(e) => e.stopPropagation()}>
               <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-100 dark:border-slate-700">
                   <div>
                       <h3 className="text-lg font-extrabold text-slate-800 dark:text-white flex items-center gap-2"><Bell size={20} className="text-purple-500"/> Jadwal Mengajar</h3>

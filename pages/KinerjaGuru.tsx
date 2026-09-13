@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import { Activity, Calendar, Search, Loader2, X } from 'lucide-react';
 import { Profile, Schedule } from '../types';
+import { isOfficialTeacher } from '../utils/teacherUtils';
 
 interface TeacherPerformanceData extends Profile {
     targetJp: number;
@@ -51,7 +52,7 @@ const KinerjaGuru: React.FC = () => {
           else if (selectedYear > today.getFullYear() || (selectedYear === today.getFullYear() && selectedMonth > today.getMonth())) endCalculationDay = lastDayDate.getDate(); 
 
           const [profilesRes, schedulesRes, journalsRes] = await Promise.all([
-              supabase.from('profiles').select('*').neq('role', 'operator').order('full_name'),
+              supabase.from('profiles').select('*').order('full_name'),
               supabase.from('schedules').select('*').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').eq('schedule_version', activeScheduleVersion || 'Utama').then(async (res) => {
                   if (res.error && (res.error.code === '42703' || res.error.message?.includes('academic_year'))) {
                       const fallback = await supabase.from('schedules').select('*');
@@ -65,14 +66,7 @@ const KinerjaGuru: React.FC = () => {
               supabase.from('journals').select('teacher_id, hours').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', firstDayStr).lte('created_at', endDayStr)
           ]);
 
-          const excludedNames = ['Guru Baru', 'Agung Budiartati, M.Pd.', 'Dra.Laily Asriyah, M.Pd.I.'];
-          const allTeachers = (profilesRes.data || []).filter(t => 
-            !excludedNames.includes(t.full_name) &&
-            (t.role as string) !== 'admin' &&
-            (t.role as string) !== 'administrator' &&
-            t.role?.toLowerCase() !== 'admin' &&
-            !t.full_name?.toLowerCase().includes('admin')
-          );
+          const allTeachers = (profilesRes.data || []).filter(isOfficialTeacher);
           const allSchedules = schedulesRes.data || [];
           const allJournals = journalsRes.data || [];
           const dayCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };

@@ -27,6 +27,7 @@ export interface Student {
   academic_year?: string;
   gender?: 'L' | 'P';
   jenjang?: string;
+  no_absen?: number | null;
 }
 
 export interface Schedule {

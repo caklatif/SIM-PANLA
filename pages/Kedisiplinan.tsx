@@ -3,9 +3,9 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/Layout';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { ShieldAlert, Loader2, Save, Plus, Trash2, Check, ChevronDown, X, Filter, Search, Gavel, User, Calendar, ChevronUp } from 'lucide-react';
+import { ShieldAlert, Loader2, Save, Plus, Trash2, Check, ChevronDown, X, Filter, Search, Gavel, User, Calendar, ChevronUp, Printer, Download, FileSpreadsheet } from 'lucide-react';
 import { Student } from '../types';
-import { getWIBISOString } from '../utils/dateUtils';
+import { getWIBISOString, formatDateIndo, formatDateSignature } from '../utils/dateUtils';
 import { showAlert, showConfirm } from '../utils/alert';
 
 interface NoteItem {
@@ -28,7 +28,11 @@ interface DisciplineData {
     }[];
 }
 
-const Kedisiplinan: React.FC = () => {
+interface KedisiplinanProps {
+  embedded?: boolean;
+}
+
+export const Kedisiplinan: React.FC<KedisiplinanProps> = ({ embedded = false }) => {
   const { profile, academicYear, semester , semesterStart, semesterEnd } = useAuth();
   const [loading, setLoading] = useState(false);
   
@@ -47,6 +51,8 @@ const Kedisiplinan: React.FC = () => {
 
   // Data
   const [reportData, setReportData] = useState<DisciplineData[]>([]);
+  const [settings, setSettings] = useState<{ [key: string]: string }>({});
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   // --- INPUT FORM STATE (ACCORDION) ---
   const [showInputForm, setShowInputForm] = useState(false);
@@ -110,10 +116,13 @@ useEffect(() => {
         }
 
         if (settingsRes.data) {
+            const settingsMap: { [key: string]: string } = {};
             settingsRes.data.forEach(item => {
+                settingsMap[item.key] = item.value;
                 if (item.key === 'discipline_types') setDisciplineTypes(item.value ? JSON.parse(item.value) : []);
                 if (item.key === 'follow_up_types') setFollowUpTypes(item.value ? JSON.parse(item.value) : []);
             });
+            setSettings(settingsMap);
         }
     } catch (e) { console.error(e); }
   };
@@ -423,10 +432,54 @@ useEffect(() => {
       );
   };
 
-  return (
-    <Layout>
-      <div className="space-y-6">
-         {/* HEADER */}
+  const handleExportExcel = () => {
+    if (reportData.length === 0) {
+      showAlert("Tidak ada data kedisiplinan untuk diekspor.");
+      return;
+    }
+
+    let csv = "No,NISN,Nama Siswa,Kelas,Total Alpa,Tanggal Alpa,Total Pelanggaran,Rincian Pelanggaran\n";
+    reportData.forEach((item, idx) => {
+      const alpaCount = item.alpaCount || 0;
+      const alpaDates = item.alpaDates && item.alpaDates.length > 0 ? item.alpaDates.join('; ') : '-';
+      const totalViolations = item.violations ? item.violations.length : 0;
+      const violationDetails = (item.violations && item.violations.length > 0)
+        ? item.violations.map(v => `[${v.date}] ${v.category}${v.note ? ` (${v.note})` : ''} - Pelapor: ${v.reporter}`).join(' | ')
+        : '-';
+
+      const row = [
+        idx + 1,
+        `"${item.student.nisn || '-'}"`,
+        `"${(item.student.name || '').replace(/"/g, '""')}"`,
+        `"${item.student.kelas || '-'}"`,
+        alpaCount,
+        `"${alpaDates.replace(/"/g, '""')}"`,
+        totalViolations,
+        `"${violationDetails.replace(/"/g, '""')}"`
+      ];
+      csv += row.join(',') + '\n';
+    });
+
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Laporan_Kedisiplinan_BK_${selectedClass || 'Semua_Kelas'}_${startDate}_sd_${endDate}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrint = () => {
+    setShowPrintModal(true);
+  };
+
+  const handlePrintExecution = () => {
+    window.print();
+  };
+
+  const mainContent = (
+    <div className="space-y-6">
+       {/* HEADER */}
          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
              <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 text-white flex items-center justify-center shadow-sm">
@@ -629,14 +682,36 @@ useEffect(() => {
                     </div>
                 </div>
             </div>
-            <button 
-                onClick={fetchReportData} 
-                disabled={loading}
-                className="w-full md:w-auto bg-slate-800 hover:bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all"
-            >
-                {loading ? <Loader2 className="animate-spin" size={16}/> : <Search size={16} />} 
-                Tampilkan
-            </button>
+            <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
+              <button 
+                  onClick={fetchReportData} 
+                  disabled={loading}
+                  className="flex-1 md:flex-none bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
+              >
+                  {loading ? <Loader2 className="animate-spin" size={14}/> : <Search size={14} />} 
+                  <span>Tampilkan</span>
+              </button>
+              <button 
+                  type="button"
+                  onClick={handleExportExcel}
+                  disabled={loading || reportData.length === 0}
+                  className="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                  title="Download data kedisiplinan & alpa format Excel (CSV)"
+              >
+                  <FileSpreadsheet size={14} /> 
+                  <span>Download Excel</span>
+              </button>
+              <button 
+                  type="button"
+                  onClick={handlePrint}
+                  disabled={loading || reportData.length === 0}
+                  className="flex-1 md:flex-none bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                  title="Pratinjau Cetak Dokumen Resmi Kedisiplinan & BK (PDF)"
+              >
+                  <Printer size={14} /> 
+                  <span>Cetak / PDF</span>
+              </button>
+            </div>
          </div>
 
          {/* TABLE DATA */}
@@ -701,7 +776,200 @@ useEffect(() => {
                  Menampilkan {reportData.length} siswa dengan catatan kedisiplinan.
              </div>
          </div>
+
+         {/* MODAL PRINT PREVIEW KEDISIPLINAN & BK */}
+         {showPrintModal && (
+           <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-start justify-center p-3 sm:p-6 overflow-y-auto">
+             <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl overflow-hidden my-4">
+               {/* HEADER MODAL (NO PRINT) */}
+               <div className="no-print bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between border-b border-slate-800">
+                 <div className="flex items-center gap-3">
+                   <div className="w-10 h-10 rounded-xl bg-rose-600 flex items-center justify-center text-white">
+                     <Printer size={20} />
+                   </div>
+                   <div>
+                     <h3 className="font-bold text-base">Pratinjau Cetak Laporan Kedisiplinan & BK</h3>
+                     <p className="text-xs text-slate-400">Pastikan seluruh data pelanggaran dan alpa sudah sesuai sebelum dicetak.</p>
+                   </div>
+                 </div>
+                 <div className="flex items-center gap-3">
+                   <button
+                     type="button"
+                     onClick={handlePrintExecution}
+                     className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-2 active:scale-95"
+                   >
+                     <Printer size={16} /> Cetak Sekarang (Print / PDF)
+                   </button>
+                   <button
+                     type="button"
+                     onClick={() => setShowPrintModal(false)}
+                     className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-colors"
+                   >
+                     <X size={20} />
+                   </button>
+                 </div>
+               </div>
+
+               {/* PRINTABLE AREA */}
+               <div id="printable-kedisiplinan" className="p-6 sm:p-10 bg-white text-black space-y-6">
+                 {/* KOP SURAT */}
+                 <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none', borderBottom: '3px double #000', paddingBottom: '10px', marginBottom: '14px' }}>
+                   <tbody>
+                     <tr style={{ border: 'none' }}>
+                       <td style={{ width: '85px', verticalAlign: 'middle', textAlign: 'center', border: 'none', padding: '0 10px 10px 0' }}>
+                         <img 
+                           src="https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0" 
+                           alt="Logo Sekolah" 
+                           style={{ height: '75px', width: 'auto', display: 'block', margin: '0 auto', objectFit: 'contain' }}
+                         />
+                       </td>
+                       <td style={{ verticalAlign: 'middle', textAlign: 'center', border: 'none', padding: '0 85px 10px 0' }}>
+                         <div style={{ fontSize: '13px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#1e293b', lineHeight: '1.25' }}>PEMERINTAH KOTA PASURUAN</div>
+                         <div style={{ fontSize: '13px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#1e293b', lineHeight: '1.25', marginTop: '2px' }}>DINAS PENDIDIKAN DAN KEBUDAYAAN</div>
+                         <div style={{ fontSize: '18px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#000', lineHeight: '1.2', margin: '3px 0' }}>UPT SMP NEGERI 8 PASURUAN</div>
+                         <div style={{ fontSize: '11px', fontStyle: 'italic', color: '#475569', lineHeight: '1.3' }}>
+                           {settings.school_address || 'Jl. KH Mansyur No. 162, Sekargadung, Kec. Purworejo, Kota Pasuruan, Jawa Timur 67127 | Telp: (0343) 422108'}
+                         </div>
+                       </td>
+                     </tr>
+                   </tbody>
+                 </table>
+
+                 {/* JUDUL LAPORAN */}
+                 <div style={{ textAlign: 'center', margin: '0 0 16px 0' }}>
+                   <h3 style={{ fontSize: '14px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#000', textDecoration: 'underline', margin: '0 0 4px 0' }}>
+                     REKAPITULASI LAPORAN KEDISIPLINAN & TATA TERTIB SISWA
+                   </h3>
+                   <div style={{ fontSize: '11px', color: '#334155', fontWeight: '600' }}>
+                     Tahun Pelajaran: {academicYear || '2025/2026'} | Semester {semester || '1'}
+                   </div>
+                   <div style={{ fontSize: '11px', color: '#334155', fontWeight: '600' }}>
+                     Periode: {formatDateIndo(startDate)} s.d. {formatDateIndo(endDate)} | Kelas: {selectedClass || 'Semua Kelas'}
+                   </div>
+                 </div>
+
+                 {/* TABEL DATA KEDISIPLINAN */}
+                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', border: '1px solid #334155' }}>
+                   <thead>
+                     <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #334155' }}>
+                       <th style={{ border: '1px solid #334155', padding: '6px 8px', width: '35px', textAlign: 'center' }}>NO</th>
+                       <th style={{ border: '1px solid #334155', padding: '6px 8px', width: '90px', textAlign: 'center' }}>NISN</th>
+                       <th style={{ border: '1px solid #334155', padding: '6px 8px', textAlign: 'left', width: '180px' }}>NAMA SISWA</th>
+                       <th style={{ border: '1px solid #334155', padding: '6px 8px', width: '60px', textAlign: 'center' }}>KELAS</th>
+                       <th style={{ border: '1px solid #334155', padding: '6px 8px', width: '130px', textAlign: 'center' }}>KETIDAKHADIRAN</th>
+                       <th style={{ border: '1px solid #334155', padding: '6px 8px', textAlign: 'left' }}>RINCIAN PELANGGARAN & TINDAK LANJUT</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {reportData.map((item, idx) => (
+                       <tr key={idx} style={{ borderBottom: '1px solid #cbd5e1' }}>
+                         <td style={{ border: '1px solid #cbd5e1', padding: '6px 8px', textAlign: 'center', verticalAlign: 'top' }}>{idx + 1}</td>
+                         <td style={{ border: '1px solid #cbd5e1', padding: '6px 8px', textAlign: 'center', verticalAlign: 'top', fontFamily: 'monospace' }}>{item.student.nisn || '-'}</td>
+                         <td style={{ border: '1px solid #cbd5e1', padding: '6px 8px', fontWeight: 'bold', verticalAlign: 'top' }}>{item.student.name}</td>
+                         <td style={{ border: '1px solid #cbd5e1', padding: '6px 8px', textAlign: 'center', verticalAlign: 'top' }}>{item.student.kelas}</td>
+                         <td style={{ border: '1px solid #cbd5e1', padding: '6px 8px', verticalAlign: 'top' }}>
+                           {item.alpaCount > 0 ? (
+                             <div>
+                               <strong style={{ color: '#b91c1c' }}>Alpa: {item.alpaCount} Hari</strong>
+                               <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>
+                                 {item.alpaDates.join(', ')}
+                               </div>
+                             </div>
+                           ) : (
+                             <span style={{ color: '#059669', fontStyle: 'italic' }}>Tidak Ada Alpa</span>
+                           )}
+                         </td>
+                         <td style={{ border: '1px solid #cbd5e1', padding: '6px 8px', verticalAlign: 'top' }}>
+                           {item.violations && item.violations.length > 0 ? (
+                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                               {item.violations.map((v) => (
+                                 <div key={v.id} style={{ fontSize: '10.5px', lineHeight: '1.3' }}>
+                                   • <strong>{v.category}</strong> ({v.date})
+                                   {v.note && <span style={{ fontStyle: 'italic', color: '#334155' }}> - "{v.note}"</span>}
+                                   <span style={{ fontSize: '9.5px', color: '#64748b' }}> [Pelapor: {v.reporter}]</span>
+                                 </div>
+                               ))}
+                             </div>
+                           ) : (
+                             <span style={{ color: '#64748b', fontStyle: 'italic' }}>Nihil catatan pelanggaran</span>
+                           )}
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+
+                 {/* TANDA TANGAN */}
+                 <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none', marginTop: '30px', pageBreakInside: 'avoid' }}>
+                   <tbody>
+                     <tr style={{ border: 'none' }}>
+                       <td style={{ width: '50%', textAlign: 'center', border: 'none', verticalAlign: 'top', padding: '0 20px' }}>
+                         <div style={{ fontSize: '11px', color: '#000' }}>Mengetahui,</div>
+                         <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#000', marginBottom: '60px' }}>
+                           Kepala UPT SMP Negeri 8 Pasuruan
+                         </div>
+                         <div style={{ fontSize: '11px', fontWeight: 'bold', textDecoration: 'underline', color: '#000' }}>
+                           {settings.headmaster || 'ARIF SYAIFURROHMAN, S.Pd'}
+                         </div>
+                         <div style={{ fontSize: '11px', color: '#000' }}>
+                           NIP. {settings.headmaster_nip || '198106202009041003'}
+                         </div>
+                       </td>
+                       <td style={{ width: '50%', textAlign: 'center', border: 'none', verticalAlign: 'top', padding: '0 20px' }}>
+                         <div style={{ fontSize: '11px', color: '#000' }}>Pasuruan, {formatDateSignature(new Date())}</div>
+                         <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#000', marginBottom: '60px' }}>
+                           Guru BK / Koordinator Ketertiban
+                         </div>
+                         <div style={{ fontSize: '11px', fontWeight: 'bold', textDecoration: 'underline', color: '#000' }}>
+                           {profile?.full_name || '...........................................'}
+                         </div>
+                         <div style={{ fontSize: '11px', color: '#000' }}>
+                           NIP. {profile?.nip || '...........................................'}
+                         </div>
+                       </td>
+                     </tr>
+                   </tbody>
+                 </table>
+               </div>
+             </div>
+           </div>
+         )}
+
+         {/* PRINT CSS */}
+         <style>{`
+           @media print {
+             body * {
+               visibility: hidden !important;
+             }
+             #printable-kedisiplinan, #printable-kedisiplinan * {
+               visibility: visible !important;
+             }
+             #printable-kedisiplinan {
+               position: absolute !important;
+               left: 0 !important;
+               top: 0 !important;
+               width: 100% !important;
+               margin: 0 !important;
+               padding: 10mm !important;
+               background: white !important;
+               color: black !important;
+               box-shadow: none !important;
+             }
+             .no-print {
+               display: none !important;
+             }
+           }
+         `}</style>
       </div>
+  );
+
+  if (embedded) {
+    return mainContent;
+  }
+
+  return (
+    <Layout>
+      {mainContent}
     </Layout>
   );
 };
