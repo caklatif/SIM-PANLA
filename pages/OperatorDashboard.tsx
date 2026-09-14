@@ -115,6 +115,7 @@ const OperatorDashboard: React.FC = () => {
   const [showOperatorInputForm, setShowOperatorInputForm] = useState(false);
   const [selectedOperatorClass, setSelectedOperatorClass] = useState("7A");
   const [operatorStudents, setOperatorStudents] = useState<any[]>([]);
+  const [searchOperatorStudent, setSearchOperatorStudent] = useState("");
   const [operatorAttendance, setOperatorAttendance] = useState<
     Record<string, "S" | "I" | "A" | "D">
   >({});
@@ -132,8 +133,7 @@ const OperatorDashboard: React.FC = () => {
         .from("students")
         .select("*")
         .eq("academic_year", academicYear || "2025/2026")
-        .eq("kelas", kelas)
-        .order("name");
+        .eq("kelas", kelas);
 
       if (
         errSt &&
@@ -142,12 +142,19 @@ const OperatorDashboard: React.FC = () => {
         const fallback = await supabase
           .from("students")
           .select("*")
-          .eq("kelas", kelas)
-          .order("name");
+          .eq("kelas", kelas);
         stData = fallback.data || [];
       }
 
-      setOperatorStudents(stData || []);
+      const sorted = (stData || []).sort((a: any, b: any) => {
+        if (a.no_absen != null && b.no_absen != null) return a.no_absen - b.no_absen;
+        if (a.no_absen != null) return -1;
+        if (b.no_absen != null) return 1;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+
+      setOperatorStudents(sorted);
+      setSearchOperatorStudent("");
 
       const { data: hData } = await supabase
         .from("homeroom_attendance")
@@ -1174,6 +1181,30 @@ const OperatorDashboard: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Quick Search Bar */}
+                    <div className="relative">
+                      <Search
+                        size={14}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                      />
+                      <input
+                        type="text"
+                        value={searchOperatorStudent}
+                        onChange={(e) => setSearchOperatorStudent(e.target.value)}
+                        placeholder={`Cari nama siswa atau no. absen di kelas ${selectedOperatorClass}...`}
+                        className="w-full pl-8 pr-8 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-purple-500 text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                      />
+                      {searchOperatorStudent && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchOperatorStudent("")}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+
                     {/* Student List */}
                     {loadingStudents ? (
                       <div className="flex justify-center py-8">
@@ -1187,12 +1218,13 @@ const OperatorDashboard: React.FC = () => {
                         Tidak ada data murid di kelas {selectedOperatorClass}.
                       </div>
                     ) : (
-                      <div className="max-h-[300px] overflow-y-auto custom-scrollbar border border-slate-100 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-700/30">
-                        <div className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600 px-3 py-2 flex items-center text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase">
-                          <div className="flex-1">
-                            NAMA MURID (KELAS {selectedOperatorClass})
+                      <div className="max-h-[340px] overflow-y-auto custom-scrollbar border border-slate-100 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-700/30">
+                        <div className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600 px-3 py-2 flex items-center text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase gap-2">
+                          <div className="w-9 text-center flex-shrink-0">NO</div>
+                          <div className="flex-1 min-w-0">
+                            NAMA SISWA (KELAS {selectedOperatorClass})
                           </div>
-                          <div className="flex gap-1.5 w-32 justify-end">
+                          <div className="flex gap-1.5 w-32 justify-end flex-shrink-0">
                             <span className="w-7 text-center">S</span>
                             <span className="w-7 text-center">I</span>
                             <span className="w-7 text-center">D</span>
@@ -1200,44 +1232,64 @@ const OperatorDashboard: React.FC = () => {
                           </div>
                         </div>
                         <div className="divide-y divide-slate-100 dark:divide-slate-700">
-                          {operatorStudents.map((student) => (
-                            <div
-                              key={student.id}
-                              className="flex items-center justify-between px-3 py-2 hover:bg-white dark:hover:bg-slate-600/50 transition-colors"
-                            >
-                              <div className="flex-1 pr-2">
-                                <p className="text-xs font-bold text-slate-700 dark:text-slate-200 line-clamp-1">
-                                  {student.name}
-                                </p>
-                              </div>
-                              <div className="flex gap-1.5 w-32 justify-end">
-                                {(["S", "I", "D", "A"] as const).map((status) => (
-                                  <button
-                                    key={status}
-                                    onClick={() =>
-                                      toggleOperatorStudentStatus(
-                                        student.id,
-                                        status,
-                                      )
-                                    }
-                                    className={`w-7 h-7 rounded-md flex items-center justify-center border transition-all text-[10px] font-bold ${
-                                      operatorAttendance[student.id] === status
-                                        ? status === "S"
-                                          ? "bg-yellow-500 border-yellow-600 text-white"
-                                          : status === "I"
-                                            ? "bg-blue-500 border-blue-600 text-white"
-                                            : status === "D"
-                                              ? "bg-purple-600 border-purple-700 text-white"
-                                              : "bg-rose-600 border-rose-700 text-white"
-                                        : "border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
-                                    }`}
-                                  >
-                                    {status}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
+                          {operatorStudents
+                            .filter((s) => {
+                              if (!searchOperatorStudent.trim()) return true;
+                              const q = searchOperatorStudent.toLowerCase();
+                              return (
+                                (s.name || "").toLowerCase().includes(q) ||
+                                String(s.no_absen || "").includes(q)
+                              );
+                            })
+                            .map((student, idx) => {
+                              const displayNo =
+                                student.no_absen != null
+                                  ? String(student.no_absen).padStart(2, "0")
+                                  : String(idx + 1).padStart(2, "0");
+                              return (
+                                <div
+                                  key={student.id}
+                                  className="flex items-center justify-between px-3 py-2.5 hover:bg-white dark:hover:bg-slate-600/50 transition-colors gap-2.5"
+                                >
+                                  <div className="w-9 flex-shrink-0 flex justify-center">
+                                    <span className="inline-flex items-center justify-center min-w-[26px] h-6 px-1.5 rounded-md bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 font-mono text-[11px] font-extrabold shadow-2xs">
+                                      {displayNo}
+                                    </span>
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-slate-800 dark:text-slate-100 break-words leading-snug">
+                                      {student.name}
+                                    </p>
+                                  </div>
+                                  <div className="flex gap-1.5 w-32 justify-end flex-shrink-0">
+                                    {(["S", "I", "D", "A"] as const).map((status) => (
+                                      <button
+                                        key={status}
+                                        onClick={() =>
+                                          toggleOperatorStudentStatus(
+                                            student.id,
+                                            status
+                                          )
+                                        }
+                                        className={`w-7 h-7 rounded-md flex items-center justify-center border transition-all text-[10px] font-bold ${
+                                          operatorAttendance[student.id] === status
+                                            ? status === "S"
+                                              ? "bg-yellow-500 border-yellow-600 text-white shadow-xs"
+                                              : status === "I"
+                                                ? "bg-blue-500 border-blue-600 text-white shadow-xs"
+                                                : status === "D"
+                                                  ? "bg-purple-600 border-purple-700 text-white shadow-xs"
+                                                  : "bg-rose-600 border-rose-700 text-white shadow-xs"
+                                            : "border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
+                                        }`}
+                                      >
+                                        {status}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
                         </div>
                       </div>
                     )}

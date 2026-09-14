@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
@@ -137,7 +137,7 @@ if (typeof window !== "undefined") {
 
 export default function PresensiQR() {
   const navigate = useNavigate();
-  const { academicYear, profile } = useAuth();
+  const { academicYear, profile, isKbmRestricted } = useAuth();
   const isAdmin = profile?.role === "admin";
   const isOperator = profile?.role === "operator";
   const isAdminOrOperator = isAdmin || isOperator;
@@ -171,30 +171,38 @@ export default function PresensiQR() {
   const currentUserNip = profile?.nip?.trim();
   const currentUserName = profile?.full_name?.trim();
 
-  const assignedPembinaConfig = pembinaEkstraList.find(
-    (item) =>
-      (currentUserNip && item.nip && item.nip.trim() === currentUserNip) ||
-      (currentUserName &&
-        item.nama &&
-        item.nama.toLowerCase().trim() === currentUserName.toLowerCase()),
-  );
+  const assignedPembinaConfig = useMemo(() => {
+    return pembinaEkstraList.find(
+      (item) =>
+        (currentUserNip && item.nip && item.nip.trim() === currentUserNip) ||
+        (currentUserName &&
+          item.nama &&
+          item.nama.toLowerCase().trim() === currentUserName.toLowerCase()),
+    );
+  }, [pembinaEkstraList, currentUserNip, currentUserName]);
 
   const isPembina = !!assignedPembinaConfig;
-  const isPembinaRole = profile?.role === "pembina_ekstra" || isPembina;
+  // Akun khusus pelatih luar (bukan guru): role === 'pembina_ekstra' atau NIP pembina eksternal (KBM Restricted)
+  const isDedicatedPembina = profile?.role === "pembina_ekstra" || !!isKbmRestricted;
+  // Flag umum jika membina ekstra
+  const isPembinaRole = isDedicatedPembina || isPembina;
   const canScan = true; // Presensi QR aktif untuk semua guru tanpa batasan
 
   // Allowed Ekstra list for current user (dikunci khusus untuk Pembina Ekstra yang dikelola Admin)
-  const allowedEkstraForUser = isAdmin
-    ? EKSTRA_LIST
-    : isPembina &&
-        assignedPembinaConfig?.ekstraList &&
-        assignedPembinaConfig.ekstraList.length > 0
-      ? assignedPembinaConfig.ekstraList.includes("Semua")
-        ? EKSTRA_LIST
-        : EKSTRA_LIST.filter((e) =>
-            assignedPembinaConfig.ekstraList.includes(e),
-          )
-      : [];
+  const allowedEkstraForUser = useMemo<string[]>(() => {
+    if (isAdmin) return EKSTRA_LIST;
+    if (
+      (isPembina || isDedicatedPembina) &&
+      assignedPembinaConfig?.ekstraList &&
+      assignedPembinaConfig.ekstraList.length > 0
+    ) {
+      if (assignedPembinaConfig.ekstraList.includes("Semua")) return EKSTRA_LIST;
+      return EKSTRA_LIST.filter((e: string) =>
+        assignedPembinaConfig.ekstraList.includes(e),
+      );
+    }
+    return [];
+  }, [isAdmin, isPembina, isDedicatedPembina, assignedPembinaConfig]);
 
   // Mode & Tabs
   const [activeTab, setActiveTab] = useState<
@@ -211,7 +219,8 @@ export default function PresensiQR() {
     return "scan";
   });
   const [presensiMode, setPresensiMode] = useState<PresensiMode>(() => {
-    if (profile?.role === "pembina_ekstra" || isPembina) {
+    // Hanya akun khusus pelatih luar (bukan Guru) yang otomatis default ke "ekstra"
+    if (profile?.role === "pembina_ekstra" || isKbmRestricted) {
       return "ekstra";
     }
     return "harian";
@@ -232,17 +241,25 @@ export default function PresensiQR() {
     selectedEkstraRef.current = selectedEkstra;
   }, [selectedEkstra]);
 
-  // Otomatis arahkan ke Presensi Kegiatan Ekstra saat role pembina ekstra aktif
+  // Otomatis arahkan ke Presensi Kegiatan Ekstra HANYA jika akun adalah Pelatih Ekstra Khusus (bukan akun Guru)
+  // Untuk akun Guru yang juga pembina ekstrakurikuler, TETAP BISA bebas memilih Scan Masuk, Sholat Dhuha, Dzuhur, atau Ekstra
   useEffect(() => {
-    if (isPembinaRole) {
+    if (isDedicatedPembina) {
       setPresensiMode("ekstra");
       presensiModeRef.current = "ekstra";
-      if (allowedEkstraForUser.length > 0 && (!selectedEkstra || !allowedEkstraForUser.includes(selectedEkstra))) {
+      if (
+        allowedEkstraForUser.length > 0 &&
+        (!selectedEkstra || !allowedEkstraForUser.includes(selectedEkstra))
+      ) {
         setSelectedEkstra(allowedEkstraForUser[0]);
         selectedEkstraRef.current = allowedEkstraForUser[0];
       }
+    } else if (isPembina && allowedEkstraForUser.length > 0 && !selectedEkstra) {
+      // Guru yang membina ekstra: siapkan jenis ekstra tanpa mengunci mode presensi
+      setSelectedEkstra(allowedEkstraForUser[0]);
+      selectedEkstraRef.current = allowedEkstraForUser[0];
     }
-  }, [isPembinaRole, allowedEkstraForUser]);
+  }, [isDedicatedPembina, isPembina, allowedEkstraForUser, selectedEkstra]);
 
   // Visual Activity Badge Helper for Teacher Monitoring
   const getActivityBadge = (mode: PresensiMode | string, subject?: string) => {
@@ -1765,6 +1782,15 @@ export default function PresensiQR() {
 
   // Handler for Activity Mode Selection (Scan Masuk / Dhuha / Dzuhur / Ekstra)
   const handleSelectMode = async (newMode: PresensiMode) => {
+    // Kunci hanya berlaku untuk akun khusus pelatih luar (bukan Guru)
+    if (isDedicatedPembina && newMode !== "ekstra") {
+      showAlert(
+        "Akun Pelatih Ekstrakurikuler dikhususkan untuk presensi kegiatan ekstrakurikuler binaan. Untuk presensi gerbang & sholat, silakan gunakan akun Guru / Petugas Piket.",
+        "Akses Khusus Ekstrakurikuler",
+      );
+      return;
+    }
+
     if (newMode === "ekstra" && allowedEkstraForUser.length === 0 && !isAdmin) {
       showAlert(
         "Pilihan Ekstrakurikuler hanya tersedia untuk Guru yang telah ditunjuk sebagai Pembina Ekstrakurikuler di Dashboard Admin.",
@@ -2562,10 +2588,15 @@ export default function PresensiQR() {
                     <UserCheck size={14} /> Administrator (Akses Penuh Scan &
                     Pengelolaan)
                   </span>
+                ) : isDedicatedPembina ? (
+                  <span className="text-emerald-300 flex items-center gap-1.5">
+                    <Trophy size={14} /> Pelatih Ekstra:{" "}
+                    {assignedPembinaConfig?.ekstraList?.join(", ") || "Aktif"} (Khusus Ekstrakurikuler)
+                  </span>
                 ) : isPembina ? (
                   <span className="text-emerald-300 flex items-center gap-1.5">
-                    <Trophy size={14} /> Pembina Ekstra:{" "}
-                    {assignedPembinaConfig?.ekstraList?.join(", ") || "Aktif"}
+                    <Trophy size={14} /> Guru & Pembina Ekstra:{" "}
+                    {assignedPembinaConfig?.ekstraList?.join(", ") || "Aktif"} (Akses Penuh Gerbang, Sholat & Ekstra)
                   </span>
                 ) : (
                   <span className="text-purple-300 flex items-center gap-1.5">
@@ -2621,8 +2652,8 @@ export default function PresensiQR() {
               <span>Scanner QR Kamera / Gun</span>
             </button>
 
-            {/* Pintasan ke Pusat Laporan (Sembunyikan untuk Pembina Ekstra) */}
-            {!isPembinaRole && (
+            {/* Pintasan ke Pusat Laporan (Hanya disembunyikan untuk akun Pelatih Ekstra Eksternal) */}
+            {!isDedicatedPembina && (
               <button
                 type="button"
                 onClick={() => {
@@ -2733,10 +2764,13 @@ export default function PresensiQR() {
                       <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-2xl border border-slate-800">
                         <button
                           onClick={() => handleSelectMode("harian")}
+                          disabled={isDedicatedPembina}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                            presensiMode === "harian"
-                              ? "bg-purple-600 text-white shadow-md shadow-purple-600/40"
-                              : "text-slate-400 hover:text-slate-200"
+                            isDedicatedPembina
+                              ? "opacity-30 cursor-not-allowed text-slate-500"
+                              : presensiMode === "harian"
+                                ? "bg-purple-600 text-white shadow-md shadow-purple-600/40"
+                                : "text-slate-400 hover:text-slate-200"
                           }`}
                         >
                           <ShieldCheck size={14} />
@@ -2745,10 +2779,13 @@ export default function PresensiQR() {
 
                         <button
                           onClick={() => handleSelectMode("dhuha")}
+                          disabled={isDedicatedPembina}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                            presensiMode === "dhuha"
-                              ? "bg-amber-500 text-white shadow-md shadow-amber-500/40"
-                              : "text-slate-400 hover:text-slate-200"
+                            isDedicatedPembina
+                              ? "opacity-30 cursor-not-allowed text-slate-500"
+                              : presensiMode === "dhuha"
+                                ? "bg-amber-500 text-white shadow-md shadow-amber-500/40"
+                                : "text-slate-400 hover:text-slate-200"
                           }`}
                         >
                           <Sun size={14} />
@@ -2757,10 +2794,13 @@ export default function PresensiQR() {
 
                         <button
                           onClick={() => handleSelectMode("dzuhur")}
+                          disabled={isDedicatedPembina}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                            presensiMode === "dzuhur"
-                              ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/40"
-                              : "text-slate-400 hover:text-slate-200"
+                            isDedicatedPembina
+                              ? "opacity-30 cursor-not-allowed text-slate-500"
+                              : presensiMode === "dzuhur"
+                                ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/40"
+                                : "text-slate-400 hover:text-slate-200"
                           }`}
                         >
                           <Sun size={14} />
@@ -3165,10 +3205,13 @@ export default function PresensiQR() {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <button
                         onClick={() => handleSelectMode("harian")}
+                        disabled={isDedicatedPembina}
                         className={`p-3 rounded-2xl border text-left transition-all ${
-                          presensiMode === "harian"
-                            ? "bg-purple-50 dark:bg-purple-950/40 border-purple-500 dark:border-purple-600 text-purple-900 dark:text-purple-200 shadow-sm ring-2 ring-purple-500/20"
-                            : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300"
+                          isDedicatedPembina
+                            ? "opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900"
+                            : presensiMode === "harian"
+                              ? "bg-purple-50 dark:bg-purple-950/40 border-purple-500 dark:border-purple-600 text-purple-900 dark:text-purple-200 shadow-sm ring-2 ring-purple-500/20"
+                              : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300 active:scale-95"
                         }`}
                       >
                         <div className="flex items-center gap-2 font-bold text-xs mb-1">
@@ -3176,16 +3219,19 @@ export default function PresensiQR() {
                           <span>Scan Masuk</span>
                         </div>
                         <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                          Presensi Harian Gerbang
+                          {isDedicatedPembina ? "Khusus Akun Guru" : "Presensi Harian Gerbang"}
                         </div>
                       </button>
 
                       <button
                         onClick={() => handleSelectMode("dhuha")}
+                        disabled={isDedicatedPembina}
                         className={`p-3 rounded-2xl border text-left transition-all ${
-                          presensiMode === "dhuha"
-                            ? "bg-amber-50 dark:bg-amber-950/40 border-amber-500 dark:border-amber-600 text-amber-900 dark:text-amber-200 shadow-sm ring-2 ring-amber-500/20"
-                            : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300"
+                          isDedicatedPembina
+                            ? "opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900"
+                            : presensiMode === "dhuha"
+                              ? "bg-amber-50 dark:bg-amber-950/40 border-amber-500 dark:border-amber-600 text-amber-900 dark:text-amber-200 shadow-sm ring-2 ring-amber-500/20"
+                              : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300 active:scale-95"
                         }`}
                       >
                         <div className="flex items-center gap-2 font-bold text-xs mb-1">
@@ -3193,16 +3239,19 @@ export default function PresensiQR() {
                           <span>Sholat Dhuha</span>
                         </div>
                         <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                          Presensi Dhuha Berjamaah
+                          {isDedicatedPembina ? "Khusus Akun Guru" : "Presensi Dhuha Berjamaah"}
                         </div>
                       </button>
 
                       <button
                         onClick={() => handleSelectMode("dzuhur")}
+                        disabled={isDedicatedPembina}
                         className={`p-3 rounded-2xl border text-left transition-all ${
-                          presensiMode === "dzuhur"
-                            ? "bg-cyan-50 dark:bg-cyan-950/40 border-cyan-500 dark:border-cyan-600 text-cyan-900 dark:text-cyan-200 shadow-sm ring-2 ring-cyan-500/20"
-                            : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300"
+                          isDedicatedPembina
+                            ? "opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900"
+                            : presensiMode === "dzuhur"
+                              ? "bg-cyan-50 dark:bg-cyan-950/40 border-cyan-500 dark:border-cyan-600 text-cyan-900 dark:text-cyan-200 shadow-sm ring-2 ring-cyan-500/20"
+                              : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300 active:scale-95"
                         }`}
                       >
                         <div className="flex items-center gap-2 font-bold text-xs mb-1">
@@ -3210,7 +3259,7 @@ export default function PresensiQR() {
                           <span>Sholat Dzuhur</span>
                         </div>
                         <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                          Presensi Dzuhur Berjamaah
+                          {isDedicatedPembina ? "Khusus Akun Guru" : "Presensi Dzuhur Berjamaah"}
                         </div>
                       </button>
 
@@ -3219,7 +3268,7 @@ export default function PresensiQR() {
                         className={`p-3 rounded-2xl border text-left transition-all ${
                           presensiMode === "ekstra"
                             ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 dark:border-emerald-600 text-emerald-900 dark:text-emerald-200 shadow-sm ring-2 ring-emerald-500/20"
-                            : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300"
+                            : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300 active:scale-95"
                         }`}
                       >
                         <div className="flex items-center gap-2 font-bold text-xs mb-1">
