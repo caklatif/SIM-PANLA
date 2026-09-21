@@ -22,6 +22,7 @@ import {
   LogIn,
   ShieldCheck,
   CalendarOff,
+  AlertCircle,
 } from "lucide-react";
 import { showAlert, showConfirm } from "../utils/alert";
 import { formatDateSignature } from "../utils/dateUtils";
@@ -852,6 +853,62 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
     return dt.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
   }, [yearNum, monthNum]);
 
+  // Status styling & code metadata helper for colored preview & print output
+  const getPrintStatusInfo = (status?: string) => {
+    switch (status) {
+      case "Hadir":
+        return {
+          code: "✓",
+          className: "status-cell-hadir",
+          color: "#15803d", // emerald-700
+          bg: "#dcfce7",    // emerald-100
+          label: "Hadir Tepat Waktu",
+        };
+      case "Terlambat":
+        return {
+          code: "T",
+          className: "status-cell-terlambat",
+          color: "#b45309", // amber-700
+          bg: "#fef3c7",    // amber-100
+          label: "Terlambat",
+        };
+      case "Sakit":
+        return {
+          code: "S",
+          className: "status-cell-sakit",
+          color: "#1d4ed8", // blue-700
+          bg: "#dbeafe",    // blue-100
+          label: "Sakit",
+        };
+      case "Ijin":
+        return {
+          code: "I",
+          className: "status-cell-ijin",
+          color: "#7e22ce", // purple-700
+          bg: "#f3e8ff",    // purple-100
+          label: "Izin",
+        };
+      case "Dispen":
+        return {
+          code: "D",
+          className: "status-cell-dispen",
+          color: "#0f766e", // teal-700
+          bg: "#ccfbf1",    // teal-100
+          label: "Dispensasi",
+        };
+      case "Alpa":
+      case "Alpha":
+      default:
+        return {
+          code: "A",
+          className: "status-cell-alpa",
+          color: "#be123c", // rose-700
+          bg: "#ffe4e6",    // rose-100
+          label: "Alpa / Tanpa Keterangan",
+        };
+    }
+  };
+
   // Clean Print Execution with dedicated isolated iframe engine
   const handlePrintExecution = () => {
     const reportElem = document.getElementById("printable-matrix-scan-doc");
@@ -860,24 +917,39 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
       return;
     }
 
-    let printFrame = document.getElementById("scan-matrix-print-frame") as HTMLIFrameElement;
-    if (!printFrame) {
-      printFrame = document.createElement("iframe");
-      printFrame.id = "scan-matrix-print-frame";
-      printFrame.style.position = "fixed";
-      printFrame.style.right = "0";
-      printFrame.style.bottom = "0";
-      printFrame.style.width = "0";
-      printFrame.style.height = "0";
-      printFrame.style.border = "0";
-      printFrame.style.visibility = "hidden";
-      document.body.appendChild(printFrame);
+    // Clean up previous frame if any
+    const existing = document.getElementById("scan-matrix-print-frame");
+    if (existing) {
+      existing.remove();
     }
+
+    // Create an off-screen iframe (CRITICAL: do NOT use visibility:hidden or width:0/height:0,
+    // as Chromium will calculate a 0-sized viewport and skip painting, resulting in a blank print preview)
+    const printFrame = document.createElement("iframe");
+    printFrame.id = "scan-matrix-print-frame";
+    printFrame.style.position = "fixed";
+    printFrame.style.left = "-9999px";
+    printFrame.style.top = "0";
+    printFrame.style.width = "1024px";
+    printFrame.style.height = "768px";
+    printFrame.style.border = "none";
+    printFrame.style.opacity = "0";
+    printFrame.style.pointerEvents = "none";
+    printFrame.style.zIndex = "-9999";
+    document.body.appendChild(printFrame);
 
     const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
     if (!frameDoc || !printFrame.contentWindow) {
       window.print();
       return;
+    }
+
+    // Clone element and resolve image src from the currently rendered DOM
+    const clone = reportElem.cloneNode(true) as HTMLElement;
+    const liveImg = reportElem.querySelector("img");
+    const cloneImg = clone.querySelector("img");
+    if (liveImg && cloneImg) {
+      cloneImg.src = liveImg.currentSrc || liveImg.src;
     }
 
     frameDoc.open();
@@ -886,48 +958,51 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
       <html lang="id">
       <head>
         <meta charset="UTF-8">
+        <base href="${window.location.origin}/">
         <title>Rekapitulasi Presensi Scan Masuk - UPT SMP Negeri 8 Pasuruan</title>
         <style>
           @page {
             size: A4 landscape;
             margin: 6mm 8mm 6mm 8mm;
           }
-          * {
+          *, *::before, *::after {
             box-sizing: border-box;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+            color-adjust: exact !important;
           }
-          body {
+          html, body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            color: #000;
-            background: #fff;
-            margin: 0;
-            padding: 0;
-            font-size: 9px;
+            font-size: 8.5px;
             line-height: 1.25;
+            width: 100% !important;
           }
-          .text-center { text-align: center; }
-          .text-left { text-align: left; }
-          .text-right { text-align: right; }
-          .font-bold { font-weight: bold; }
-          .font-extrabold { font-weight: 800; }
-          .font-black { font-weight: 900; }
-          .uppercase { text-transform: uppercase; }
-          .underline { text-decoration: underline; }
-          .italic { font-style: italic; }
+          body, body * {
+            visibility: visible !important;
+          }
 
           /* KOP SURAT TABLE */
           table.kop-table {
             width: 100% !important;
             border-collapse: collapse !important;
             border: none !important;
-            border-bottom: 3px double #000 !important;
-            padding-bottom: 8px !important;
-            margin-bottom: 12px !important;
+            border-bottom: 3px double #000000 !important;
+            padding-bottom: 6px !important;
+            margin-bottom: 8px !important;
           }
           table.kop-table td, table.kop-table th, table.kop-table tr {
             border: none !important;
             background: transparent !important;
+          }
+          img {
+            max-height: 70px !important;
+            width: auto !important;
+            object-fit: contain !important;
+            display: block !important;
           }
 
           /* MATRIX TABLE */
@@ -935,11 +1010,11 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
             width: 100% !important;
             border-collapse: collapse !important;
             font-size: 8px !important;
-            margin-top: 6px !important;
+            margin-top: 4px !important;
             page-break-inside: auto !important;
           }
           table.matrix-table th, table.matrix-table td {
-            border: 1px solid #000 !important;
+            border: 1px solid #000000 !important;
             padding: 2.5px 1.5px !important;
             vertical-align: middle !important;
           }
@@ -955,36 +1030,127 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
             page-break-inside: avoid !important;
             page-break-after: auto !important;
           }
-          img {
-            max-height: 72px !important;
-            width: auto !important;
-            object-fit: contain !important;
+
+          /* CRITICAL COLOR RULES FOR STATUS PRINTING */
+          .status-cell-hadir, td.status-cell-hadir {
+            color: #15803d !important; /* emerald-700 */
+            background-color: #dcfce7 !important; /* emerald-100 */
+            font-weight: 900 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
+          .status-cell-terlambat, td.status-cell-terlambat {
+            color: #b45309 !important; /* amber-700 */
+            background-color: #fef3c7 !important; /* amber-100 */
+            font-weight: 900 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .status-cell-sakit, td.status-cell-sakit {
+            color: #1d4ed8 !important; /* blue-700 */
+            background-color: #dbeafe !important; /* blue-100 */
+            font-weight: 900 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .status-cell-ijin, td.status-cell-ijin {
+            color: #7e22ce !important; /* purple-700 */
+            background-color: #f3e8ff !important; /* purple-100 */
+            font-weight: 900 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .status-cell-dispen, td.status-cell-dispen {
+            color: #0f766e !important; /* teal-700 */
+            background-color: #ccfbf1 !important; /* teal-100 */
+            font-weight: 900 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .status-cell-alpa, td.status-cell-alpa {
+            color: #be123c !important; /* rose-700 */
+            background-color: #ffe4e6 !important; /* rose-100 */
+            font-weight: 900 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* FOOTNOTE & BADGES */
+          .flex { display: flex !important; }
+          .inline-flex { display: inline-flex !important; }
+          .items-center { align-items: center !important; }
+          .flex-wrap { flex-wrap: wrap !important; }
+          .gap-1 { gap: 4px !important; }
+          .gap-2 { gap: 8px !important; }
+          .gap-3 { gap: 12px !important; }
+          .gap-3\\.5 { gap: 14px !important; }
+          .gap-4 { gap: 16px !important; }
+          .gap-8 { gap: 32px !important; }
+          .border-t { border-top: 1px solid #cbd5e1 !important; }
+          .pt-2 { padding-top: 8px !important; }
+          .pt-6 { padding-top: 24px !important; }
+          .mb-14 { margin-bottom: 52px !important; }
+          .rounded { border-radius: 4px !important; }
+          .px-1 { padding-left: 4px !important; padding-right: 4px !important; }
+          .py-0\\.5 { padding-top: 2px !important; padding-bottom: 2px !important; }
+          .truncate { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+          .font-sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important; }
+          .font-serif { font-family: "Times New Roman", Times, Georgia, serif !important; }
+
+          /* SIGNATURES */
           .signature-grid {
             display: grid !important;
             grid-template-columns: 1fr 1fr !important;
             gap: 20px !important;
-            margin-top: 24px !important;
+            margin-top: 20px !important;
             text-align: center !important;
             font-size: 10px !important;
             page-break-inside: avoid !important;
           }
-          .no-print, .print\\:hidden {
-            display: none !important;
-          }
+
+          /* UTILITY HELPERS */
+          .text-center { text-align: center !important; }
+          .text-left { text-align: left !important; }
+          .text-right { text-align: right !important; }
+          .font-bold { font-weight: bold !important; }
+          .font-extrabold { font-weight: 800 !important; }
+          .font-black { font-weight: 900 !important; }
+          .font-semibold { font-weight: 600 !important; }
+          .uppercase { text-transform: uppercase !important; }
+          .underline { text-decoration: underline !important; }
+          .italic { font-style: italic !important; }
+          .no-print, .print\\:hidden { display: none !important; }
         </style>
       </head>
       <body>
-        ${reportElem.innerHTML}
+        <div id="printable-matrix-scan-doc">
+          ${clone.innerHTML}
+        </div>
       </body>
       </html>
     `);
     frameDoc.close();
 
-    setTimeout(() => {
-      printFrame.contentWindow?.focus();
-      printFrame.contentWindow?.print();
-    }, 350);
+    const doPrint = () => {
+      setTimeout(() => {
+        try {
+          printFrame.contentWindow?.focus();
+          printFrame.contentWindow?.print();
+        } catch (err) {
+          console.error("Iframe print error:", err);
+          window.print();
+        }
+      }, 300);
+    };
+
+    const frameImg = frameDoc.querySelector("img");
+    if (frameImg && !frameImg.complete) {
+      frameImg.onload = () => doPrint();
+      frameImg.onerror = () => doPrint();
+      setTimeout(doPrint, 800);
+    } else {
+      doPrint();
+    }
   };
 
   return (
@@ -1670,6 +1836,19 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
               </div>
             </div>
 
+            {/* Tips Cetak Berwarna Banner */}
+            <div className="no-print bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 flex items-start gap-3 text-xs text-emerald-900 print:hidden shadow-xs">
+              <AlertCircle className="text-emerald-600 shrink-0 mt-0.5" size={18} />
+              <div className="space-y-1">
+                <p className="font-bold text-[13px] text-emerald-950">
+                  Panduan Cetak Dokumen Agar Warna &amp; Logo Muncul Sempurna:
+                </p>
+                <p className="text-emerald-800 text-xs leading-relaxed">
+                  Pada jendela cetak printer (Print Preview browser), pastikan pengaturan <strong>Warna / Color</strong> diatur ke <strong>"Berwarna (Color)"</strong> (bukan Black and White) dan centang opsi <strong>"Grafik latar belakang (Background graphics)"</strong> pada menu Setelan Lainnya / More settings.
+                </p>
+              </div>
+            </div>
+
             {/* Printable Document Sheet */}
             <div id="printable-matrix-scan-doc" className="p-4 sm:p-6 bg-white print:p-0 space-y-4 text-slate-900">
               {/* Kop Surat Resmi */}
@@ -1829,42 +2008,34 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
                           const rec = row.days[d];
                           if (!rec) {
                             return (
-                              <td key={d} className="py-0.5 px-0.5 border border-black text-center text-slate-400">
+                              <td key={d} className="py-0.5 px-0.5 border border-black text-center text-slate-400 font-mono text-[8px]">
                                 -
                               </td>
                             );
                           }
-                          const code =
-                            rec.status === "Hadir"
-                              ? "✓"
-                              : rec.status === "Terlambat"
-                                ? "T"
-                                : rec.status === "Sakit"
-                                  ? "S"
-                                  : rec.status === "Ijin"
-                                    ? "I"
-                                    : rec.status === "Dispen"
-                                      ? "D"
-                                      : "A";
+                          const st = getPrintStatusInfo(rec.status);
 
                           return (
                             <td
                               key={d}
-                              className={`py-0.5 px-0.5 border border-black text-center font-bold ${
-                                rec.status === "Hadir"
-                                  ? "text-emerald-800 bg-emerald-50/40"
-                                  : rec.status === "Terlambat"
-                                    ? "text-amber-800 bg-amber-50/40"
-                                    : rec.status === "Sakit"
-                                      ? "text-blue-800 bg-blue-50/40"
-                                      : rec.status === "Ijin"
-                                        ? "text-purple-800 bg-purple-50/40"
-                                        : rec.status === "Dispen"
-                                          ? "text-teal-800 bg-teal-50/40"
-                                          : "text-rose-800 bg-rose-50/40"
-                              }`}
+                              className={`py-0.5 px-0.5 border border-black text-center font-extrabold ${st.className}`}
+                              style={{
+                                color: st.color,
+                                backgroundColor: st.bg,
+                                WebkitPrintColorAdjust: "exact",
+                                printColorAdjust: "exact",
+                              }}
                             >
-                              {code}
+                              <span
+                                style={{
+                                  color: st.color,
+                                  fontWeight: 800,
+                                  WebkitPrintColorAdjust: "exact",
+                                  printColorAdjust: "exact",
+                                }}
+                              >
+                                {st.code}
+                              </span>
                             </td>
                           );
                         })}
@@ -1881,14 +2052,63 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
                 </table>
               </div>
 
-              {/* Print Legend Footnote */}
-              <div className="flex items-center gap-5 text-[9px] text-slate-700 font-sans border-t border-slate-300 pt-2">
+              {/* Print Legend Footnote with Colored Badges */}
+              <div className="flex items-center gap-3.5 text-[8.5px] text-slate-800 font-sans border-t border-slate-300 pt-2 flex-wrap">
                 <span className="font-bold text-black">Keterangan:</span>
-                <span><strong>✓</strong> = Hadir Tepat Waktu (Scan Masuk)</span>
-                <span><strong>T</strong> = Terlambat (Scan Masuk)</span>
-                <span><strong>S</strong> = Sakit (Jurnal KBM)</span>
-                <span><strong>I</strong> = Izin (Jurnal KBM)</span>
-                <span><strong>D</strong> = Dispensasi (Jurnal KBM)</span>
+                <span className="inline-flex items-center gap-1">
+                  <strong
+                    className="status-cell-hadir px-1 py-0.2 rounded font-black border border-emerald-400"
+                    style={{ color: "#15803d", backgroundColor: "#dcfce7", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
+                  >
+                    ✓
+                  </strong>
+                  <span>= Hadir Tepat Waktu</span>
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <strong
+                    className="status-cell-terlambat px-1 py-0.2 rounded font-black border border-amber-400"
+                    style={{ color: "#b45309", backgroundColor: "#fef3c7", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
+                  >
+                    T
+                  </strong>
+                  <span>= Terlambat</span>
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <strong
+                    className="status-cell-sakit px-1 py-0.2 rounded font-black border border-blue-400"
+                    style={{ color: "#1d4ed8", backgroundColor: "#dbeafe", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
+                  >
+                    S
+                  </strong>
+                  <span>= Sakit (KBM)</span>
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <strong
+                    className="status-cell-ijin px-1 py-0.2 rounded font-black border border-purple-400"
+                    style={{ color: "#7e22ce", backgroundColor: "#f3e8ff", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
+                  >
+                    I
+                  </strong>
+                  <span>= Izin (KBM)</span>
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <strong
+                    className="status-cell-dispen px-1 py-0.2 rounded font-black border border-teal-400"
+                    style={{ color: "#0f766e", backgroundColor: "#ccfbf1", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
+                  >
+                    D
+                  </strong>
+                  <span>= Dispensasi</span>
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <strong
+                    className="status-cell-alpa px-1 py-0.2 rounded font-black border border-rose-400"
+                    style={{ color: "#be123c", backgroundColor: "#ffe4e6", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
+                  >
+                    A
+                  </strong>
+                  <span>= Alpa / Tanpa Keterangan</span>
+                </span>
               </div>
 
               {/* Signatures */}
@@ -1929,9 +2149,13 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
                 size: A4 landscape;
                 margin: 6mm 8mm 6mm 8mm;
               }
+              * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+              }
               html, body {
                 background: #ffffff !important;
-                color: #000000 !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 overflow: visible !important;
@@ -1964,7 +2188,6 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
                 top: 0 !important;
                 width: 100% !important;
                 background: #ffffff !important;
-                color: #000000 !important;
                 padding: 0 !important;
                 margin: 0 !important;
                 box-shadow: none !important;
@@ -1974,6 +2197,7 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
                 height: auto !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
+                color-adjust: exact !important;
               }
               .no-print, .print\\:hidden {
                 display: none !important;
@@ -1987,7 +2211,7 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
               }
               table.matrix-table {
                 page-break-inside: auto !important;
-                font-size: 8px !important;
+                font-size: 8.5px !important;
               }
               table.matrix-table th, table.matrix-table td {
                 border: 1px solid #000000 !important;
@@ -1996,6 +2220,51 @@ export const RekapScanMasukMatrix: React.FC<RekapScanMasukMatrixProps> = ({
               table.matrix-table th {
                 background-color: #f1f5f9 !important;
               }
+
+              /* Color preservation on direct print */
+              .status-cell-hadir, td.status-cell-hadir {
+                color: #15803d !important;
+                background-color: #dcfce7 !important;
+                font-weight: 900 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .status-cell-terlambat, td.status-cell-terlambat {
+                color: #b45309 !important;
+                background-color: #fef3c7 !important;
+                font-weight: 900 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .status-cell-sakit, td.status-cell-sakit {
+                color: #1d4ed8 !important;
+                background-color: #dbeafe !important;
+                font-weight: 900 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .status-cell-ijin, td.status-cell-ijin {
+                color: #7e22ce !important;
+                background-color: #f3e8ff !important;
+                font-weight: 900 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .status-cell-dispen, td.status-cell-dispen {
+                color: #0f766e !important;
+                background-color: #ccfbf1 !important;
+                font-weight: 900 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .status-cell-alpa, td.status-cell-alpa {
+                color: #be123c !important;
+                background-color: #ffe4e6 !important;
+                font-weight: 900 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+
               tr {
                 page-break-inside: avoid !important;
                 page-break-after: auto !important;
