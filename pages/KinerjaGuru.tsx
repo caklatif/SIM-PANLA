@@ -51,7 +51,7 @@ const KinerjaGuru: React.FC = () => {
           if (selectedYear === today.getFullYear() && selectedMonth === today.getMonth()) endCalculationDay = today.getDate(); 
           else if (selectedYear > today.getFullYear() || (selectedYear === today.getFullYear() && selectedMonth > today.getMonth())) endCalculationDay = lastDayDate.getDate(); 
 
-          const [profilesRes, schedulesRes, journalsRes] = await Promise.all([
+          const [profilesRes, schedulesRes, journalsRes, settingsRes] = await Promise.all([
               supabase.from('profiles').select('*').order('full_name'),
               supabase.from('schedules').select('*').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').eq('schedule_version', activeScheduleVersion || 'Utama').then(async (res) => {
                   if (res.error && (res.error.code === '42703' || res.error.message?.includes('academic_year'))) {
@@ -63,8 +63,15 @@ const KinerjaGuru: React.FC = () => {
                   }
                   return res;
               }),
-              supabase.from('journals').select('teacher_id, hours').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', firstDayStr).lte('created_at', endDayStr)
+              supabase.from('journals').select('teacher_id, hours').eq('academic_year', academicYear || '2025/2026').eq('semester', semester || 'Ganjil').gte('created_at', semesterStart ? `${semesterStart}T00:00:00+07:00` : '2000-01-01T00:00:00+07:00').lte('created_at', semesterEnd ? `${semesterEnd}T23:59:59+07:00` : '2100-01-01T23:59:59+07:00').gte('created_at', firstDayStr).lte('created_at', endDayStr),
+              supabase.from('app_settings').select('*')
           ]);
+
+          let nonEffectiveDaysList: { date: string; reason: string; hours?: string }[] = [];
+          const nedItem = settingsRes.data?.find((s: any) => s.key === 'non_effective_days');
+          if (nedItem?.value) {
+              try { nonEffectiveDaysList = JSON.parse(nedItem.value); } catch(e) {}
+          }
 
           const allTeachers = (profilesRes.data || []).filter(isOfficialTeacher);
           const allSchedules = schedulesRes.data || [];
@@ -73,7 +80,21 @@ const KinerjaGuru: React.FC = () => {
           
           for (let d = 1; d <= endCalculationDay; d++) {
               const tempDate = new Date(selectedYear, selectedMonth, d);
-              const jsDay = tempDate.getDay(); const dbDay = jsDay === 0 ? 7 : jsDay; dayCounts[dbDay]++;
+              const y = tempDate.getFullYear();
+              const m = String(tempDate.getMonth() + 1).padStart(2, '0');
+              const dayStr = String(tempDate.getDate()).padStart(2, '0');
+              const curIsoDate = `${y}-${m}-${dayStr}`;
+
+              const isHoliday = nonEffectiveDaysList.some(h => {
+                  const hDate = h.date?.trim();
+                  return hDate === curIsoDate && (!h.hours || h.hours === 'Full Day' || h.hours.trim() === '');
+              });
+
+              if (!isHoliday) {
+                  const jsDay = tempDate.getDay(); 
+                  const dbDay = jsDay === 0 ? 7 : jsDay; 
+                  dayCounts[dbDay]++;
+              }
           }
 
           const processed: TeacherPerformanceData[] = allTeachers.map(t => {

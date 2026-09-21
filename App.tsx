@@ -199,6 +199,14 @@ const App: React.FC = () => {
                </ProtectedRoute>
             } />
 
+            <Route path="/matrik-scan-masuk" element={
+               <ProtectedRoute>
+                  <RestrictedKbmRoute>
+                     <PusatLaporan />
+                  </RestrictedKbmRoute>
+               </ProtectedRoute>
+            } />
+
             <Route path="/import-data" element={
                <AdminRoute>
                   <ImportData />

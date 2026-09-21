@@ -223,6 +223,17 @@
         transition: background-color 0.3s ease, color 0.3s ease;
       }
 
+      @media print {
+        body, html, #root {
+          background-color: #ffffff !important;
+          background-image: none !important;
+          color: #000000 !important;
+          min-height: auto !important;
+          height: auto !important;
+          overflow: visible !important;
+        }
+      }
+
       /* Dark Mode Body Override */
       html.dark body {
         background-color: #0f172a; /* slate-900 */

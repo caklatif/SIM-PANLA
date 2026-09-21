@@ -3,10 +3,11 @@ import { Layout } from '../components/Layout';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { 
-    Printer, Download, Trash2, Edit3, Search, Filter, RefreshCw, X, 
+    Printer, Trash2, Edit3, Search, Filter, RefreshCw, X, 
     AlertTriangle, BookOpen, CheckSquare, Square, Calendar, Check, 
     Loader2, User, Sparkles, ChevronDown, CheckCircle2,
-    FileSpreadsheet, Eye, Info, Clock, AlertCircle, Users, UserCheck, CheckCheck
+    Eye, Info, Clock, AlertCircle, Users, UserCheck, CheckCheck,
+    CalendarOff
 } from 'lucide-react';
 import { Student } from '../types';
 import { formatDateIndo, formatDateSignature, getWIBISOString } from '../utils/dateUtils';
@@ -36,6 +37,8 @@ interface JournalItem {
     teacher_nip?: string;
     is_unfilled?: boolean;
     is_out_of_schedule?: boolean;
+    is_holiday?: boolean;
+    holiday_reason?: string;
     attendance_logs?: {
         id: string;
         student_id: string;
@@ -166,7 +169,7 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
         if (isNaN(curr.getTime()) || isNaN(end.getTime())) return dates;
         
         let count = 0;
-        while (curr <= end && count < 60) {
+        while (curr <= end && count < 366) {
             const y = curr.getFullYear();
             const m = String(curr.getMonth() + 1).padStart(2, '0');
             const d = String(curr.getDate()).padStart(2, '0');
@@ -266,9 +269,67 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                 }
             }
 
-            // 2. Fetch profiles mapping
-            const { data: profiles } = await supabase.from('profiles').select('id, full_name, nip');
+            // 2. Fetch profiles mapping and app_settings for non-effective days
+            const [{ data: profiles }, { data: settingsData }] = await Promise.all([
+                supabase.from('profiles').select('id, full_name, nip'),
+                supabase.from('app_settings').select('*')
+            ]);
             const profMap = new Map((profiles || []).map(p => [p.id, p]));
+
+            // Parse non-effective days (Hari Libur)
+            let nonEffectiveDaysList: { date: string; reason: string; hours?: string }[] = [];
+            if (settingsData) {
+                const newSettings: any = {};
+                settingsData.forEach((item: any) => newSettings[item.key] = item.value);
+                setSettings(prev => ({ ...prev, ...newSettings }));
+
+                const nedSetting = settingsData.find((item: any) => item.key === 'non_effective_days');
+                if (nedSetting?.value) {
+                    try {
+                        nonEffectiveDaysList = JSON.parse(nedSetting.value);
+                    } catch (e) {
+                        console.error("Error parsing non_effective_days:", e);
+                    }
+                }
+            }
+
+            // Normalisasi format tanggal YYYY-MM-DD
+            const normalizeDate = (d: string): string => {
+                if (!d) return '';
+                const trimmed = d.trim();
+                if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(trimmed)) {
+                    const [y, m, day] = trimmed.split('-');
+                    return `${y}-${m.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                }
+                if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(trimmed)) {
+                    const parts = trimmed.split(/[\/\-]/);
+                    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                }
+                return trimmed;
+            };
+
+            const getHolidayInfo = (dateStr: string, schHour: string | number) => {
+                const targetYMD = normalizeDate(dateStr);
+                const holiday = nonEffectiveDaysList.find(ned => normalizeDate(ned.date) === targetYMD);
+                if (!holiday) return null;
+
+                // Jika Libur Full Day atau jam tidak ditentukan/kosong, seluruh jam KBM pada hari tsb libur
+                if (!holiday.hours || holiday.hours === 'Full Day' || holiday.hours.trim() === '') {
+                    return { isHoliday: true, reason: holiday.reason || 'Hari Non-Efektif' };
+                }
+
+                // Jika ada batasan jam (misal: "1, 2")
+                const schHourStr = String(schHour || '');
+                const schDigits: string[] = schHourStr.match(/\d+/g) || [];
+                const holDigits: string[] = String(holiday.hours).match(/\d+/g) || [];
+
+                const matchHour = schDigits.some(d => holDigits.indexOf(d) !== -1);
+                if (matchHour || schDigits.length === 0) {
+                    return { isHoliday: true, reason: holiday.reason || 'Hari Non-Efektif' };
+                }
+
+                return null;
+            };
 
             // 3. Fetch schedules
             let schedQuery = supabase.from('schedules').select('*');
@@ -316,7 +377,6 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                     });
 
                     if (!matchedJournal) {
-                        // Create unfilled placeholder entry
                         const prof = profMap.get(sch.teacher_id);
                         const teacherName = prof?.full_name || sch.teacher_name || (profile?.id === sch.teacher_id ? profile?.full_name : 'Guru');
                         const teacherNip = prof?.nip || sch.teacher_nip || (profile?.id === sch.teacher_id ? profile?.nip : '-');
@@ -326,22 +386,48 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                         const hourFormatted = String(firstHourNum).padStart(2, '0');
                         const createdIso = `${dStr}T${hourFormatted}:00:00+07:00`;
 
-                        unfilledJournals.push({
-                            id: `unfilled-${sch.id}-${dStr}`,
-                            created_at: createdIso,
-                            teacher_id: sch.teacher_id,
-                            teacher_name: teacherName,
-                            teacher_nip: teacherNip,
-                            kelas: sch.kelas,
-                            subject: sch.subject,
-                            hours: String(sch.hour),
-                            material: 'Jurnal mengajar belum diisi',
-                            cleanliness: 'perlu_dibersihkan',
-                            validation: 'Belum',
-                            notes: 'Jurnal mengajar belum diisi',
-                            is_unfilled: true,
-                            is_out_of_schedule: false
-                        });
+                        const holidayInfo = getHolidayInfo(dStr, sch.hour);
+
+                        if (holidayInfo) {
+                            // Slot KBM jatuh pada Hari Non-Efektif (Libur)
+                            unfilledJournals.push({
+                                id: `holiday-${sch.id}-${dStr}`,
+                                created_at: createdIso,
+                                teacher_id: sch.teacher_id,
+                                teacher_name: teacherName,
+                                teacher_nip: teacherNip,
+                                kelas: sch.kelas,
+                                subject: sch.subject,
+                                hours: String(sch.hour),
+                                material: `Hari Non-Efektif: ${holidayInfo.reason}`,
+                                cleanliness: '-',
+                                validation: 'Disetujui',
+                                notes: `Hari Non-Efektif (${holidayInfo.reason})`,
+                                is_unfilled: false,
+                                is_out_of_schedule: false,
+                                is_holiday: true,
+                                holiday_reason: holidayInfo.reason
+                            });
+                        } else {
+                            // Create unfilled placeholder entry (Jurnal Belum Diisi)
+                            unfilledJournals.push({
+                                id: `unfilled-${sch.id}-${dStr}`,
+                                created_at: createdIso,
+                                teacher_id: sch.teacher_id,
+                                teacher_name: teacherName,
+                                teacher_nip: teacherNip,
+                                kelas: sch.kelas,
+                                subject: sch.subject,
+                                hours: String(sch.hour),
+                                material: 'Jurnal mengajar belum diisi',
+                                cleanliness: 'perlu_dibersihkan',
+                                validation: 'Belum',
+                                notes: 'Jurnal mengajar belum diisi',
+                                is_unfilled: true,
+                                is_out_of_schedule: false,
+                                is_holiday: false
+                            });
+                        }
                     }
                 });
             });
@@ -405,14 +491,15 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
             (j.subject && j.subject.toLowerCase().includes(q)) ||
             (j.material && j.material.toLowerCase().includes(q)) ||
             (j.notes && j.notes.toLowerCase().includes(q)) ||
-            (j.inval_teacher_name && j.inval_teacher_name.toLowerCase().includes(q))
+            (j.inval_teacher_name && j.inval_teacher_name.toLowerCase().includes(q)) ||
+            (j.holiday_reason && j.holiday_reason.toLowerCase().includes(q))
         );
     });
 
     // Selection Handlers
     const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.checked) {
-            setSelectedJournalIds(filteredJournals.filter(j => !j.is_unfilled).map(j => j.id));
+            setSelectedJournalIds(filteredJournals.filter(j => !j.is_unfilled && !j.is_holiday).map(j => j.id));
         } else {
             setSelectedJournalIds([]);
         }
@@ -566,7 +653,7 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
 
     // Open Edit Modal
     const handleOpenEdit = (journal: JournalItem) => {
-        if (journal.is_unfilled) return;
+        if (journal.is_unfilled || journal.is_holiday) return;
         setJournalToEdit(journal);
         setEditTab('kbm');
         setStudentSearchInEdit('');
@@ -674,53 +761,6 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
         } finally {
             setIsSavingEdit(false);
         }
-    };
-
-    // Export Excel CSV (Admin / Operator only)
-    const handleExportCSV = () => {
-        if (filteredJournals.length === 0) {
-            setAlertMsg({ type: 'info', text: 'Tidak ada data jurnal untuk diunduh.' });
-            return;
-        }
-
-        const headers = ["No", "Tanggal", "Jam Ke", "Nama Guru", "NIP Guru", "Kelas", "Mata Pelajaran", "Materi Pembelajaran", "Kebersihan Kelas", "Ketidakhadiran Siswa", "Status Jadwal", "Catatan"];
-        const rows = filteredJournals.map((j, idx) => {
-            const absents = (j.attendance_logs || [])
-                .filter(l => ['S', 'I', 'A', 'D'].includes(l.status))
-                .map(l => `${l.student_name} (${l.status})`)
-                .join('; ');
-
-            let statusJadwal = "Sesuai Jadwal";
-            if (j.is_unfilled) {
-                statusJadwal = "Jurnal Belum Diisi";
-            } else if (j.is_out_of_schedule) {
-                statusJadwal = "Jurnal diisi tidak sesuai Jadwal";
-            }
-
-            return [
-                idx + 1,
-                `"${formatDateIndo(j.created_at)}"`,
-                `"Jam ke ${j.hours}"`,
-                `"${j.teacher_name || 'Guru'}"`,
-                `"${j.teacher_nip || '-'}"`,
-                `"${j.kelas}"`,
-                `"${j.subject}"`,
-                `"${(j.material || '').replace(/"/g, '""')}"`,
-                `"${j.cleanliness === 'sudah_bersih' ? 'Sudah Bersih' : 'Perlu Dibersihkan'}"`,
-                `"${absents || 'NIHIL'}"`,
-                `"${statusJadwal}"`,
-                `"${(j.notes || '').replace(/"/g, '""')}"`
-            ].join(',');
-        });
-
-        const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(','), ...rows].join('\n');
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `Data_Jurnal_KBM_SIMPANLA_${new Date().toISOString().slice(0,10)}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
     };
 
     // Print Execution with dedicated clean print engine
@@ -1027,15 +1067,6 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                             </button>
                         )}
 
-                        {/* EXPORT EXCEL */}
-                        <button
-                            onClick={handleExportCSV}
-                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
-                            title="Download data jurnal KBM format Excel (CSV)"
-                        >
-                            <FileSpreadsheet size={16} /> Download Excel
-                        </button>
-
                         {/* CETAK LAPORAN DENGAN PREVIEW */}
                         <button
                             onClick={() => {
@@ -1201,7 +1232,7 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                                         <input
                                             type="checkbox"
                                             className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
-                                            checked={filteredJournals.filter(j=>!j.is_unfilled).length > 0 && selectedJournalIds.length === filteredJournals.filter(j=>!j.is_unfilled).length}
+                                            checked={filteredJournals.filter(j=>!j.is_unfilled && !j.is_holiday).length > 0 && selectedJournalIds.length === filteredJournals.filter(j=>!j.is_unfilled && !j.is_holiday).length}
                                             onChange={handleSelectAll}
                                         />
                                     </th>
@@ -1238,12 +1269,13 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                                             <tr 
                                                 key={journal.id} 
                                                 className={`transition-colors hover:bg-purple-50/30 dark:hover:bg-slate-700/30 ${
+                                                    journal.is_holiday ? 'bg-amber-50/25 dark:bg-amber-950/20' :
                                                     journal.is_unfilled ? 'bg-red-50/30 dark:bg-red-950/20' :
                                                     isSelected ? 'bg-purple-50/60 dark:bg-purple-950/20' : ''
                                                 }`}
                                             >
                                                 <td className="p-3.5 text-center">
-                                                    {!journal.is_unfilled && (
+                                                    {!journal.is_unfilled && !journal.is_holiday && (
                                                         <input
                                                             type="checkbox"
                                                             className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
@@ -1290,7 +1322,14 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                                                 </td>
 
                                                 <td className="p-3.5 max-w-[280px]">
-                                                    {journal.is_unfilled ? (
+                                                    {journal.is_holiday ? (
+                                                        <div className="text-amber-800 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/60 px-3 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800 flex items-center gap-2 w-fit shadow-xs">
+                                                            <CalendarOff size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                                            <span className="truncate max-w-[220px]" title={journal.holiday_reason}>
+                                                                Hari Non-Efektif: {journal.holiday_reason || 'Libur'}
+                                                            </span>
+                                                        </div>
+                                                    ) : journal.is_unfilled ? (
                                                         <div className="text-red-600 dark:text-red-400 font-extrabold bg-red-100/80 dark:bg-red-950/80 px-3 py-1.5 rounded-xl border border-red-300 dark:border-red-800 flex items-center gap-1.5 w-fit">
                                                             <AlertCircle size={15} className="text-red-600 shrink-0" />
                                                             Jurnal mengajar belum diisi
@@ -1303,7 +1342,9 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                                                 </td>
 
                                                 <td className="p-3.5">
-                                                    {journal.is_unfilled ? (
+                                                    {journal.is_holiday ? (
+                                                        <span className="text-amber-700/80 dark:text-amber-400/80 text-[11px] font-semibold italic">Non-Efektif</span>
+                                                    ) : journal.is_unfilled ? (
                                                         <span className="text-slate-400 italic text-[11px]">-</span>
                                                     ) : journal.cleanliness === 'sudah_bersih' ? (
                                                         <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
@@ -1317,11 +1358,20 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                                                 </td>
 
                                                 <td className="p-3.5">
-                                                    {renderAttendanceBadge(journal.attendance_logs || [], journal.is_unfilled)}
+                                                    {journal.is_holiday ? (
+                                                        <span className="text-amber-700/80 dark:text-amber-400/80 text-[11px] font-semibold">Libur</span>
+                                                    ) : (
+                                                        renderAttendanceBadge(journal.attendance_logs || [], journal.is_unfilled)
+                                                    )}
                                                 </td>
 
                                                 <td className="p-3.5 text-slate-600 dark:text-slate-400">
-                                                    {journal.is_out_of_schedule ? (
+                                                    {journal.is_holiday ? (
+                                                        <span className="text-amber-800 dark:text-amber-300 font-bold bg-amber-100/80 dark:bg-amber-950/60 px-2.5 py-1 rounded-lg border border-amber-300 dark:border-amber-800 text-[11px] inline-flex items-center gap-1">
+                                                            <CalendarOff size={13} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                                            Hari Non-Efektif
+                                                        </span>
+                                                    ) : journal.is_out_of_schedule ? (
                                                         <span className="text-amber-800 dark:text-amber-300 font-bold bg-amber-100 dark:bg-amber-950/60 px-2.5 py-1 rounded-lg border border-amber-300 dark:border-amber-800 text-[11px] inline-flex items-center gap-1">
                                                             <AlertTriangle size={13} className="text-amber-600 shrink-0" />
                                                             Jurnal diisi tidak sesuai Jadwal
@@ -1334,7 +1384,7 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                                                 </td>
 
                                                 <td className="p-3.5 text-center">
-                                                    {!journal.is_unfilled ? (
+                                                    {!journal.is_unfilled && !journal.is_holiday ? (
                                                         <div className="flex items-center justify-center gap-1">
                                                             <button
                                                                 onClick={() => handleOpenEdit(journal)}
@@ -1483,17 +1533,19 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                                                         <td className="border border-black p-2 text-center font-bold">{j.kelas}</td>
                                                         <td className="border border-black p-2 font-semibold">{j.subject}</td>
                                                         <td className="border border-black p-2">
-                                                            {j.is_unfilled ? (
+                                                            {j.is_holiday ? (
+                                                                <span className="font-bold text-amber-800">Hari Non-Efektif ({j.holiday_reason || 'Libur'})</span>
+                                                            ) : j.is_unfilled ? (
                                                                 <span className="font-bold text-red-600 uppercase">Jurnal mengajar belum diisi</span>
                                                             ) : (
                                                                 j.material
                                                             )}
                                                         </td>
                                                         <td className="border border-black p-2 text-center">
-                                                            {j.is_unfilled ? '-' : (j.cleanliness === 'sudah_bersih' ? 'Bersih' : 'Kurang Bersih')}
+                                                            {j.is_holiday ? '-' : j.is_unfilled ? '-' : (j.cleanliness === 'sudah_bersih' ? 'Bersih' : 'Kurang Bersih')}
                                                         </td>
                                                         <td className="border border-black p-2">
-                                                            {j.is_unfilled ? '-' : absents.length === 0 ? 'NIHIL' : (
+                                                            {j.is_holiday ? '-' : j.is_unfilled ? '-' : absents.length === 0 ? 'NIHIL' : (
                                                                 <ul className="list-disc list-inside text-[10px]">
                                                                     {absents.map((a, i) => (
                                                                         <li key={i}>{a.student_name} ({a.status})</li>
@@ -1502,7 +1554,9 @@ export const LaporanJurnal: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                                                             )}
                                                         </td>
                                                         <td className="border border-black p-2">
-                                                            {j.is_out_of_schedule ? (
+                                                            {j.is_holiday ? (
+                                                                <span className="font-bold text-amber-800">Hari Non-Efektif</span>
+                                                            ) : j.is_out_of_schedule ? (
                                                                 <span className="font-bold text-amber-700">Jurnal diisi tidak sesuai Jadwal</span>
                                                             ) : j.is_unfilled ? (
                                                                 <span className="font-bold text-red-600">Jurnal Belum Diisi</span>

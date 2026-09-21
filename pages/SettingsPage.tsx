@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Layout } from '../components/Layout';
 import { supabase } from '../services/supabase';
-import { Settings, Save, Plus, Trash2, Calendar, Loader2, Info, Clock, CheckSquare, Square, User, BookOpen, AlertCircle, Sparkles, Gavel } from 'lucide-react';
+import { Settings, Save, Plus, Trash2, Calendar, CalendarRange, Loader2, Info, Clock, CheckSquare, Square, User, BookOpen, AlertCircle, Sparkles, Gavel } from 'lucide-react';
 import { AppSetting, NonEffectiveDay, Profile } from '../types';
 import { showAlert, showConfirm } from '../utils/alert';
 
@@ -35,7 +35,9 @@ const SettingsPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
 
   // New Day Input State
+  const [isRangeMode, setIsRangeMode] = useState(false);
   const [newDay, setNewDay] = useState({ date: '', reason: '' });
+  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
   
   // Hours Selection State
   const [isFullDay, setIsFullDay] = useState(true);
@@ -167,9 +169,49 @@ const SettingsPage: React.FC = () => {
       );
   };
 
+  // Helper untuk mendapatkan array tanggal berurutan dalam format YYYY-MM-DD
+  const getDatesInRange = (startDateStr: string, endDateStr: string): string[] => {
+      if (!startDateStr || !endDateStr) return [];
+      const [sY, sM, sD] = startDateStr.split('-').map(Number);
+      const [eY, eM, eD] = endDateStr.split('-').map(Number);
+      const current = new Date(sY, sM - 1, sD);
+      const end = new Date(eY, eM - 1, eD);
+
+      if (current > end) return [];
+
+      const dates: string[] = [];
+      let count = 0;
+      while (current <= end && count < 366) {
+          const y = current.getFullYear();
+          const m = String(current.getMonth() + 1).padStart(2, '0');
+          const d = String(current.getDate()).padStart(2, '0');
+          dates.push(`${y}-${m}-${d}`);
+          current.setDate(current.getDate() + 1);
+          count++;
+      }
+      return dates;
+  };
+
+  // Helper format tanggal Indonesia aman timezone (DD/MM/YYYY)
+  const formatIndoDate = (dateStr: string) => {
+      if (!dateStr) return '';
+      try {
+          const [y, m, d] = dateStr.split('-').map(Number);
+          if (!y || !m || !d) return dateStr;
+          const date = new Date(y, m - 1, d);
+          return date.toLocaleDateString('id-ID', {
+              day: 'numeric',
+              month: 'numeric',
+              year: 'numeric'
+          });
+      } catch {
+          return dateStr;
+      }
+  };
+
   const handleAddDay = () => {
-      if (!newDay.date || !newDay.reason) {
-          showAlert("Tanggal dan Keterangan wajib diisi.");
+      if (!newDay.reason.trim()) {
+          showAlert("Keterangan hari libur wajib diisi.");
           return;
       }
       if (!isFullDay && selectedHours.length === 0) {
@@ -180,24 +222,77 @@ const SettingsPage: React.FC = () => {
         ? "Full Day" 
         : selectedHours.sort((a,b) => Number(a) - Number(b)).join(', ');
 
-      const dayToAdd: NonEffectiveDay = {
-          date: newDay.date,
-          reason: newDay.reason,
-          hours: hoursString
-      };
+      let datesToAdd: string[] = [];
 
-      const updatedDays = [...nonEffectiveDays, dayToAdd];
+      if (!isRangeMode) {
+          if (!newDay.date) {
+              showAlert("Tanggal hari libur wajib diisi.");
+              return;
+          }
+          datesToAdd = [newDay.date];
+      } else {
+          if (!dateRange.startDate || !dateRange.endDate) {
+              showAlert("Tanggal Mulai dan Tanggal Selesai wajib diisi.");
+              return;
+          }
+          if (dateRange.startDate > dateRange.endDate) {
+              showAlert("Tanggal Mulai tidak boleh lebih besar dari Tanggal Selesai.");
+              return;
+          }
+          datesToAdd = getDatesInRange(dateRange.startDate, dateRange.endDate);
+          if (datesToAdd.length === 0) {
+              showAlert("Rentang tanggal tidak valid.");
+              return;
+          }
+          if (datesToAdd.length > 365) {
+              showAlert("Rentang tanggal maksimal 365 hari sekaligus.");
+              return;
+          }
+      }
+
+      const reasonTrimmed = newDay.reason.trim();
+      const newItems: NonEffectiveDay[] = datesToAdd.map(d => ({
+          date: d,
+          reason: reasonTrimmed,
+          hours: hoursString
+      }));
+
+      // Hapus tanggal yang sama jika sebelumnya sudah pernah dimasukkan (update dengan yang baru)
+      const existingFiltered = nonEffectiveDays.filter(item => !datesToAdd.includes(item.date));
+      // Urutkan secara kronologis berdasarkan tanggal
+      const updatedDays = [...existingFiltered, ...newItems].sort((a, b) => a.date.localeCompare(b.date));
+
       setNonEffectiveDays(updatedDays);
       setNewDay({ date: '', reason: '' });
+      setDateRange({ startDate: '', endDate: '' });
       setIsFullDay(true);
       setSelectedHours([]);
       saveDays(updatedDays);
+
+      if (newItems.length > 1) {
+          showAlert(`Berhasil menambahkan ${newItems.length} hari non-efektif (${formatIndoDate(datesToAdd[0])} s.d. ${formatIndoDate(datesToAdd[datesToAdd.length - 1])}).`);
+      } else {
+          showAlert("Hari libur berhasil ditambahkan.");
+      }
   };
 
   const handleDeleteDay = (idx: number) => {
       const updatedDays = nonEffectiveDays.filter((_, i) => i !== idx);
       setNonEffectiveDays(updatedDays);
       saveDays(updatedDays);
+  };
+
+  const handleClearAllDays = async () => {
+      if (nonEffectiveDays.length === 0) return;
+      const confirmed = await showConfirm(
+          `Apakah Anda yakin ingin menghapus semua (${nonEffectiveDays.length}) hari libur non-efektif yang tersimpan?`,
+          "Hapus Semua Hari Libur"
+      );
+      if (confirmed) {
+          setNonEffectiveDays([]);
+          saveDays([]);
+          showAlert("Semua hari non-efektif telah dibersihkan.");
+      }
   };
 
   const saveDays = async (days: NonEffectiveDay[]) => {
@@ -515,32 +610,119 @@ const SettingsPage: React.FC = () => {
                  </div>
 
                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                    <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                        <Calendar size={18} className="text-red-500"/> Hari Non-Efektif
-                    </h3>
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                            <Calendar size={18} className="text-red-500"/> Hari Non-Efektif
+                            {nonEffectiveDays.length > 0 && (
+                                <span className="text-[11px] bg-red-50 text-red-600 px-2 py-0.5 rounded-full font-bold border border-red-100">
+                                    {nonEffectiveDays.length} Hari
+                                </span>
+                            )}
+                        </h3>
+                        {nonEffectiveDays.length > 0 && (
+                            <button 
+                                type="button"
+                                onClick={handleClearAllDays} 
+                                className="text-[11px] text-red-500 hover:text-red-700 hover:underline font-medium transition-colors"
+                            >
+                                Hapus Semua
+                            </button>
+                        )}
+                    </div>
                     
                     <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-4 space-y-4">
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-[10px] font-bold text-gray-500 mb-1">Tanggal</label>
-                                <input 
-                                    type="date" 
-                                    className="w-full border rounded-lg p-2 text-sm"
-                                    value={newDay.date}
-                                    onChange={e => setNewDay({...newDay, date: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-bold text-gray-500 mb-1">Keterangan</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full border rounded-lg p-2 text-sm"
-                                    placeholder="Contoh: Rapat Dinas"
-                                    value={newDay.reason}
-                                    onChange={e => setNewDay({...newDay, reason: e.target.value})}
-                                />
-                            </div>
+                        {/* Tab Switcher: Satu Hari vs Rentang Tanggal */}
+                        <div className="flex bg-gray-200/80 p-1 rounded-xl text-xs font-bold text-gray-600">
+                            <button
+                                type="button"
+                                onClick={() => setIsRangeMode(false)}
+                                className={`flex-1 py-1.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                                    !isRangeMode ? 'bg-white text-purple-700 shadow-sm' : 'hover:text-gray-900'
+                                }`}
+                            >
+                                <Calendar size={14} /> Satu Hari
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIsRangeMode(true)}
+                                className={`flex-1 py-1.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                                    isRangeMode ? 'bg-white text-purple-700 shadow-sm' : 'hover:text-gray-900'
+                                }`}
+                            >
+                                <CalendarRange size={14} /> Rentang Tanggal (Banyak Hari)
+                            </button>
                         </div>
+
+                        {/* Input Tanggal: Mode Satu Hari */}
+                        {!isRangeMode ? (
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Tanggal</label>
+                                    <input 
+                                        type="date" 
+                                        className="w-full border rounded-lg p-2 text-sm bg-white"
+                                        value={newDay.date}
+                                        onChange={e => setNewDay({...newDay, date: e.target.value})}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Keterangan</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full border rounded-lg p-2 text-sm bg-white"
+                                        placeholder="Contoh: Rapat Dinas"
+                                        value={newDay.reason}
+                                        onChange={e => setNewDay({...newDay, reason: e.target.value})}
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            /* Input Tanggal: Mode Rentang Tanggal */
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-500 mb-1">Tanggal Mulai</label>
+                                        <input 
+                                            type="date" 
+                                            className="w-full border rounded-lg p-2 text-sm bg-white"
+                                            value={dateRange.startDate}
+                                            onChange={e => setDateRange({...dateRange, startDate: e.target.value})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-500 mb-1">Tanggal Selesai</label>
+                                        <input 
+                                            type="date" 
+                                            className="w-full border rounded-lg p-2 text-sm bg-white"
+                                            value={dateRange.endDate}
+                                            onChange={e => setDateRange({...dateRange, endDate: e.target.value})}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Keterangan</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full border rounded-lg p-2 text-sm bg-white"
+                                        placeholder="Contoh: Libur Hari Raya Idul Fitri / Libur Semester"
+                                        value={newDay.reason}
+                                        onChange={e => setNewDay({...newDay, reason: e.target.value})}
+                                    />
+                                </div>
+
+                                {dateRange.startDate && dateRange.endDate && (
+                                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2 text-xs text-emerald-800 flex items-center justify-between font-medium">
+                                        <span>
+                                            Total Durasi: <strong>{getDatesInRange(dateRange.startDate, dateRange.endDate).length} Hari Libur</strong>
+                                        </span>
+                                        <span className="text-[11px] text-emerald-600">
+                                            {formatIndoDate(dateRange.startDate)} s.d. {formatIndoDate(dateRange.endDate)}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <div>
                              <div className="flex items-center gap-2 mb-2 cursor-pointer" onClick={() => setIsFullDay(!isFullDay)}>
@@ -571,9 +753,11 @@ const SettingsPage: React.FC = () => {
 
                         <button 
                            onClick={handleAddDay}
-                           className="w-full bg-green-600 text-white p-2.5 rounded-xl hover:bg-green-700 font-bold flex items-center justify-center gap-2"
+                           className="w-full bg-green-600 text-white p-2.5 rounded-xl hover:bg-green-700 font-bold flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99]"
                         >
-                            <Plus size={18} /> Tambah Hari Libur
+                            <Plus size={18} /> {isRangeMode && dateRange.startDate && dateRange.endDate && getDatesInRange(dateRange.startDate, dateRange.endDate).length > 0 
+                                ? `Tambah ${getDatesInRange(dateRange.startDate, dateRange.endDate).length} Hari Libur` 
+                                : 'Tambah Hari Libur'}
                         </button>
                     </div>
 
@@ -587,7 +771,7 @@ const SettingsPage: React.FC = () => {
                                         <div className="font-bold text-gray-800 text-sm">{day.reason}</div>
                                         <div className="text-xs text-gray-500 flex gap-2 items-center mt-1">
                                             <Calendar size={12}/>
-                                            <span>{new Date(day.date).toLocaleDateString('id-ID')}</span>
+                                            <span>{formatIndoDate(day.date)}</span>
                                             <span className="text-red-500 font-bold bg-red-50 px-1.5 rounded flex items-center gap-1">
                                                 <Clock size={10}/>
                                                 {day.hours === "Full Day" ? "Full Day" : `Jam ke: ${day.hours}`}

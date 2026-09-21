@@ -55,7 +55,8 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
     });
   }, []);
 
-  const isPembinaEkstra = profile?.role === 'pembina_ekstra' || checkIsPembinaEkstra(profile, pembinaList).isPembina;
+  // Logic to identify Dedicated External Pembina (Pelatih luar / KBM Restricted)
+  const isDedicatedPembina = profile?.role === 'pembina_ekstra' || isKbmRestricted;
 
   useEffect(() => {
     
@@ -260,7 +261,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
       
       {/* --- DESKTOP SIDEBAR (Compact Mode Default) --- */}
       {showNav && (
-        <aside className={`hidden md:flex flex-col h-screen sticky top-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-20 transition-all duration-300 ${collapsed ? 'w-20' : 'w-72'}`}>
+        <aside className={`hidden md:flex flex-col h-screen sticky top-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-20 transition-all duration-300 ${collapsed ? 'w-20' : 'w-72'} print:hidden`}>
             {/* Logo Area */}
             <div className={`p-4 flex items-center gap-3 border-b border-slate-100 dark:border-slate-700 ${collapsed ? 'justify-center' : ''} h-20`}>
                  <img 
@@ -313,7 +314,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
                         {isHeadmaster && <NavItem path="/kinerja" label="Kinerja" icon={Activity} />}
                         {!isHeadmaster && <NavItem path="/apps" label="KBM" icon={Grid} />}
                         <NavItem path="/qr" label="Presensi QR" icon={Scan} />
-                        {!isPembinaEkstra && <NavItem path="/laporan-terpadu" label="Pusat Laporan" icon={FileSpreadsheet} />}
+                        {!isDedicatedPembina && <NavItem path="/laporan-terpadu" label="Pusat Laporan" icon={FileSpreadsheet} />}
                         {isHeadmaster && <NavItem path="/kedisiplinan" label="Kedisiplinan" icon={Siren} />}
                         {isDhuhaTeacher && <NavItem path="/rekap-dhuha" label="Rekap Dhuha" icon={Sunset} />}
                         <NavItem path="/profile" label="Profil Saya" icon={User} />
@@ -377,15 +378,15 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
       )}
 
       {/* --- MAIN CONTENT --- */}
-      <main className="flex-1 flex flex-col h-screen overflow-y-auto custom-scrollbar relative bg-[#F5F3FF] dark:bg-slate-900 transition-colors duration-300">
+      <main className="flex-1 flex flex-col h-screen overflow-y-auto custom-scrollbar relative bg-[#F5F3FF] dark:bg-slate-900 transition-colors duration-300 print:h-auto print:overflow-visible print:bg-white">
           {/* Mobile Header */}
-          <div className="md:hidden sticky top-0 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 z-30 shadow-sm pt-[calc(env(safe-area-inset-top)+0.25rem)]">
+          <div className="md:hidden sticky top-0 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50 z-30 shadow-sm pt-[calc(env(safe-area-inset-top)+0.25rem)] print:hidden">
              <div className="px-4 py-3 flex justify-between items-center">
                  <div className="flex items-center gap-3">
                      <img 
                        src="https://lh3.googleusercontent.com/d/1KtAUvy02qNUB2FzCUoVrNmHtFT0eH2J0" 
                        className="h-10 w-auto object-contain" 
-                       alt="Logo"
+                       alt="Logo" 
                      />
                      <div>
                          <h1 className="text-xs font-black text-slate-900 dark:text-white leading-tight uppercase">SISTEM INFORMASI MANAJEMEN</h1>
@@ -440,7 +441,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
           </div>
 
           {/* DESKTOP TOP BAR */}
-          <div className="hidden md:flex justify-between items-center sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 px-8 py-3 pt-[calc(env(safe-area-inset-top)+0.25rem)]">
+          <div className="hidden md:flex justify-between items-center sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 px-8 py-3 pt-[calc(env(safe-area-inset-top)+0.25rem)] print:hidden">
               <div className="flex items-center gap-3 text-sm font-bold">
                   <div className="flex items-center gap-1.5 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-3 py-1.5 rounded-xl border border-purple-100 dark:border-purple-800/50 shadow-sm">
                       <span className="text-purple-400 dark:text-purple-500">T.A:</span> {academicYear}
@@ -497,7 +498,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
           </div>
 
           {/* PAGE CONTENT */}
-          <div className="p-4 md:p-8 max-w-[1920px] w-full mx-auto pb-28 md:pb-10 page-enter text-slate-800 dark:text-slate-100">
+          <div className="p-4 md:p-8 max-w-[1920px] w-full mx-auto pb-28 md:pb-10 page-enter text-slate-800 dark:text-slate-100 print:p-0 print:m-0 print:max-w-none print:pb-0">
             {children}
           </div>
 
@@ -505,7 +506,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
           {showScrollTop && (
               <button 
                   onClick={scrollToTop}
-                  className="fixed bottom-24 md:bottom-10 right-6 z-40 p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-full shadow-lg transition-all animate-fade-in hover:scale-110"
+                  className="fixed bottom-24 md:bottom-10 right-6 z-40 p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-full shadow-lg transition-all animate-fade-in hover:scale-110 print:hidden"
                   title="Kembali ke Atas"
               >
                   <ArrowUp size={24} />
@@ -515,7 +516,7 @@ export const Layout: React.FC<{ children: React.ReactNode; showNav?: boolean; co
 
       {/* --- MOBILE BOTTOM NAV (FLUTTER STYLE ANIMATED) --- */}
       {showNav && !isOperator && !isAdmin && (
-        <div className="md:hidden fixed bottom-6 left-0 right-0 z-40 flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)]">
+        <div className="md:hidden fixed bottom-6 left-0 right-0 z-40 flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)] print:hidden">
             <div className="relative pointer-events-auto p-[2px] rounded-full overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.12)] max-w-[95vw] group">
                 {/* Animated Glow Border */}
                 <div className="absolute inset-[-100%] z-0 animate-[spin_4s_linear_infinite]" style={{ background: 'conic-gradient(from 0deg, transparent 0 340deg, #9333ea 360deg)' }}></div>

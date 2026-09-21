@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../contexts/AuthContext";
 import { RekapSholatMatrix } from "../components/RekapSholatMatrix";
+import { RekapScanMasukMatrix } from "../components/RekapScanMasukMatrix";
 import { KelolaHasilScan } from "../components/KelolaHasilScan";
 import { RekapEkstraTab } from "../components/RekapEkstraTab";
 import { LaporanJurnal } from "./LaporanJurnal";
@@ -24,10 +25,12 @@ import {
   Trophy,
   ShieldAlert,
   Sparkles,
+  LogIn,
 } from "lucide-react";
 
 export type PusatLaporanTab =
   | "kelola_scan"
+  | "matrix_scan_masuk"
   | "matrix_sholat"
   | "laporan_jurnal"
   | "absensi_rapor"
@@ -47,6 +50,12 @@ const TABS: TabItem[] = [
     label: "Kelola Hasil Scan",
     icon: Database,
     badgeColor: "bg-purple-600 shadow-purple-600/40",
+  },
+  {
+    id: "matrix_scan_masuk",
+    label: "Matrik Scan Masuk",
+    icon: LogIn,
+    badgeColor: "bg-blue-600 shadow-blue-600/40",
   },
   {
     id: "matrix_sholat",
@@ -120,6 +129,14 @@ export const PusatLaporan: React.FC = () => {
     }
     if (tabParam && availableTabs.some((t) => t.id === tabParam)) {
       return tabParam;
+    }
+    if (
+      tabParam === "matrix_scan_masuk" ||
+      (tabParam as string) === "rekap_scan_masuk" ||
+      location.pathname.includes("matrik-scan-masuk") ||
+      location.pathname.includes("rekap-scan-masuk")
+    ) {
+      return "matrix_scan_masuk";
     }
     if (
       tabParam === "matrix_sholat" ||
@@ -234,7 +251,14 @@ export const PusatLaporan: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: REKAPITULASI KHUSUS SHOLAT (MATRIKS BULANAN TANGGAL 1–31) */}
+        {/* TAB 2: MATRIK SCAN MASUK (1–31) */}
+        {activeTab === "matrix_scan_masuk" && (
+          <div className="space-y-6">
+            <RekapScanMasukMatrix showHeader={false} />
+          </div>
+        )}
+
+        {/* TAB 3: REKAPITULASI KHUSUS SHOLAT (MATRIKS BULANAN TANGGAL 1–31) */}
         {activeTab === "matrix_sholat" && (
           <div className="space-y-6">
             <RekapSholatMatrix showHeader={false} />
