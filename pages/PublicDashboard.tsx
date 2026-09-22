@@ -184,12 +184,29 @@ const PublicDashboard: React.FC = () => {
             });
         }
 
+        // Kumpulan kelas yang sudah memiliki catatan absensi resmi Wali Kelas / Operator hari ini
+        const classesWithHomeroomAttendance = new Set<string>();
+        if (homeroomRes.data) {
+            homeroomRes.data.forEach((h: any) => {
+                const k = (h.kelas || sClassMap[h.student_id] || '').trim().toUpperCase();
+                if (k) classesWithHomeroomAttendance.add(k);
+            });
+        }
+
         if (attendanceRes.data) {
             attendanceRes.data.forEach((log: any) => {
                 const isBambangPJOK = (log.teacher_name || '').toLowerCase().includes('bambang rastudianto') || (log.subject || '').toLowerCase().includes('pendidikan jasmani') || (log.subject || '').toLowerCase().includes('pjok') || (log.subject || '').toLowerCase().includes('penjasorkes');
                 if (isBambangPJOK && log.status === 'A') {
                     return;
                 }
+
+                const studentKelas = (sClassMap[log.student_id] || '').trim().toUpperCase();
+                // Siswa di kelas yang sudah diabsen oleh Wali/Operator dan tidak ada di daftar absen berarti berstatus HADIR.
+                // Abaikan log ketidakhadiran dari guru jika siswa ini tidak tercatat di homeroom.
+                if (classesWithHomeroomAttendance.has(studentKelas) && !combinedAttendance[log.student_id]) {
+                    return;
+                }
+
                 if (['S', 'I', 'A', 'D'].includes(log.status)) {
                     const existing = combinedAttendance[log.student_id];
                     // Smart Priority:

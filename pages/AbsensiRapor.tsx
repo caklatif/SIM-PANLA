@@ -174,6 +174,8 @@ useEffect(() => {
             .lte('created_at', end)
             .neq('status', 'D');
 
+          const datesWithHomeroomForClass = new Set(hLogs?.map(l => l.date) || []);
+
           const processedStudents: ReportStudent[] = students.map(student => {
               let s_total = 0, i_total = 0, a_total = 0, d_total = 0;
               const details: ReportDetail[] = [];
@@ -194,7 +196,9 @@ useEffect(() => {
                       sourceFound = 'Wali Kelas';
                       foundId = hLog.id;
                       foundTable = 'homeroom_attendance';
-                  } else {
+                  } else if (!datesWithHomeroomForClass.has(date)) {
+                      // Hanya periksa catatan guru mapel jika kelas ini belum memiliki catatan absensi homeroom pada tanggal tersebut.
+                      // Jika kelas sudah diabsen oleh Wali/Operator hari itu dan siswa tidak ada di hLogs, maka siswa berstatus HADIR.
                       const dayLogs = tLogs?.filter(l => l.student_id === student.id && l.created_at.startsWith(date)) || [];
                       if (dayLogs.length > 0) {
                           const statuses = dayLogs.map(l => l.status);

@@ -345,24 +345,30 @@ const Dashboard: React.FC = () => {
                         }
                         source = isTu ? 'tu' : 'wali';
                     } else {
-                         const myLogs = teacherLogs?.filter((l: any) => l.student_id === student.id) || [];
-                         if (myLogs.length > 0) {
-                             const statuses = new Set(myLogs.map((l:any) => l.status));
-                             if (statuses.has('S')) finalStatus = 'S';
-                             else if (statuses.has('I')) finalStatus = 'I';
-                             else if (statuses.has('A')) finalStatus = 'A';
-                             else if (statuses.has('D')) finalStatus = 'D';
-                             
-                             const hoursSet = new Set<number>();
-                             myLogs.forEach((l: any) => {
-                                 if(l.journals?.hours) {
-                                     l.journals.hours.split(',').forEach((h: string) => {
-                                        const val = parseInt(h.trim());
-                                        if(!isNaN(val)) hoursSet.add(val);
-                                     });
-                                 }
-                             });
-                             hoursStr = Array.from(hoursSet).sort((a,b) => a-b).join(', ');
+                         // Jika kelas ini sudah memiliki catatan absensi resmi Wali Kelas / Operator hari ini,
+                         // maka siswa yang tidak ada di homeroomMap berarti resmi berstatus HADIR.
+                         // Jangan ambil dari teacherLogs jika kelas ini sudah memiliki data homeroomLogs.
+                         const hasHomeroomClassRecords = (homeroomLogs && homeroomLogs.length > 0);
+                         if (!hasHomeroomClassRecords) {
+                             const myLogs = teacherLogs?.filter((l: any) => l.student_id === student.id) || [];
+                             if (myLogs.length > 0) {
+                                 const statuses = new Set(myLogs.map((l:any) => l.status));
+                                 if (statuses.has('S')) finalStatus = 'S';
+                                 else if (statuses.has('I')) finalStatus = 'I';
+                                 else if (statuses.has('A')) finalStatus = 'A';
+                                 else if (statuses.has('D')) finalStatus = 'D';
+                                 
+                                 const hoursSet = new Set<number>();
+                                 myLogs.forEach((l: any) => {
+                                     if(l.journals?.hours) {
+                                         l.journals.hours.split(',').forEach((h: string) => {
+                                            const val = parseInt(h.trim());
+                                            if(!isNaN(val)) hoursSet.add(val);
+                                         });
+                                     }
+                                 });
+                                 hoursStr = Array.from(hoursSet).sort((a,b) => a-b).join(', ');
+                             }
                          }
                     }
 
@@ -445,6 +451,21 @@ const Dashboard: React.FC = () => {
               const { error } = await supabase.from('homeroom_attendance').insert(inserts);
               if (error) throw error;
           }
+
+          // Bersihkan log ketidakhadiran dari guru untuk siswa yang dinyatakan HADIR oleh Wali Kelas
+          const presentStudentIds = studentIds.filter(sid => !modalAttendance[sid]);
+          if (presentStudentIds.length > 0) {
+              const startOfDay = `${filterDate}T00:00:00+07:00`;
+              const endOfDay = `${filterDate}T23:59:59+07:00`;
+              const { error: delAttErr } = await supabase
+                  .from('attendance_logs')
+                  .delete()
+                  .in('student_id', presentStudentIds)
+                  .gte('created_at', startOfDay)
+                  .lte('created_at', endOfDay);
+              if (delAttErr) console.warn("Peringatan saat membersihkan attendance_logs siswa hadir:", delAttErr);
+          }
+
           setShowInputForm(false); // Close accordion
           fetchDashboardData(); 
       } catch(e) { showAlert("Gagal menyimpan absensi: " + e); } finally { setSavingAttendance(false); }
@@ -483,21 +504,29 @@ const Dashboard: React.FC = () => {
       if (!activeWaliKelas) return;
       setSavingAttendance(true);
       try {
+          const startOfDay = `${filterDate}T00:00:00+07:00`;
+          const endOfDay = `${filterDate}T23:59:59+07:00`;
           for (const item of specificAbsenceData) {
               if (item.newStatus !== item.currentStatus || item.note) {
-                  const payload: any = {
-                      date: filterDate,
-                      kelas: activeWaliKelas,
-                      student_id: item.student_id,
-                      status: item.newStatus,
-                      created_by: profile?.id,
-                  };
-                  const { error } = await supabase.from('homeroom_attendance').upsert(payload, { onConflict: 'date, student_id' });
-                  if (error) console.error("Failed update", error);
+                  if (item.newStatus === 'H' || !item.newStatus) {
+                      // Siswa diubah menjadi Hadir: hapus dari homeroom_attendance dan hapus log dari guru
+                      await supabase.from('homeroom_attendance').delete().eq('date', filterDate).eq('student_id', item.student_id);
+                      await supabase.from('attendance_logs').delete().eq('student_id', item.student_id).gte('created_at', startOfDay).lte('created_at', endOfDay);
+                  } else {
+                      const payload: any = {
+                          date: filterDate,
+                          kelas: activeWaliKelas,
+                          student_id: item.student_id,
+                          status: item.newStatus,
+                          created_by: profile?.id,
+                      };
+                      const { error } = await supabase.from('homeroom_attendance').upsert(payload, { onConflict: 'date, student_id' });
+                      if (error) console.error("Failed update", error);
+                  }
               }
           }
           setShowEditSpecificModal(false);
-          fetchDashboardData();
+          fetchDashboardData(); 
       } catch (e) { showAlert("Gagal menyimpan perubahan: " + e); } finally { setSavingAttendance(false); }
   };
 

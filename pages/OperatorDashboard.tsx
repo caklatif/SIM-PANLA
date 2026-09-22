@@ -230,6 +230,25 @@ const OperatorDashboard: React.FC = () => {
         if (error) throw error;
       }
 
+      // SINKRONISASI attendance_logs:
+      // Siswa di kelas ini yang TIDAK ada di operatorAttendance berarti berstatus HADIR.
+      // Jika guru jam ke-1 atau jam lain sebelumnya terlanjur menuliskan Sakit/Izin/Alpa/Dispen di attendance_logs,
+      // hapus log ketidakhadiran yang salah tersebut pada tanggal ini agar siswa benar-benar tercatat Hadir dan tidak bentrok.
+      const presentStudentIds = studentIds.filter((sid) => !operatorAttendance[sid]);
+      if (presentStudentIds.length > 0) {
+        const startOfDay = `${filterDate}T00:00:00+07:00`;
+        const endOfDay = `${filterDate}T23:59:59+07:00`;
+        const { error: delAttErr } = await supabase
+          .from("attendance_logs")
+          .delete()
+          .in("student_id", presentStudentIds)
+          .gte("created_at", startOfDay)
+          .lte("created_at", endOfDay);
+        if (delAttErr) {
+          console.warn("Peringatan saat membersihkan attendance_logs siswa hadir:", delAttErr);
+        }
+      }
+
       setOperatorSaveSuccess(
         `Absensi Kelas ${selectedOperatorClass} tanggal ${formatDateIndo(filterDate)} berhasil disimpan ke Supabase! Presensi di jurnal KBM sudah terkunci.`,
       );
@@ -623,6 +642,14 @@ const OperatorDashboard: React.FC = () => {
           };
         }
       });
+
+      // Kumpulan kelas yang sudah memiliki catatan absensi resmi Wali Kelas / Operator hari ini
+      const classesWithHomeroomAttendance = new Set(
+        homeroomLogs
+          .map((h: any) => (h.kelas || studentClassMap[h.student_id] || "").trim())
+          .filter(Boolean),
+      );
+
       attendanceLogs.forEach((log: any) => {
         const isBambangPJOK =
           (log.teacher_name || "")
@@ -634,6 +661,18 @@ const OperatorDashboard: React.FC = () => {
         if (isBambangPJOK && log.status === "A") {
           return;
         }
+
+        const studentKelas = (studentClassMap[log.student_id] || "").trim();
+        // Aturan Mutlak: Jika kelas siswa ini sudah memiliki catatan absensi Wali/Operator hari ini,
+        // maka siswa yang TIDAK terdaftar di homeroomLogs berarti dinyatakan HADIR oleh Wali/Operator.
+        // Catatan dari guru jam sebelumnya/berikutnya TIDAK BOLEH memunculkan siswa ini sebagai absen.
+        if (
+          classesWithHomeroomAttendance.has(studentKelas) &&
+          !uniqueAbsenceMap[log.student_id]
+        ) {
+          return;
+        }
+
         if (["S", "I", "A", "D"].includes(log.status)) {
           const existing = uniqueAbsenceMap[log.student_id];
           // Smart Priority:
