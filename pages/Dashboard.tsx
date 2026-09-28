@@ -345,30 +345,24 @@ const Dashboard: React.FC = () => {
                         }
                         source = isTu ? 'tu' : 'wali';
                     } else {
-                         // Jika kelas ini sudah memiliki catatan absensi resmi Wali Kelas / Operator hari ini,
-                         // maka siswa yang tidak ada di homeroomMap berarti resmi berstatus HADIR.
-                         // Jangan ambil dari teacherLogs jika kelas ini sudah memiliki data homeroomLogs.
-                         const hasHomeroomClassRecords = (homeroomLogs && homeroomLogs.length > 0);
-                         if (!hasHomeroomClassRecords) {
-                             const myLogs = teacherLogs?.filter((l: any) => l.student_id === student.id) || [];
-                             if (myLogs.length > 0) {
-                                 const statuses = new Set(myLogs.map((l:any) => l.status));
-                                 if (statuses.has('S')) finalStatus = 'S';
-                                 else if (statuses.has('I')) finalStatus = 'I';
-                                 else if (statuses.has('A')) finalStatus = 'A';
-                                 else if (statuses.has('D')) finalStatus = 'D';
-                                 
-                                 const hoursSet = new Set<number>();
-                                 myLogs.forEach((l: any) => {
-                                     if(l.journals?.hours) {
-                                         l.journals.hours.split(',').forEach((h: string) => {
-                                            const val = parseInt(h.trim());
-                                            if(!isNaN(val)) hoursSet.add(val);
-                                         });
-                                     }
-                                 });
-                                 hoursStr = Array.from(hoursSet).sort((a,b) => a-b).join(', ');
-                             }
+                         const myLogs = teacherLogs?.filter((l: any) => l.student_id === student.id) || [];
+                         if (myLogs.length > 0) {
+                             const statuses = new Set(myLogs.map((l:any) => l.status));
+                             if (statuses.has('S')) finalStatus = 'S';
+                             else if (statuses.has('I')) finalStatus = 'I';
+                             else if (statuses.has('A')) finalStatus = 'A';
+                             else if (statuses.has('D')) finalStatus = 'D';
+                             
+                             const hoursSet = new Set<number>();
+                             myLogs.forEach((l: any) => {
+                                 if(l.journals?.hours) {
+                                     l.journals.hours.split(',').forEach((h: string) => {
+                                        const val = parseInt(h.trim());
+                                        if(!isNaN(val)) hoursSet.add(val);
+                                     });
+                                 }
+                             });
+                             hoursStr = Array.from(hoursSet).sort((a,b) => a-b).join(', ');
                          }
                     }
 

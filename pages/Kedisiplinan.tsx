@@ -263,8 +263,6 @@ useEffect(() => {
           }
 
           // 4. Process Data
-          const datesWithHomeroomForClass = new Set(hLogs.map(l => l.date));
-
           const processed: DisciplineData[] = targetStudents.map(student => {
               // --- CALCULATE ALPA (DAYS) ---
               const studentHLogs = hLogs.filter(l => l.student_id === student.id);
@@ -291,8 +289,8 @@ useEffect(() => {
                       foundId = hLog.id;
                       foundTable = 'homeroom_attendance';
                       foundSource = 'Wali Kelas';
-                  } else if (!datesWithHomeroomForClass.has(date)) {
-                      // Priority 2: Teacher Logs Aggregation (S > I > A) hanya jika belum ada absensi kelas dari Wali/Operator
+                  } else {
+                      // Priority 2: Teacher Logs Aggregation (S > I > A)
                       const dailyLogs = studentTLogs.filter(l => l.created_at.startsWith(date));
                       if (dailyLogs.length > 0) {
                           const statuses = dailyLogs.map(l => l.status);
